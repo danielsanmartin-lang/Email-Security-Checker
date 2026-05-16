@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Email Security Checker — Auditoría técnica de seguridad de correo electrónico. Analiza registros DNS, SPF, DMARC y MX en tiempo real.">
+    <title>Email Security Checker — Email Security Auditor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Animated background particles -->
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow--1"></div>
+    <div class="bg-glow bg-glow--2"></div>
+    <div class="bg-glow bg-glow--3"></div>
+
+    <div class="app">
+        <!-- Header -->
+        <header class="header" id="app-header">
+            <div class="header__logo">
+                <div class="header__icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <rect x="2" y="2" width="28" height="28" rx="8" stroke="url(#logo-grad)" stroke-width="2.5"/>
+                        <path d="M10 16L14 20L22 12" stroke="url(#logo-grad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs>
+                            <linearGradient id="logo-grad" x1="2" y1="2" x2="30" y2="30">
+                                <stop stop-color="#6366f1"/>
+                                <stop offset="1" stop-color="#06b6d4"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="header__title">Email Security Checker</h1>
+                    <p class="header__subtitle">Email Security Intelligence</p>
+                </div>
+            </div>
+            <div class="header__badge">
+                <span class="pulse-dot"></span>
+                Live DNS Analysis
+            </div>
+        </header>
+
+        <!-- Search Section -->
+        <section class="search-section" id="search-section">
+            <div class="search-card">
+                <div class="search-card__header">
+                    <h2 class="search-card__title">Auditoría de Seguridad de Correo</h2>
+                    <p class="search-card__desc">Introduce un dominio para analizar sus registros MX, SPF, DMARC e identificar su pila tecnológica de email.</p>
+                </div>
+                <form class="search-form" id="search-form">
+                    <div class="search-input-wrapper">
+                        <div class="search-input-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="m21 21-4.35-4.35"/>
+                            </svg>
+                        </div>
+                        <input 
+                            type="text" 
+                            class="search-input" 
+                            id="domain-input" 
+                            placeholder="ejemplo.com"
+                            autocomplete="off"
+                            spellcheck="false"
+                            required
+                        >
+                        <button type="submit" class="search-btn" id="search-btn">
+                            <span class="search-btn__text">Analizar</span>
+                            <span class="search-btn__loader">
+                                <svg class="spinner" width="20" height="20" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
+                                </svg>
+                            </span>
+                        </button>
+                    </div>
+                    <div class="search-hints">
+                        <span class="search-hint" data-domain="google.com">google.com</span>
+                        <span class="search-hint" data-domain="microsoft.com">microsoft.com</span>
+                        <span class="search-hint" data-domain="amazon.com">amazon.com</span>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- Loading State -->
+        <section class="loading-section hidden" id="loading-section">
+            <div class="loading-card">
+                <div class="loading-steps">
+                    <div class="loading-step" id="step-mx">
+                        <div class="loading-step__icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                        </div>
+                        <div class="loading-step__info">
+                            <span class="loading-step__label">Consultando registros MX...</span>
+                            <div class="loading-step__bar"><div class="loading-step__progress"></div></div>
+                        </div>
+                        <div class="loading-step__status">
+                            <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </div>
+                    </div>
+                    <div class="loading-step" id="step-spf">
+                        <div class="loading-step__icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
+                        <div class="loading-step__info">
+                            <span class="loading-step__label">Consultando registros SPF...</span>
+                            <div class="loading-step__bar"><div class="loading-step__progress"></div></div>
+                        </div>
+                        <div class="loading-step__status">
+                            <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </div>
+                    </div>
+                    <div class="loading-step" id="step-dmarc">
+                        <div class="loading-step__icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                        </div>
+                        <div class="loading-step__info">
+                            <span class="loading-step__label">Consultando DMARC...</span>
+                            <div class="loading-step__bar"><div class="loading-step__progress"></div></div>
+                        </div>
+                        <div class="loading-step__status">
+                            <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </div>
+                    </div>
+                    <div class="loading-step" id="step-analysis">
+                        <div class="loading-step__icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                        </div>
+                        <div class="loading-step__info">
+                            <span class="loading-step__label">Analizando pila tecnológica...</span>
+                            <div class="loading-step__bar"><div class="loading-step__progress"></div></div>
+                        </div>
+                        <div class="loading-step__status">
+                            <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Error State -->
+        <section class="error-section hidden" id="error-section">
+            <div class="error-card">
+                <div class="error-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                </div>
+                <h3 class="error-title">Error en la consulta</h3>
+                <p class="error-message" id="error-message">No se pudieron obtener los registros DNS.</p>
+                <button class="error-retry" id="error-retry">Reintentar</button>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section hidden" id="results-section">
+            <!-- Domain Header -->
+            <div class="result-header" id="result-header">
+                <div class="result-header__info">
+                    <div class="result-header__domain-row">
+                        <h2 class="result-header__domain" id="result-domain"></h2>
+                        <span class="result-header__timestamp" id="result-timestamp"></span>
+                    </div>
+                    <p class="result-header__subtitle">🔍 Reporte Técnico de DNS</p>
+                </div>
+                <div class="result-header__actions" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <button class="result-header__export" id="export-google-btn" title="Abrir en Google Docs">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        Exportar a Google Docs
+                    </button>
+                    <button class="result-header__export result-header__export--file" id="export-file-btn" title="Descargar como .doc">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Exportar a .doc
+                    </button>
+                    <button class="result-header__new-scan" id="new-scan-btn" title="Nueva consulta">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                        Nuevo análisis
+                    </button>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-grid" id="summary-grid">
+                <div class="summary-card" id="summary-provider">
+                    <div class="summary-card__icon summary-card__icon--provider">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                    </div>
+                    <div class="summary-card__content">
+                        <span class="summary-card__label">Proveedor de Correo</span>
+                        <span class="summary-card__value" id="summary-provider-value">—</span>
+                    </div>
+                </div>
+                <div class="summary-card" id="summary-security">
+                    <div class="summary-card__icon summary-card__icon--security">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <div class="summary-card__content">
+                        <span class="summary-card__label">Capa de Seguridad</span>
+                        <span class="summary-card__value" id="summary-security-value">—</span>
+                    </div>
+                </div>
+                <div class="summary-card" id="summary-dmarc">
+                    <div class="summary-card__icon summary-card__icon--dmarc">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                    </div>
+                    <div class="summary-card__content">
+                        <span class="summary-card__label">Política DMARC</span>
+                        <span class="summary-card__value" id="summary-dmarc-value">—</span>
+                    </div>
+                </div>
+                <div class="summary-card" id="summary-services">
+                    <div class="summary-card__icon summary-card__icon--services">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    </div>
+                    <div class="summary-card__content">
+                        <span class="summary-card__label">Servicios Terceros</span>
+                        <span class="summary-card__value" id="summary-services-value">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Panels -->
+            <div class="panels-grid">
+                <!-- MX Records Panel -->
+                <div class="panel" id="panel-mx">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--mx">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                            </div>
+                            <h3 class="panel__title">Registros MX</h3>
+                        </div>
+                        <span class="panel__badge" id="mx-count">0 registros</span>
+                    </div>
+                    <div class="panel__body" id="mx-body">
+                        <!-- MX records rendered here -->
+                    </div>
+                </div>
+
+                <!-- Provider Analysis -->
+                <div class="panel" id="panel-provider">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--provider">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                            </div>
+                            <h3 class="panel__title">Proveedor de Correo</h3>
+                        </div>
+                    </div>
+                    <div class="panel__body" id="provider-body">
+                        <!-- Provider analysis -->
+                    </div>
+                </div>
+
+                <!-- Security Layers Panel -->
+                <div class="panel" id="panel-security">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--security">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            </div>
+                            <h3 class="panel__title">Capas de Seguridad (SEG / ICES)</h3>
+                        </div>
+                    </div>
+                    <div class="panel__body" id="security-body">
+                        <!-- Security analysis -->
+                    </div>
+                </div>
+
+                <!-- SPF Panel -->
+                <div class="panel panel--full" id="panel-spf">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--spf">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            </div>
+                            <h3 class="panel__title">Registro SPF — Análisis Detallado</h3>
+                        </div>
+                    </div>
+                    <div class="panel__raw-record" id="spf-raw">
+                        <!-- Raw SPF record -->
+                    </div>
+                    <div class="panel__body">
+                        <table class="spf-table" id="spf-table">
+                            <thead>
+                                <tr>
+                                    <th>Prefijo</th>
+                                    <th>Tipo</th>
+                                    <th>Valor</th>
+                                    <th>Resultado</th>
+                                    <th>Servicio Identificado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="spf-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- SPF Services Summary -->
+                    <div class="panel__footer" id="spf-services-summary">
+                    </div>
+                </div>
+
+                <!-- DMARC Panel -->
+                <div class="panel" id="panel-dmarc">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--dmarc">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                            </div>
+                            <h3 class="panel__title">Estado DMARC</h3>
+                        </div>
+                    </div>
+                    <div class="panel__raw-record" id="dmarc-raw">
+                        <!-- Raw DMARC record -->
+                    </div>
+                    <div class="panel__body" id="dmarc-body">
+                        <!-- DMARC analysis -->
+                    </div>
+                </div>
+
+                <!-- DMARC Reporting -->
+                <div class="panel" id="panel-dmarc-reporting">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--reporting">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            </div>
+                            <h3 class="panel__title">Reportes DMARC (rua/ruf)</h3>
+                        </div>
+                    </div>
+                    <div class="panel__body" id="dmarc-reporting-body">
+                        <!-- DMARC reporting info -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Email Security Checker — Consultas DNS en tiempo real vía DoH (DNS-over-HTTPS)</p>
+            <p class="footer__disclaimer">Los datos se obtienen de registros DNS públicos. No se almacena ninguna información.</p>
+        </footer>
+    </div>
+
+    <!-- Add to KB Modal -->
+    <div id="add-kb-modal" class="modal hidden">
+        <div class="modal__overlay" id="add-kb-overlay"></div>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3 class="modal__title">Añadir a Knowledge Base</h3>
+                <button class="modal__close" id="add-kb-close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal__body">
+                <form id="add-kb-form">
+                    <div class="form-group">
+                        <label for="kb-domain">Dominio (Pattern)</label>
+                        <input type="text" id="kb-domain" class="search-input-wrapper search-input" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="kb-name">Nombre del Servicio</label>
+                        <input type="text" id="kb-name" class="search-input-wrapper search-input" placeholder="Ej. MailerLite" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="kb-category">Categoría (Label)</label>
+                        <select id="kb-category" class="search-input-wrapper search-input" required>
+                            <option value="marketing">Marketing</option>
+                            <option value="transactional">Transaccional</option>
+                            <option value="crm">CRM / ERP</option>
+                            <option value="support">Soporte / Tickets</option>
+                            <option value="signatures">Firmas Email</option>
+                            <option value="email">Proveedor Email</option>
+                            <option value="seg">SEG (Filtro perimetral)</option>
+                            <option value="ices">ICES (Seguridad Integrada)</option>
+                            <option value="other">Otro / Varios</option>
+                        </select>
+                    </div>
+                    <div class="modal__actions">
+                        <button type="submit" class="search-btn" style="width: 100%; justify-content: center;">Guardar y Analizar de Nuevo</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/knowledge.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
