@@ -1,5 +1,5 @@
 // Knowledge base for identifying email services from DNS records
-const KB = {
+export const KB = {
     mx: [
         { pattern: 'protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
         { pattern: 'mail.protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
