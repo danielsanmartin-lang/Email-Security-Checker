@@ -38,6 +38,77 @@ async function getDMARC(domain) {
     return null;
 }
 
+const COMMON_DKIM_SELECTORS = ['google', 'default', 's1', 's2', 'k1', 'k2', 'm1', 'mail', 'selector1'];
+async function getDKIM(domain) {
+    const results = [];
+    const promises = COMMON_DKIM_SELECTORS.map(async (selector) => {
+        try {
+            const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT');
+            if (data && data.Answer) {
+                for (const a of data.Answer) {
+                    const txt = a.data.replace(/"/g, '');
+                    if (txt.startsWith('v=DKIM1')) {
+                        results.push({ selector, record: txt });
+                    }
+                }
+            }
+        } catch(e) {}
+    });
+    await Promise.allSettled(promises);
+    return results;
+}
+
+async function getBIMI(domain) {
+    try {
+        const data = await queryDNS(`default._bimi.${domain}`, 'TXT');
+        if (data && data.Answer) {
+            for (const a of data.Answer) {
+                const txt = a.data.replace(/"/g, '');
+                if (txt.startsWith('v=BIMI1')) {
+                    return txt;
+                }
+            }
+        }
+    } catch(e) {}
+    return null;
+}
+
+async function getSPFLookupCount(domain, cache = new Set(), depth = 0) {
+    if (depth > 10) return 0; // Prevent infinite loops
+    if (cache.has(domain)) return 0;
+    cache.add(domain);
+    
+    let count = 0;
+    try {
+        const spf = await getSPF(domain);
+        if (!spf) return 0;
+        
+        const tokens = spf.split(/\s+/);
+        for (const token of tokens) {
+            let t = token.toLowerCase();
+            if (/^[+\-~?]/.test(t)) t = t.substring(1);
+            
+            if (t.startsWith('include:')) {
+                count++;
+                const includeDomain = t.substring(8);
+                count += await getSPFLookupCount(includeDomain, cache, depth + 1);
+            } else if (t.startsWith('a') || t.startsWith('mx') || t.startsWith('ptr') || t.startsWith('exists:') || t.startsWith('redirect=')) {
+                // If it's literally 'a' or 'mx' or 'ptr' (or with prefix)
+                if (t === 'a' || t.startsWith('a:') || t === 'mx' || t.startsWith('mx:') || t === 'ptr' || t.startsWith('ptr:') || t.startsWith('exists:')) {
+                    count++;
+                }
+                if (t.startsWith('redirect=')) {
+                    count++;
+                    const redirectDomain = t.substring(9);
+                    count += await getSPFLookupCount(redirectDomain, cache, depth + 1);
+                }
+            }
+        }
+    } catch(e) {}
+    
+    return count;
+}
+
 /* ===== SPF Parser ===== */
 function parseSPF(raw) {
     if (!raw) return [];
@@ -467,6 +538,48 @@ function renderResults(domain, result) {
     } else {
         repBody.innerHTML = '<p class="no-data">No se encontraron direcciones de reporte (rua/ruf). El dominio no está recopilando informes DMARC.</p>';
     }
+
+    // SPF Lookups Counter
+    const lookupBadge = document.getElementById('spf-lookups-count');
+    if (result.spfLookups !== undefined) {
+        lookupBadge.textContent = `${result.spfLookups}/10 Lookups`;
+        if (result.spfLookups > 10) {
+            lookupBadge.style.backgroundColor = '#fecdd3';
+            lookupBadge.style.color = '#e11d48';
+        } else if (result.spfLookups > 7) {
+            lookupBadge.style.backgroundColor = '#fef08a';
+            lookupBadge.style.color = '#ca8a04';
+        } else {
+            lookupBadge.style.backgroundColor = '#d1fae5';
+            lookupBadge.style.color = '#059669';
+        }
+    } else {
+        lookupBadge.textContent = '';
+    }
+
+    // DKIM Panel
+    const dkimBody = document.getElementById('dkim-body');
+    if (result.dkimRecords && result.dkimRecords.length > 0) {
+        dkimBody.innerHTML = result.dkimRecords.map(dkim => `
+            <div class="info-block" style="margin-bottom:12px;">
+                <div class="info-block__label">Selector: ${dkim.selector}</div>
+                <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${dkim.record}</div>
+            </div>`).join('');
+    } else {
+        dkimBody.innerHTML = '<p class="no-data">No se detectaron registros DKIM usando los selectores comunes. (Es posible que usen un selector personalizado).</p>';
+    }
+
+    // BIMI Panel
+    const bimiBody = document.getElementById('bimi-body');
+    if (result.bimiRecord) {
+        bimiBody.innerHTML = `
+            <div class="info-block">
+                <div class="info-block__label">Registro BIMI Encontrado</div>
+                <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${result.bimiRecord}</div>
+            </div>`;
+    } else {
+        bimiBody.innerHTML = '<p class="no-data">No se encontró registro BIMI (default._bimi).</p>';
+    }
 }
 
 /* ===== Global State ===== */
@@ -534,6 +647,7 @@ function generateReportHTML() {
 
             <h2 style="color: #374151; margin-top: 20px;">2. Registro SPF (Sender Policy Framework)</h2>
             <p><strong>Registro Raw:</strong> <code style="word-break: break-all;">${currentResult.spfRaw || 'No encontrado'}</code></p>
+            ${currentResult.spfLookups !== undefined ? `<p><strong>DNS Lookups:</strong> <span style="color: ${currentResult.spfLookups > 10 ? '#e11d48' : currentResult.spfLookups > 7 ? '#ca8a04' : '#059669'}; font-weight: bold;">${currentResult.spfLookups}/10</span></p>` : ''}
             
             <table border="1" cellpadding="5" cellspacing="0" style="width: 100%; border-collapse: collapse; border-color: #e5e7eb; font-size: 14px;">
                 <tr style="background-color: #f3f4f6;"><th>Prefijo</th><th>Tipo</th><th>Valor</th><th>Servicio Identificado</th></tr>
@@ -553,6 +667,18 @@ function generateReportHTML() {
                 ${currentResult.dmarcRuf.length > 0 ? currentResult.dmarcRuf.map(r => `<li><strong>RUF:</strong> ${r}</li>`).join('') : ''}
                 ${currentResult.dmarcRua.length === 0 && currentResult.dmarcRuf.length === 0 ? '<li>No se encontraron direcciones de reporte (rua/ruf).</li>' : ''}
             </ul>
+
+            <h2 style="color: #374151; margin-top: 20px;">Estado DKIM</h2>
+            ${currentResult.dkimRecords && currentResult.dkimRecords.length > 0 ? 
+                `<ul>${currentResult.dkimRecords.map(dkim => `<li><strong>Selector ${dkim.selector}:</strong> <code style="word-break: break-all;">${dkim.record}</code></li>`).join('')}</ul>` : 
+                '<p>No se detectaron registros DKIM usando los selectores comunes.</p>'
+            }
+
+            <h2 style="color: #374151; margin-top: 20px;">Estado BIMI</h2>
+            ${currentResult.bimiRecord ? 
+                `<p><strong>Registro Encontrado:</strong> <code style="word-break: break-all;">${currentResult.bimiRecord}</code></p>` : 
+                '<p>No se encontró registro BIMI (default._bimi).</p>'
+            }
             
             <hr style="margin-top: 30px;">
             <p style="font-size: 12px; color: #6b7280; text-align: center;">Reporte generado por Email Security Checker</p>
@@ -637,7 +763,7 @@ async function runAnalysis(domain) {
     showSection('loading-section');
     
     // Reset steps
-    ['step-mx', 'step-spf', 'step-dmarc', 'step-analysis'].forEach(s => setStep(s, null));
+    ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-analysis'].forEach(s => setStep(s, null));
     
     try {
         // Step 1: MX
@@ -648,6 +774,7 @@ async function runAnalysis(domain) {
         // Step 2: SPF
         setStep('step-spf', 'active');
         const spfRaw = await getSPF(domain);
+        const spfLookups = spfRaw ? await getSPFLookupCount(domain) : 0;
         setStep('step-spf', 'done');
 
         // Step 3: DMARC
@@ -655,10 +782,24 @@ async function runAnalysis(domain) {
         const dmarcRaw = await getDMARC(domain);
         setStep('step-dmarc', 'done');
 
-        // Step 4: Analyze
+        // Step 4: DKIM
+        setStep('step-dkim', 'active');
+        const dkimRecords = await getDKIM(domain);
+        setStep('step-dkim', 'done');
+
+        // Step 5: BIMI
+        setStep('step-bimi', 'active');
+        const bimiRecord = await getBIMI(domain);
+        setStep('step-bimi', 'done');
+
+        // Step 6: Analyze
         setStep('step-analysis', 'active');
         await new Promise(r => setTimeout(r, 400));
         const result = analyze(mxRecords, spfRaw, dmarcRaw);
+        result.spfLookups = spfLookups;
+        result.dkimRecords = dkimRecords;
+        result.bimiRecord = bimiRecord;
+        
         currentDomain = domain;
         currentResult = result;
         setStep('step-analysis', 'done');

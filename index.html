@@ -127,6 +127,30 @@
                             <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
                         </div>
                     </div>
+                    <div class="loading-step" id="step-dkim">
+                        <div class="loading-step__icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
+                        <div class="loading-step__info">
+                            <span class="loading-step__label">Verificando DKIM...</span>
+                            <div class="loading-step__bar"><div class="loading-step__progress"></div></div>
+                        </div>
+                        <div class="loading-step__status">
+                            <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </div>
+                    </div>
+                    <div class="loading-step" id="step-bimi">
+                        <div class="loading-step__icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        </div>
+                        <div class="loading-step__info">
+                            <span class="loading-step__label">Consultando BIMI...</span>
+                            <div class="loading-step__bar"><div class="loading-step__progress"></div></div>
+                        </div>
+                        <div class="loading-step__status">
+                            <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </div>
+                    </div>
                     <div class="loading-step" id="step-analysis">
                         <div class="loading-step__icon">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
@@ -283,6 +307,7 @@
                             </div>
                             <h3 class="panel__title">Registro SPF — Análisis Detallado</h3>
                         </div>
+                        <span class="panel__badge" id="spf-lookups-count" style="margin-left: auto;">0/10 Lookups</span>
                     </div>
                     <div class="panel__raw-record" id="spf-raw">
                         <!-- Raw SPF record -->
@@ -337,6 +362,36 @@
                     </div>
                     <div class="panel__body" id="dmarc-reporting-body">
                         <!-- DMARC reporting info -->
+                    </div>
+                </div>
+
+                <!-- DKIM Panel -->
+                <div class="panel" id="panel-dkim">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--security">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            </div>
+                            <h3 class="panel__title">Verificación DKIM</h3>
+                        </div>
+                    </div>
+                    <div class="panel__body" id="dkim-body">
+                        <!-- DKIM analysis -->
+                    </div>
+                </div>
+
+                <!-- BIMI Panel -->
+                <div class="panel" id="panel-bimi">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--security">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            </div>
+                            <h3 class="panel__title">Verificación BIMI</h3>
+                        </div>
+                    </div>
+                    <div class="panel__body" id="bimi-body">
+                        <!-- BIMI analysis -->
                     </div>
                 </div>
             </div>
