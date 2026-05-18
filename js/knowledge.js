@@ -34,7 +34,8 @@ export const KB = {
     spf: [
         { pattern: 'spf.protection.outlook.com', name: 'Microsoft 365', category: 'email', cat_label: 'Proveedor Email' },
         { pattern: '_spf.google.com', name: 'Google Workspace', category: 'email', cat_label: 'Proveedor Email' },
-        { pattern: 'amazonses.com', name: 'Amazon SES', category: 'transactional', cat_label: 'Transaccional' },
+        { pattern: 'amazonses.com', name: 'Amazon SES', category: 'email', cat_label: 'Proveedor Email / Transaccional' },
+        { pattern: 'awsapps.com', name: 'Amazon WorkMail', category: 'email', cat_label: 'Proveedor Email' },
         { pattern: 'sendgrid.net', name: 'SendGrid (Twilio)', category: 'transactional', cat_label: 'Transaccional' },
         { pattern: 'mailgun.org', name: 'Mailgun', category: 'transactional', cat_label: 'Transaccional' },
         { pattern: 'mandrillapp.com', name: 'Mandrill (Mailchimp)', category: 'transactional', cat_label: 'Transaccional' },
