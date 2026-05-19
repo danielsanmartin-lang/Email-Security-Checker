@@ -1,5 +1,91 @@
 import { KB } from './knowledge.js';
 import { identifyMX, identifySPFService, identifyDMARCReporter } from './analyzer.js';
+import { translations } from './i18n.js';
+import { getLanguage } from './lang.js';
+
+export function getCategoryLabel(svc, lang) {
+    if (!svc) return '';
+    const labelTranslations = {
+        es: {
+            'Proveedor Email': 'Proveedor Email',
+            'Proveedor Email / Transaccional': 'Proveedor Email / Transaccional',
+            'Transaccional': 'Transaccional',
+            'Firmas Email': 'Firmas Email',
+            'CRM': 'CRM',
+            'CRM/Marketing': 'CRM/Marketing',
+            'Marketing': 'Marketing',
+            'Soporte': 'Soporte',
+            'SEG': 'SEG',
+            'ICES': 'ICES',
+            'Concienciación': 'Concienciación',
+            'Firmas Digitales': 'Firmas Digitales',
+            'ERP/CRM': 'ERP/CRM',
+            'RRHH': 'RRHH',
+            'ITSM': 'ITSM',
+            'Turismo/CRM': 'Turismo/CRM',
+            'Soporte/ITSM': 'Soporte/ITSM',
+            'Desconocido': 'Desconocido',
+            'Otro / Varios': 'Otro / Varios'
+        },
+        en: {
+            'Proveedor Email': 'Email Provider',
+            'Proveedor Email / Transaccional': 'Email Provider / Transactional',
+            'Transaccional': 'Transactional',
+            'Firmas Email': 'Email Signatures',
+            'CRM': 'CRM',
+            'CRM/Marketing': 'CRM/Marketing',
+            'Marketing': 'Marketing',
+            'Soporte': 'Support',
+            'SEG': 'SEG',
+            'ICES': 'ICES',
+            'Concienciación': 'Awareness Training',
+            'Firmas Digitales': 'Digital Signatures',
+            'ERP/CRM': 'ERP/CRM',
+            'RRHH': 'HR',
+            'ITSM': 'ITSM',
+            'Turismo/CRM': 'Tourism/CRM',
+            'Soporte/ITSM': 'Support/ITSM',
+            'Desconocido': 'Unknown',
+            'Otro / Varios': 'Other / Misc'
+        }
+    };
+    
+    const cat = svc.category;
+    const catLabel = svc.cat_label || svc.catLabel || '';
+    
+    if (labelTranslations[lang] && labelTranslations[lang][catLabel]) {
+        return labelTranslations[lang][catLabel];
+    }
+    
+    const categoryDefaults = {
+        es: {
+            email: 'Proveedor Email',
+            seg: 'SEG',
+            ices: 'ICES',
+            marketing: 'Marketing',
+            transactional: 'Transaccional',
+            crm: 'CRM',
+            signatures: 'Firmas Email',
+            support: 'Soporte',
+            other: 'Otro',
+            unknown: 'Desconocido'
+        },
+        en: {
+            email: 'Email Provider',
+            seg: 'SEG',
+            ices: 'ICES',
+            marketing: 'Marketing',
+            transactional: 'Transactional',
+            crm: 'CRM',
+            signatures: 'Email Signatures',
+            support: 'Support',
+            other: 'Other',
+            unknown: 'Unknown'
+        }
+    };
+    
+    return (categoryDefaults[lang] && categoryDefaults[lang][cat]) || catLabel || (lang === 'es' ? 'Desconocido' : 'Unknown');
+}
 
 export function openKbModal(domain) {
     document.getElementById('kb-domain').value = domain;
@@ -24,11 +110,14 @@ export function showSection(id) {
 
 export function setStep(stepId, state) {
     const el = document.getElementById(stepId);
+    if (!el) return;
     el.classList.remove('active', 'done');
     if (state) el.classList.add(state);
     const check = el.querySelector('.check-icon');
-    if (state === 'done') check.classList.remove('hidden');
-    else check.classList.add('hidden');
+    if (check) {
+        if (state === 'done') check.classList.remove('hidden');
+        else check.classList.add('hidden');
+    }
 }
 
 export function renderSPFTree(tree) {
@@ -50,11 +139,110 @@ export function renderSPFTree(tree) {
     return html;
 }
 
-export function renderResults(domain, result) {
-    document.getElementById('result-domain').textContent = domain;
-    document.getElementById('result-timestamp').textContent = new Date().toLocaleString('es-ES');
+function translateProviderSource(source, lang) {
+    if (!source) return '';
+    const t = translations[lang];
+    if (source.includes('MX apunta a')) {
+        return source.replace('MX apunta a', t.evidence_mx);
+    }
+    if (source.includes('SPF include:')) {
+        return source.replace('SPF include:', t.evidence_spf);
+    }
+    if (source.includes('No se encontraron indicadores claros en MX ni SPF')) {
+        return t.unidentified_provider_detail;
+    }
+    return source;
+}
 
-    document.getElementById('summary-provider-value').textContent = result.provider;
+export function translateDOM() {
+    const lang = getLanguage();
+    const t = translations[lang];
+    if (!t) return;
+
+    // Elements with data-i18n
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (t[key]) {
+            const pulseDot = el.querySelector('.pulse-dot');
+            const svg = el.querySelector('svg');
+            
+            if (pulseDot || svg) {
+                let hasUpdatedText = false;
+                for (const node of el.childNodes) {
+                    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '') {
+                        node.textContent = t[key];
+                        hasUpdatedText = true;
+                    }
+                }
+                if (!hasUpdatedText) {
+                    const savedElements = [];
+                    if (pulseDot) savedElements.push(pulseDot);
+                    if (svg) savedElements.push(svg);
+                    
+                    el.innerHTML = '';
+                    savedElements.forEach(se => el.appendChild(se));
+                    if (savedElements.length > 0) {
+                        el.appendChild(document.createTextNode(' '));
+                    }
+                    el.appendChild(document.createTextNode(t[key]));
+                }
+            } else {
+                el.textContent = t[key];
+            }
+        }
+    });
+
+    // Titles
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const key = el.getAttribute('data-i18n-title');
+        if (t[key]) {
+            el.setAttribute('title', t[key]);
+        }
+    });
+
+    // Placeholders
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        if (t[key]) {
+            el.setAttribute('placeholder', t[key]);
+        }
+    });
+
+    // Update Language Selector button state (flag, text code)
+    const btnFlag = document.getElementById('lang-btn-flag');
+    const btnText = document.getElementById('lang-btn-text');
+    
+    if (btnText) btnText.textContent = lang.toUpperCase();
+    if (btnFlag) {
+        if (lang === 'es') {
+            btnFlag.innerHTML = `<svg viewBox="0 0 3 2" width="20" height="13.3"><rect width="3" height="2" fill="#AD1519"/><rect height="1" y="0.5" width="3" fill="#FABD00"/></svg>`;
+        } else {
+            btnFlag.innerHTML = `<svg viewBox="0 0 60 30" width="20" height="10"><path fill="#012169" d="M0 0h60v30H0z"/><path fill="#FFF" d="m0 0 60 30h-7L0 3.5zM0 30 60 0h-7L0 26.5zM60 30 0 0h7l53 26.5zM60 0 0 30h7l53-26.5zM30 0h-6v30h6zm-30 12h60v6H0z"/><path fill="#FFF" d="M27 0h6v30h-6zm-27 12h60v6H0z"/><path fill="#C8102E" d="M28 0h4v30h-4zm-28 13h60v4H0z"/></svg>`;
+        }
+    }
+
+    // Update active class in selector dropdown list
+    document.querySelectorAll('.lang-dropdown__item').forEach(item => {
+        if (item.getAttribute('data-lang') === lang) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+}
+
+export function renderResults(domain, result) {
+    const lang = getLanguage();
+    const t = translations[lang];
+
+    document.getElementById('result-domain').textContent = domain;
+    document.getElementById('result-timestamp').textContent = new Date().toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
+
+    let providerDisplay = result.provider;
+    if (providerDisplay === 'No identificado') {
+        providerDisplay = t.unidentified_provider;
+    }
+    document.getElementById('summary-provider-value').textContent = providerDisplay;
     
     const secValue = document.getElementById('summary-security-value');
     if (result.segList.length > 0) {
@@ -62,24 +250,31 @@ export function renderResults(domain, result) {
     } else if (result.icesList.length > 0) {
         secValue.textContent = result.icesList.map(s => s.name).join(', ');
     } else {
-        secValue.textContent = 'Sin evidencia DNS';
+        secValue.textContent = t.no_evidence_dns;
     }
 
     const dmarcVal = document.getElementById('summary-dmarc-value');
-    dmarcVal.textContent = result.dmarcPolicy;
+    let dmarcPolicyText = result.dmarcPolicy;
+    if (dmarcPolicyText === 'reject') dmarcPolicyText = lang === 'es' ? 'Reject (Rechazar)' : 'Reject';
+    else if (dmarcPolicyText === 'quarantine') dmarcPolicyText = lang === 'es' ? 'Quarantine (Cuarentena)' : 'Quarantine';
+    else if (dmarcPolicyText === 'none') dmarcPolicyText = lang === 'es' ? 'None (Ninguna)' : 'None';
+    else if (dmarcPolicyText === 'No configurado') dmarcPolicyText = t.no_dmarc_record;
+    
+    dmarcVal.textContent = dmarcPolicyText;
     dmarcVal.className = 'summary-card__value';
     if (result.dmarcPolicyClass === 'reject') dmarcVal.classList.add('dmarc-policy--reject');
     else if (result.dmarcPolicyClass === 'quarantine') dmarcVal.classList.add('dmarc-policy--quarantine');
     else dmarcVal.classList.add('dmarc-policy--none');
 
     document.getElementById('summary-services-value').textContent = 
-        result.spfServices.length > 0 ? `${result.spfServices.length} detectados` : 'Ninguno';
+        result.spfServices.length > 0 ? `${result.spfServices.length} ${t.detected_plural}` : t.detected_none;
 
     const mxBody = document.getElementById('mx-body');
-    document.getElementById('mx-count').textContent = `${result.mxRecords.length} registro${result.mxRecords.length !== 1 ? 's' : ''}`;
+    const recordWord = result.mxRecords.length === 1 ? t.singular_record : t.plural_records;
+    document.getElementById('mx-count').textContent = `${result.mxRecords.length} ${recordWord}`;
     
     if (result.mxRecords.length === 0) {
-        mxBody.innerHTML = '<p class="no-data">No se encontraron registros MX</p>';
+        mxBody.innerHTML = `<p class="no-data">${t.no_mx_records}</p>`;
     } else {
         mxBody.innerHTML = result.mxRecords.map(mx => {
             const id = identifyMX(mx.host);
@@ -95,9 +290,9 @@ export function renderResults(domain, result) {
     const provBody = document.getElementById('provider-body');
     provBody.innerHTML = `
         <div class="info-block">
-            <div class="info-block__label">Proveedor Identificado</div>
-            <div class="info-block__value">${result.provider}</div>
-            <div class="info-block__detail">${result.providerSource}</div>
+            <div class="info-block__label">${t.provider_identified}</div>
+            <div class="info-block__value">${providerDisplay}</div>
+            <div class="info-block__detail">${translateProviderSource(result.providerSource, lang)}</div>
         </div>`;
 
     const secBody = document.getElementById('security-body');
@@ -105,24 +300,24 @@ export function renderResults(domain, result) {
         let html = '';
         for (const seg of result.segList) {
             html += `<div class="info-block">
-                <div class="info-block__label">SEG Detectado</div>
+                <div class="info-block__label">${t.seg_detected}</div>
                 <div class="info-block__value">${seg.name}</div>
-                <div class="info-block__detail">Evidencia: ${seg.source}</div>
+                <div class="info-block__detail">${t.evidence}: ${seg.source}</div>
             </div>`;
         }
         for (const ices of result.icesList) {
             html += `<div class="info-block">
-                <div class="info-block__label">ICES Detectado</div>
+                <div class="info-block__label">${t.ices_detected}</div>
                 <div class="info-block__value">${ices.name}</div>
-                <div class="info-block__detail">Evidencia: ${ices.source}</div>
+                <div class="info-block__detail">${t.evidence}: ${ices.source}</div>
             </div>`;
         }
         secBody.innerHTML = html;
     } else {
         secBody.innerHTML = `<div class="info-block">
-            <div class="info-block__label">Sin evidencia en DNS</div>
-            <div class="info-block__value">No se detectó SEG ni ICES</div>
-            <div class="info-block__detail">El dominio podría usar seguridad nativa del proveedor o una solución integrada por API que no deja rastro en DNS.</div>
+            <div class="info-block__label">${t.no_evidence_dns}</div>
+            <div class="info-block__value">${t.no_seg_ices_detected}</div>
+            <div class="info-block__detail">${t.no_seg_ices_detail}</div>
         </div>`;
     }
 
@@ -131,7 +326,7 @@ export function renderResults(domain, result) {
         spfRawEl.textContent = result.spfRaw;
         spfRawEl.classList.remove('hidden');
     } else {
-        spfRawEl.textContent = 'No se encontró registro SPF';
+        spfRawEl.textContent = t.no_spf_record;
     }
 
     const spfTbody = document.getElementById('spf-table-body');
@@ -156,14 +351,15 @@ export function renderResults(domain, result) {
         let svcHTML = '<span class="no-data">—</span>';
         if (svc) {
             const catClass = `cat--${svc.category}`;
+            const localizedCatLabel = getCategoryLabel(svc, lang);
             if (svc.is_unknown) {
-                svcHTML = `<span class="spf-service">${svc.name}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="Añadir a Base de Datos" onclick="openKbModal('${svc.search_query}')">➕ Añadir a DB</button>`;
+                svcHTML = `<span class="spf-service">${svc.name}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="${t.add_to_db_tooltip}" onclick="openKbModal('${svc.search_query}')">${t.add_to_db}</button>`;
             } else {
-                svcHTML = `<span class="spf-service">${svc.name}</span><span class="spf-service__category ${catClass}">${svc.cat_label}</span>`;
+                svcHTML = `<span class="spf-service">${svc.name}</span><span class="spf-service__category ${catClass}">${localizedCatLabel}</span>`;
             }
         }
-        if (entry.type === 'v') svcHTML = '<span style="color:var(--text-muted)">Versión SPF</span>';
-        if (entry.type === 'all') svcHTML = '<span style="color:var(--text-muted)">Política por defecto</span>';
+        if (entry.type === 'v') svcHTML = `<span style="color:var(--text-muted)">${t.spf_version}</span>`;
+        if (entry.type === 'all') svcHTML = `<span style="color:var(--text-muted)">${t.spf_default_policy}</span>`;
 
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -179,14 +375,15 @@ export function renderResults(domain, result) {
     if (result.spfServices.length > 0) {
         const pills = result.spfServices.map(svc => {
             const color = KB.categoryColors[svc.category] || '#64748b';
+            const localizedCatLabel = getCategoryLabel(svc, lang);
             return `<span class="service-pill">
                 <span class="service-pill__dot" style="background:${color}"></span>
-                ${svc.name} <small style="color:var(--text-muted)">(${svc.cat_label})</small>
+                ${svc.name} <small style="color:var(--text-muted)">(${localizedCatLabel})</small>
             </span>`;
         }).join('');
         spfSummary.innerHTML = `<div class="services-summary">${pills}</div>`;
     } else {
-        spfSummary.innerHTML = '<p class="no-data">No se identificaron servicios de terceros en el SPF</p>';
+        spfSummary.innerHTML = `<p class="no-data">${t.no_third_party_spf}</p>`;
     }
 
     const treeBody = document.getElementById('spf-tree-body');
@@ -194,7 +391,7 @@ export function renderResults(domain, result) {
         if (result.spfTree && result.spfTree.record) {
             treeBody.innerHTML = renderSPFTree(result.spfTree);
         } else {
-            treeBody.innerHTML = '<p class="no-data">No se pudo generar el árbol de consultas SPF.</p>';
+            treeBody.innerHTML = `<p class="no-data">${t.no_spf_tree}</p>`;
         }
     }
 
@@ -202,7 +399,7 @@ export function renderResults(domain, result) {
     if (result.dmarcRaw) {
         dmarcRawEl.textContent = result.dmarcRaw;
     } else {
-        dmarcRawEl.textContent = 'No se encontró registro DMARC';
+        dmarcRawEl.textContent = t.no_dmarc_record;
     }
 
     const dmarcBody = document.getElementById('dmarc-body');
@@ -210,48 +407,48 @@ export function renderResults(domain, result) {
         const d = result.dmarcParsed;
         const pClass = d.p === 'reject' ? 'dmarc-policy--reject' : d.p === 'quarantine' ? 'dmarc-policy--quarantine' : 'dmarc-policy--none';
         const policyDesc = {
-            'reject': 'Rechazar correos no autenticados — máxima protección',
-            'quarantine': 'Cuarentena — los correos sospechosos se envían a spam',
-            'none': 'Solo monitorización — no se bloquea nada'
+            'reject': t.dmarc_policy_desc_reject,
+            'quarantine': t.dmarc_policy_desc_quarantine,
+            'none': t.dmarc_policy_desc_none
         };
         
         let items = `<div class="dmarc-item">
-            <div class="dmarc-item__label">Política (p)</div>
+            <div class="dmarc-item__label">${t.dmarc_policy_p}</div>
             <div class="dmarc-item__value ${pClass}">${d.p || 'none'}</div>
         </div>`;
         
         if (d.sp) {
             const spClass = d.sp === 'reject' ? 'dmarc-policy--reject' : d.sp === 'quarantine' ? 'dmarc-policy--quarantine' : 'dmarc-policy--none';
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">Subdominios (sp)</div>
+                <div class="dmarc-item__label">${t.dmarc_policy_sp}</div>
                 <div class="dmarc-item__value ${spClass}">${d.sp}</div>
             </div>`;
         }
         if (d.pct) {
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">Porcentaje (pct)</div>
+                <div class="dmarc-item__label">${t.dmarc_policy_pct}</div>
                 <div class="dmarc-item__value">${d.pct}%</div>
             </div>`;
         }
         if (d.adkim) {
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">DKIM Alignment</div>
+                <div class="dmarc-item__label">${t.dmarc_alignment_dkim}</div>
                 <div class="dmarc-item__value">${d.adkim === 's' ? 'Strict' : 'Relaxed'}</div>
             </div>`;
         }
         if (d.aspf) {
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">SPF Alignment</div>
+                <div class="dmarc-item__label">${t.dmarc_alignment_spf}</div>
                 <div class="dmarc-item__value">${d.aspf === 's' ? 'Strict' : 'Relaxed'}</div>
             </div>`;
         }
 
         dmarcBody.innerHTML = `<div class="dmarc-grid">${items}</div>
             <div class="info-block" style="margin-top:12px">
-                <div class="info-block__detail">${policyDesc[d.p] || 'Política desconocida'}</div>
+                <div class="info-block__detail">${policyDesc[d.p] || t.dmarc_policy_desc_unknown}</div>
             </div>`;
     } else {
-        dmarcBody.innerHTML = '<p class="no-data">No se encontró registro DMARC. El dominio no tiene protección DMARC configurada.</p>';
+        dmarcBody.innerHTML = `<p class="no-data">${t.no_dmarc_record}</p>`;
     }
 
     const repBody = document.getElementById('dmarc-reporting-body');
@@ -260,22 +457,22 @@ export function renderResults(domain, result) {
         for (const rua of result.dmarcRua) {
             const reporter = identifyDMARCReporter(rua);
             html += `<div class="reporting-item">
-                <div class="reporting-item__type">RUA (Agregados)</div>
+                <div class="reporting-item__type">RUA (${lang === 'es' ? 'Agregados' : 'Aggregate'})</div>
                 <div class="reporting-item__value">${rua}</div>
-                ${reporter ? `<div class="reporting-item__service">Herramienta: ${reporter}</div>` : ''}
+                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${reporter}</div>` : ''}
             </div>`;
         }
         for (const ruf of result.dmarcRuf) {
             const reporter = identifyDMARCReporter(ruf);
             html += `<div class="reporting-item">
-                <div class="reporting-item__type">RUF (Forenses)</div>
+                <div class="reporting-item__type">RUF (${lang === 'es' ? 'Forenses' : 'Forensic'})</div>
                 <div class="reporting-item__value">${ruf}</div>
-                ${reporter ? `<div class="reporting-item__service">Herramienta: ${reporter}</div>` : ''}
+                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${reporter}</div>` : ''}
             </div>`;
         }
         repBody.innerHTML = html;
     } else {
-        repBody.innerHTML = '<p class="no-data">No se encontraron direcciones de reporte (rua/ruf). El dominio no está recopilando informes DMARC.</p>';
+        repBody.innerHTML = `<p class="no-data">${t.no_dmarc_reporting}</p>`;
     }
 
     const lookupBadge = document.getElementById('spf-lookups-count');
@@ -304,17 +501,17 @@ export function renderResults(domain, result) {
                 <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${dkim.record}</div>
             </div>`).join('');
     } else {
-        dkimHtml += '<p class="no-data">No se detectaron registros DKIM usando los selectores consultados.</p>';
+        dkimHtml += `<p class="no-data">${t.no_dkim_records}</p>`;
     }
     if (result.dkimRecords && result.dkimRecords.errors && result.dkimRecords.errors.length > 0) {
-        dkimHtml += `<div style="margin-top: 12px; color: #ef4444; font-size: 13px;">Errores de red en selectores: ${result.dkimRecords.errors.map(e => e.selector).join(', ')}</div>`;
+        dkimHtml += `<div style="margin-top: 12px; color: #ef4444; font-size: 13px;">${t.dkim_network_error}: ${result.dkimRecords.errors.map(e => e.selector).join(', ')}</div>`;
     }
     dkimBody.innerHTML = dkimHtml;
 
     const bimiBody = document.getElementById('bimi-body');
     if (result.bimiRecord) {
         if (result.bimiRecord.error) {
-            bimiBody.innerHTML = `<p class="no-data" style="color:#ef4444">Error al consultar BIMI: ${result.bimiRecord.error}</p>`;
+            bimiBody.innerHTML = `<p class="no-data" style="color:#ef4444">${t.bimi_error}: ${result.bimiRecord.error}</p>`;
         } else {
             let logoHtml = '';
             if (result.bimiRecord.logo) {
@@ -322,12 +519,12 @@ export function renderResults(domain, result) {
             }
             bimiBody.innerHTML = `
                 <div class="info-block">
-                    <div class="info-block__label">Registro BIMI Encontrado</div>
+                    <div class="info-block__label">${t.bimi_record_found}</div>
                     <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${result.bimiRecord.record}</div>
                     ${logoHtml}
                 </div>`;
         }
     } else {
-        bimiBody.innerHTML = '<p class="no-data">No se encontró registro BIMI (default._bimi).</p>';
+        bimiBody.innerHTML = `<p class="no-data">${t.no_bimi_record}</p>`;
     }
 }

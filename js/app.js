@@ -1,8 +1,10 @@
 import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree } from './api.js';
 import { analyze } from './analyzer.js';
-import { renderResults, showSection, setStep, closeKbModal } from './ui.js';
+import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
+import { getLanguage, setLanguage } from './lang.js';
+import { translations } from './i18n.js';
 
 export const state = {
     currentDomain: '',
@@ -15,6 +17,9 @@ async function runAnalysis(domain, dkimSelector = null) {
     showSection('loading-section');
     
     ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-analysis'].forEach(s => setStep(s, null));
+    
+    const lang = getLanguage();
+    const t = translations[lang];
     
     try {
         setStep('step-mx', 'active');
@@ -57,7 +62,7 @@ async function runAnalysis(domain, dkimSelector = null) {
         showSection('results-section');
     } catch (err) {
         console.error(err);
-        document.getElementById('error-message').textContent = err.message || 'No se pudieron obtener los registros DNS.';
+        document.getElementById('error-message').textContent = err.message || t.error_default_message;
         showSection('error-section');
     } finally {
         btn.classList.remove('loading');
@@ -65,6 +70,9 @@ async function runAnalysis(domain, dkimSelector = null) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize i18n
+    translateDOM();
+
     // URL Params parsing
     const urlParams = new URLSearchParams(window.location.search);
     const domainParam = urlParams.get('domain');
@@ -72,6 +80,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('search-form');
     const input = document.getElementById('domain-input');
     const dkimInput = document.getElementById('dkim-input');
+
+    // Language Selector UI Logic
+    const langBtn = document.getElementById('lang-btn');
+    const langSelector = document.getElementById('lang-selector');
+    const langDropdown = document.getElementById('lang-dropdown');
+    
+    if (langBtn && langDropdown) {
+        langBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            langSelector.classList.toggle('open');
+            langDropdown.classList.toggle('hidden');
+            const isOpen = langSelector.classList.contains('open');
+            langBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+        
+        document.querySelectorAll('.lang-dropdown__item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newLang = item.getAttribute('data-lang');
+                setLanguage(newLang);
+                langSelector.classList.remove('open');
+                langDropdown.classList.add('hidden');
+                langBtn.setAttribute('aria-expanded', 'false');
+                
+                // Translate static page
+                translateDOM();
+                
+                // If results are currently showing, re-render them with new translations
+                if (state.currentResult && state.currentDomain) {
+                    renderResults(state.currentDomain, state.currentResult);
+                }
+            });
+        });
+        
+        document.addEventListener('click', () => {
+            if (langSelector) langSelector.classList.remove('open');
+            if (langDropdown) langDropdown.classList.add('hidden');
+            if (langBtn) langBtn.setAttribute('aria-expanded', 'false');
+        });
+    }
 
     // DKIM UI Logic
     const dkimToggleBtn = document.getElementById('dkim-toggle-btn');

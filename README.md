@@ -56,7 +56,15 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.3.0 — Refactorización Arquitectónica y Experiencia DKIM (Actual)
+### v1.4.0 — Soporte Multilingüe e Informes PDF Optimizados (Actual)
+* **Soporte Multilingüe (Español / Inglés):** Implementación de un motor de internacionalización (`js/lang.js` y `js/i18n.js`) que traduce toda la interfaz web, formularios, descripciones y mensajes informativos en caliente.
+* **Selector de Idiomas:** Menú interactivo en la cabecera con indicadores visuales de banderas y persistencia del idioma seleccionado vía `localStorage`.
+* **Reportes Localizados Dinámicos:** Generación de informes en Google Docs, archivos de Word (.doc) e impresión PDF completamente traducidos al idioma activo en el selector.
+* **Impresión PDF Premium con Renombrado Inteligente:**
+  * Reestructuración de la hoja de estilos `@media print` para aplicar un tema claro corporativo con tipografía optimizada, fondos blancos y etiquetas de colores pastel de alto contraste.
+  * Modificación del título del documento durante el ciclo de impresión para forzar al navegador a proponer un nombre de archivo descriptivo y localizado según el idioma (ej. `Auditoría de Seguridad de Correo: salesforce.com.pdf` o `Email Security Audit: salesforce.com.pdf`).
+
+### v1.3.0 — Refactorización Arquitectónica y Experiencia DKIM
 * **Arquitectura Modular ES6:** Migración completa del monolito `app.js` original hacia un sistema estructurado de módulos independientes en la carpeta `/js/` (`api.js`, `parsers.js`, `analyzer.js`, `ui.js`, `export.js` y `knowledge.js`).
 * **Resiliencia en Red DoH:** Implementación de un sistema de consultas híbridas con fallback tolerante a fallos de DNS-over-HTTPS (Google DoH ➡️ Cloudflare DoH).
 * **Usabilidad Mejorada en DKIM:** Rediseño del campo de selector DKIM opcional, transformándolo en un botón expandible con un color índigo sólido (`#5e6eeb`) para limpiar la interfaz de búsqueda principal.
