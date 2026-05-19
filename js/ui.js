@@ -187,7 +187,11 @@ export function translateDOM() {
                     el.appendChild(document.createTextNode(t[key]));
                 }
             } else {
-                el.textContent = t[key];
+                if (t[key].includes('<') && t[key].includes('>')) {
+                    el.innerHTML = t[key];
+                } else {
+                    el.textContent = t[key];
+                }
             }
         }
     });
