@@ -12,7 +12,6 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 * **Análisis DNS en tiempo real:** Consulta registros SPF y DMARC directamente desde el navegador.
 * **Identificación de Proveedores (SEGs/ICES):** Base de conocimiento local con más de 50 firmas de servicios de correo (Microsoft 365, Google Workspace, Proofpoint, Mimecast, etc.).
 * **Evaluación de Seguridad:** Diagnóstico visual del estado de las políticas de autenticación de correo.
-* **Interfaz:** Diseño moderno con tema oscuro y estética *glassmorphism*.
 
 ## 🏗️ Arquitectura del Sistema
 
