@@ -51,8 +51,51 @@ export async function getDMARC(domain) {
 
 export const COMMON_DKIM_SELECTORS = ['google', 'default', 's1', 's2', 'k1', 'k2', 'm1', 'mail', 'selector1'];
 
-export async function getDKIM(domain, customSelector = null) {
-    const selectors = customSelector ? [customSelector] : COMMON_DKIM_SELECTORS;
+export function discoverDKIMSelectors(spfRaw) {
+    if (!spfRaw) return [];
+    const selectors = [];
+    const lower = spfRaw.toLowerCase();
+    
+    if (lower.includes('_spf.google.com') || lower.includes('google.com')) {
+        selectors.push('google');
+    }
+    if (lower.includes('outlook.com') || lower.includes('spf.protection.outlook.com')) {
+        selectors.push('selector1', 'selector2');
+    }
+    if (lower.includes('mandrillapp.com')) {
+        selectors.push('mandrill');
+    }
+    if (lower.includes('mcsv.net')) {
+        selectors.push('k1', 'k2', 'k3');
+    }
+    if (lower.includes('sendgrid.net')) {
+        selectors.push('smtp', 's1', 's2', 'k1');
+    }
+    if (lower.includes('mailgun.org')) {
+        selectors.push('mg', 'k1', 'pic');
+    }
+    if (lower.includes('mktomail.com')) {
+        selectors.push('m1');
+    }
+    if (lower.includes('hubspotemail.net') || lower.includes('hubspot.com')) {
+        selectors.push('hs1', 'hs2');
+    }
+    if (lower.includes('salesforce.com')) {
+        selectors.push('salesforce');
+    }
+    if (lower.includes('zoho.com') || lower.includes('zoho.eu')) {
+        selectors.push('zmail');
+    }
+    
+    return [...new Set(selectors)];
+}
+
+export async function getDKIM(domain, customSelector = null, spfRaw = null) {
+    let selectors = customSelector ? [customSelector] : COMMON_DKIM_SELECTORS;
+    if (!customSelector && spfRaw) {
+        const discovered = discoverDKIMSelectors(spfRaw);
+        selectors = [...new Set([...discovered, ...COMMON_DKIM_SELECTORS])];
+    }
     const results = [];
     const errors = [];
     const promises = selectors.map(async (selector) => {
@@ -140,4 +183,31 @@ export async function getSPFLookupTree(domain, cache = new Set(), depth = 0) {
     }
 
     return node;
+}
+
+export async function getIPAddress(host) {
+    try {
+        const data = await queryDNS(host, 'A');
+        if (data && data.Answer) {
+            const aRecord = data.Answer.find(a => a.type === 1);
+            if (aRecord) return aRecord.data;
+        }
+    } catch (e) {
+        console.warn(`Failed to resolve IP for ${host}`, e);
+    }
+    return null;
+}
+
+export async function checkRBL(ip, rblHost) {
+    try {
+        const reversedIp = ip.split('.').reverse().join('.');
+        const queryName = `${reversedIp}.${rblHost}`;
+        const data = await queryDNS(queryName, 'A');
+        if (data && data.Answer && data.Answer.length > 0) {
+            return { listed: true, rbl: rblHost, details: data.Answer[0].data };
+        }
+    } catch (e) {
+        // NXDOMAIN or DNS failure is normal, indicating clean status
+    }
+    return { listed: false, rbl: rblHost };
 }

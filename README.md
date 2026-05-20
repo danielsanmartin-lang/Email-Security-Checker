@@ -56,7 +56,12 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.5.0 — Tarjeta de Puntuación de Seguridad Interactiva (Actual)
+### v1.6.0 — Tooltips Didácticos, Auto-descubrimiento DKIM y Reputación RBL (Actual)
+* **Explicador Didáctico de Etiquetas DNS:** Tooltips contextuales interactivos y multilingües (Español/Inglés) al pasar el cursor sobre los calificadores y mecanismos de SPF y etiquetas principales de DMARC, educando al usuario en los estándares.
+* **Auto-descubrimiento Inteligente de Selectores DKIM:** Búsqueda automática de hasta 10 selectores DKIM más comunes en paralelo, complementada con un extractor inteligente que analiza el SPF en busca de subdominios y patrones conocidos para auto-descubrir los selectores activos sin requerir entrada del usuario.
+* **Auditoría de Reputación de Dominio (Listas Negras/RBLs):** Resolución en tiempo real de IPs de servidores MX y verificación paralela contra listas de reputación globales (SORBS, Spamcop, DroneBL) con badges visuales de estado y resumen de reputación general.
+
+### v1.5.0 — Tarjeta de Puntuación de Seguridad Interactiva
 * **Puntuación de Seguridad (Security Score Card):** Integración de un panel dinámico que calcula una nota (A+ hasta F) sobre 100 puntos basada en la configuración DNS de la seguridad del correo (SPF, límites de lookup, DMARC y sus políticas, configuración de rua/ruf, DKIM y BIMI).
 * **Indicador Radial Animado:** Implementación visual de la puntuación a través de un anillo SVG interactivo animado.
 * **Auditoría Dinámica Multilingüe:** Generación de una lista de hallazgos instantáneos (positivos y alertas) que se traduce en tiempo real al cambiar entre Inglés y Español.

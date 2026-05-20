@@ -176,7 +176,41 @@ export const translations = {
         unidentified_provider: "No identificado",
         unidentified_provider_detail: "No se encontraron indicadores claros en MX ni SPF",
         evidence_mx: "MX apunta a",
-        evidence_spf: "SPF include:"
+        evidence_spf: "SPF include:",
+
+        // ===== Reputation / RBL panel =====
+        panel_reputation_title: "Reputación y Listas Negras (RBL)",
+        rbl_no_data: "No se encontraron servidores MX para comprobar.",
+        rbl_listed: "Listado",
+        rbl_clean: "Limpio",
+        rbl_badge_listed: "⚠ Listado",
+        rbl_badge_clean: "✓ Limpio",
+        rbl_unresolved: "No resuelto",
+
+        // ===== SPF qualifier tooltips =====
+        "spf_qualifier_+": "Calificador PASS: El remitente está autorizado a enviar correo. Si pasa esta verificación, el correo supera SPF.",
+        "spf_qualifier_-": "Calificador FAIL: El remitente NO está autorizado. Los correos que coincidan deben ser rechazados.",
+        "spf_qualifier_~": "Calificador SOFTFAIL: El remitente probablemente no está autorizado. El correo puede entregarse pero marcado como sospechoso.",
+        "spf_qualifier_?": "Calificador NEUTRAL: No se hace ninguna afirmación sobre si el remitente está autorizado o no.",
+
+        // ===== SPF mechanism type tooltips =====
+        spf_type_v: "Versión del registro SPF. Siempre debe ser 'spf1'.",
+        spf_type_include: "Incluye la política SPF de otro dominio. Consume 1 de los 10 lookups DNS permitidos.",
+        spf_type_ip4: "Autoriza una dirección IPv4 o un rango CIDR específico a enviar correo.",
+        spf_type_ip6: "Autoriza una dirección IPv6 o un rango CIDR específico a enviar correo.",
+        spf_type_a: "Autoriza la IP a la que resuelve el registro A del dominio. Consume 1 lookup DNS.",
+        spf_type_mx: "Autoriza las IPs de los servidores MX del dominio. Consume 1 lookup DNS.",
+        spf_type_ptr: "Comprueba el nombre de host inverso de la IP. Lento y desaconsejado por el RFC 7208.",
+        spf_type_exists: "Realiza una consulta DNS personalizada. Se usa en casos avanzados. Consume 1 lookup.",
+        spf_type_redirect: "Delega toda la política SPF a otro dominio. Solo puede haber uno en el registro.",
+        spf_type_all: "Regla de fin de registro. Define qué ocurre con los remitentes no cubiertos por otras reglas.",
+
+        // ===== DMARC tag tooltips =====
+        dmarc_tooltip_p: "Política principal (p=): Define qué debe hacer el servidor de destino con los correos que no superen la validación DMARC. 'none' = solo monitorizar; 'quarantine' = mover a spam; 'reject' = rechazar el correo.",
+        dmarc_tooltip_sp: "Política para subdominios (sp=): Si se define, aplica una política diferente a los correos enviados desde subdominios del dominio principal.",
+        dmarc_tooltip_pct: "Porcentaje (pct=): Solo aplica la política a este porcentaje del tráfico de correo. Útil para despliegues graduales. El valor recomendado en producción es 100.",
+        dmarc_tooltip_adkim: "Alineación DKIM (adkim=): 'r' (Relaxed) permite que el dominio DKIM sea un subdominio del dominio 'From'. 's' (Strict) exige que coincidan exactamente.",
+        dmarc_tooltip_aspf: "Alineación SPF (aspf=): 'r' (Relaxed) permite que el dominio SMTP sea un subdominio del dominio 'From'. 's' (Strict) exige coincidencia exacta."
     },
     en: {
         // App Header & Meta
@@ -354,6 +388,40 @@ export const translations = {
         unidentified_provider: "Unidentified",
         unidentified_provider_detail: "No clear indicators found in MX or SPF",
         evidence_mx: "MX points to",
-        evidence_spf: "SPF include:"
+        evidence_spf: "SPF include:",
+
+        // ===== Reputation / RBL panel =====
+        panel_reputation_title: "Domain Reputation & Blacklists (RBL)",
+        rbl_no_data: "No MX servers found to check.",
+        rbl_listed: "Listed",
+        rbl_clean: "Clean",
+        rbl_badge_listed: "⚠ Listed",
+        rbl_badge_clean: "✓ Clean",
+        rbl_unresolved: "Unresolved",
+
+        // ===== SPF qualifier tooltips =====
+        "spf_qualifier_+": "Qualifier PASS: The sender is authorized to send mail. If this check passes, the email passes SPF.",
+        "spf_qualifier_-": "Qualifier FAIL: The sender is NOT authorized. Emails matching this should be rejected.",
+        "spf_qualifier_~": "Qualifier SOFTFAIL: The sender is probably not authorized. The email may be delivered but flagged as suspicious.",
+        "spf_qualifier_?": "Qualifier NEUTRAL: No assertion is made about whether the sender is authorized or not.",
+
+        // ===== SPF mechanism type tooltips =====
+        spf_type_v: "SPF record version. Must always be 'spf1'.",
+        spf_type_include: "Includes the SPF policy from another domain. Consumes 1 of the 10 allowed DNS lookups.",
+        spf_type_ip4: "Authorizes a specific IPv4 address or CIDR range to send email.",
+        spf_type_ip6: "Authorizes a specific IPv6 address or CIDR range to send email.",
+        spf_type_a: "Authorizes the IP the domain's A record resolves to. Consumes 1 DNS lookup.",
+        spf_type_mx: "Authorizes the IPs of the domain's MX servers. Consumes 1 DNS lookup.",
+        spf_type_ptr: "Checks the reverse hostname of the IP. Slow and discouraged by RFC 7208.",
+        spf_type_exists: "Performs a custom DNS query. Used in advanced cases. Consumes 1 lookup.",
+        spf_type_redirect: "Delegates the entire SPF policy to another domain. Only one is allowed per record.",
+        spf_type_all: "End-of-record rule. Defines what happens to senders not covered by other rules.",
+
+        // ===== DMARC tag tooltips =====
+        dmarc_tooltip_p: "Main policy (p=): Defines what the receiving server should do with emails that fail DMARC validation. 'none' = monitor only; 'quarantine' = move to spam; 'reject' = reject the email.",
+        dmarc_tooltip_sp: "Subdomain policy (sp=): If defined, applies a different policy to emails sent from subdomains of the main domain.",
+        dmarc_tooltip_pct: "Percentage (pct=): Only applies the policy to this percentage of email traffic. Useful for gradual rollouts. Recommended production value is 100.",
+        dmarc_tooltip_adkim: "DKIM alignment (adkim=): 'r' (Relaxed) allows the DKIM domain to be a subdomain of the From domain. 's' (Strict) requires an exact match.",
+        dmarc_tooltip_aspf: "SPF alignment (aspf=): 'r' (Relaxed) allows the SMTP domain to be a subdomain of the From domain. 's' (Strict) requires an exact match."
     }
 };

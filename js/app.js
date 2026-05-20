@@ -1,4 +1,4 @@
-import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree } from './api.js';
+import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL } from './api.js';
 import { analyze } from './analyzer.js';
 import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
@@ -37,7 +37,7 @@ async function runAnalysis(domain, dkimSelector = null) {
         setStep('step-dmarc', 'done');
 
         setStep('step-dkim', 'active');
-        const dkimRecords = await getDKIM(domain, dkimSelector);
+        const dkimRecords = await getDKIM(domain, dkimSelector, spfRaw);
         setStep('step-dkim', 'done');
 
         setStep('step-bimi', 'active');
@@ -46,12 +46,25 @@ async function runAnalysis(domain, dkimSelector = null) {
 
         setStep('step-analysis', 'active');
         await new Promise(r => setTimeout(r, 400));
+
+        // Resolve MX IPs and check RBL lists in parallel
+        const RBL_LISTS = ['bl.spamcop.net', 'dnsbl.sorbs.net', 'dnsbl.dronebl.org'];
+        const rblResults = await Promise.all(
+            mxRecords.slice(0, 3).map(async (mx) => {
+                const ip = await getIPAddress(mx.host);
+                const checks = ip
+                    ? await Promise.all(RBL_LISTS.map(rbl => checkRBL(ip, rbl)))
+                    : RBL_LISTS.map(rbl => ({ listed: false, rbl }));
+                return { host: mx.host, ip, checks };
+            })
+        );
         
         const result = analyze(mxRecords, spfRaw, dmarcRaw);
         result.spfLookups = spfLookups;
         result.spfTree = spfTree;
         result.dkimRecords = dkimRecords;
         result.bimiRecord = bimiRecord;
+        result.rblResults = rblResults;
         
         state.currentDomain = domain;
         state.currentResult = result;

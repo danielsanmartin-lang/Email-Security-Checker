@@ -101,6 +101,47 @@ export function closeKbModal() {
 
 window.openKbModal = openKbModal;
 
+// ===== Global Tooltip System =====
+let _tooltipEl = null;
+
+function getTooltipEl() {
+    if (!_tooltipEl) {
+        _tooltipEl = document.createElement('div');
+        _tooltipEl.className = 'tooltip-helper hidden';
+        document.body.appendChild(_tooltipEl);
+
+        document.addEventListener('mouseover', (e) => {
+            const trigger = e.target.closest('[data-tooltip]');
+            if (!trigger) { _tooltipEl.classList.add('hidden'); return; }
+            const text = trigger.getAttribute('data-tooltip');
+            if (!text) return;
+            _tooltipEl.textContent = text;
+            _tooltipEl.classList.remove('hidden');
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (_tooltipEl.classList.contains('hidden')) return;
+            const margin = 12;
+            let x = e.clientX + margin;
+            let y = e.clientY + margin;
+            const rect = _tooltipEl.getBoundingClientRect();
+            if (x + rect.width > window.innerWidth - margin) x = e.clientX - rect.width - margin;
+            if (y + rect.height > window.innerHeight - margin) y = e.clientY - rect.height - margin;
+            _tooltipEl.style.left = `${x + window.scrollX}px`;
+            _tooltipEl.style.top  = `${y + window.scrollY}px`;
+        });
+
+        document.addEventListener('mouseout', (e) => {
+            if (!e.relatedTarget || !e.relatedTarget.closest('[data-tooltip]')) {
+                _tooltipEl.classList.add('hidden');
+            }
+        });
+    }
+    return _tooltipEl;
+}
+// Ensure tooltip element exists on load
+document.addEventListener('DOMContentLoaded', () => getTooltipEl());
+
 export function showSection(id) {
     ['loading-section', 'error-section', 'results-section'].forEach(s => {
         document.getElementById(s).classList.add('hidden');
@@ -532,6 +573,11 @@ export function renderResults(domain, result) {
 
         let resultClass = resultText === 'Pass' ? 'spf-result--pass' : resultText === 'Fail' ? 'spf-result--fail' : 'spf-result--softfail';
 
+        // Tooltip for qualifier
+        const qualifierTooltip = t[`spf_qualifier_${entry.qualifier || '+'}`] || '';
+        // Tooltip for mechanism type
+        const typeTooltip = t[`spf_type_${entry.type}`] || '';
+
         let svcHTML = '<span class="no-data">—</span>';
         if (svc) {
             const catClass = `cat--${svc.category}`;
@@ -547,8 +593,8 @@ export function renderResults(domain, result) {
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><span class="spf-prefix ${prefixClass}">${prefixDisplay || ''}</span></td>
-            <td><span class="spf-type">${entry.type}</span></td>
+            <td><span class="spf-prefix ${prefixClass}${qualifierTooltip ? ' tooltip-trigger' : ''}"${qualifierTooltip ? ` data-tooltip="${qualifierTooltip}"` : ''}>${prefixDisplay || ''}</span></td>
+            <td><span class="spf-type${typeTooltip ? ' tooltip-trigger' : ''}"${typeTooltip ? ` data-tooltip="${typeTooltip}"` : ''}>${entry.type}</span></td>
             <td><span class="spf-value">${entry.value || '—'}</span></td>
             <td><span class="spf-result ${resultClass}">${resultText}</span></td>
             <td>${svcHTML}</td>`;
@@ -597,32 +643,32 @@ export function renderResults(domain, result) {
         };
         
         let items = `<div class="dmarc-item">
-            <div class="dmarc-item__label">${t.dmarc_policy_p}</div>
+            <div class="dmarc-item__label tooltip-trigger" data-tooltip="${t.dmarc_tooltip_p || ''}">${t.dmarc_policy_p}</div>
             <div class="dmarc-item__value ${pClass}">${d.p || 'none'}</div>
         </div>`;
         
         if (d.sp) {
             const spClass = d.sp === 'reject' ? 'dmarc-policy--reject' : d.sp === 'quarantine' ? 'dmarc-policy--quarantine' : 'dmarc-policy--none';
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">${t.dmarc_policy_sp}</div>
+                <div class="dmarc-item__label tooltip-trigger" data-tooltip="${t.dmarc_tooltip_sp || ''}">${t.dmarc_policy_sp}</div>
                 <div class="dmarc-item__value ${spClass}">${d.sp}</div>
             </div>`;
         }
         if (d.pct) {
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">${t.dmarc_policy_pct}</div>
+                <div class="dmarc-item__label tooltip-trigger" data-tooltip="${t.dmarc_tooltip_pct || ''}">${t.dmarc_policy_pct}</div>
                 <div class="dmarc-item__value">${d.pct}%</div>
             </div>`;
         }
         if (d.adkim) {
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">${t.dmarc_alignment_dkim}</div>
+                <div class="dmarc-item__label tooltip-trigger" data-tooltip="${t.dmarc_tooltip_adkim || ''}">${t.dmarc_alignment_dkim}</div>
                 <div class="dmarc-item__value">${d.adkim === 's' ? 'Strict' : 'Relaxed'}</div>
             </div>`;
         }
         if (d.aspf) {
             items += `<div class="dmarc-item">
-                <div class="dmarc-item__label">${t.dmarc_alignment_spf}</div>
+                <div class="dmarc-item__label tooltip-trigger" data-tooltip="${t.dmarc_tooltip_aspf || ''}">${t.dmarc_alignment_spf}</div>
                 <div class="dmarc-item__value">${d.aspf === 's' ? 'Strict' : 'Relaxed'}</div>
             </div>`;
         }
@@ -710,5 +756,56 @@ export function renderResults(domain, result) {
         }
     } else {
         bimiBody.innerHTML = `<p class="no-data">${t.no_bimi_record}</p>`;
+    }
+
+    // Render RBL reputation panel
+    renderReputation(result.rblResults, lang, t);
+}
+
+export function renderReputation(rblResults, lang, t) {
+    const body = document.getElementById('reputation-body');
+    const badge = document.getElementById('reputation-status');
+    if (!body || !badge) return;
+
+    if (!rblResults || rblResults.length === 0) {
+        body.innerHTML = `<p class="no-data">${t.rbl_no_data || 'No MX servers found to check.'}</p>`;
+        badge.textContent = '—';
+        return;
+    }
+
+    let anyListed = false;
+    let html = '';
+
+    for (const entry of rblResults) {
+        let checksHTML = '';
+        for (const check of entry.checks) {
+            if (check.listed) anyListed = true;
+            const cls = check.listed ? 'rbl-check__badge--listed' : 'rbl-check__badge--clean';
+            const label = check.listed ? (t.rbl_listed || 'Listed') : (t.rbl_clean || 'Clean');
+            checksHTML += `<div class="rbl-check">
+                <span class="rbl-check__name">${check.rbl}</span>
+                <span class="rbl-check__badge ${cls}">${label}</span>
+            </div>`;
+        }
+        const ip = entry.ip ? entry.ip : (t.rbl_unresolved || 'Unresolved');
+        html += `<div class="rbl-item">
+            <div class="rbl-item__info">
+                <div class="rbl-item__host">${entry.host}</div>
+                <div class="rbl-item__ip">${ip}</div>
+            </div>
+            <div class="rbl-item__checks">${checksHTML}</div>
+        </div>`;
+    }
+
+    body.innerHTML = html;
+
+    if (anyListed) {
+        badge.textContent = t.rbl_badge_listed || '⚠ Listed';
+        badge.style.background = 'rgba(239,68,68,0.15)';
+        badge.style.color = 'var(--accent-rose)';
+    } else {
+        badge.textContent = t.rbl_badge_clean || '✓ Clean';
+        badge.style.background = 'rgba(16,185,129,0.15)';
+        badge.style.color = 'var(--accent-emerald)';
     }
 }
