@@ -124,3 +124,134 @@ export function analyze(mxRecords, spfRaw, dmarcRaw) {
         mxRecords
     };
 }
+
+export function calculateScoreAndFindings(result) {
+    let score = 0;
+    const findings = [];
+
+    // 1. SPF Check
+    if (result.spfRaw) {
+        score += 20;
+        findings.push({
+            status: 'success',
+            key: 'finding_spf_ok'
+        });
+        
+        const spfLookups = result.spfLookups || 0;
+        if (spfLookups <= 10) {
+            score += 10;
+            findings.push({
+                status: 'success',
+                key: 'finding_spf_lookups_ok',
+                replacements: { '{lookups}': spfLookups }
+            });
+        } else {
+            findings.push({
+                status: 'error',
+                key: 'finding_spf_lookups_err',
+                replacements: { '{lookups}': spfLookups }
+            });
+        }
+    } else {
+        findings.push({
+            status: 'error',
+            key: 'finding_spf_err'
+        });
+    }
+
+    // 2. DMARC Check
+    if (result.dmarcRaw) {
+        score += 20;
+        const policy = result.dmarcPolicy || 'none';
+        findings.push({
+            status: 'success',
+            key: 'finding_dmarc_ok',
+            replacements: { '{policy}': policy.toUpperCase() }
+        });
+
+        if (policy === 'reject') {
+            score += 30;
+            findings.push({
+                status: 'success',
+                key: 'finding_dmarc_policy_reject'
+            });
+        } else if (policy === 'quarantine') {
+            score += 20;
+            findings.push({
+                status: 'warning',
+                key: 'finding_dmarc_policy_quarantine'
+            });
+        } else if (policy === 'none') {
+            score += 5;
+            findings.push({
+                status: 'warning',
+                key: 'finding_dmarc_policy_none'
+            });
+        }
+
+        // DMARC Reporting (rua/ruf)
+        const hasRua = result.dmarcRua && result.dmarcRua.length > 0;
+        const hasRuf = result.dmarcRuf && result.dmarcRuf.length > 0;
+        if (hasRua || hasRuf) {
+            score += 5;
+            findings.push({
+                status: 'success',
+                key: 'finding_dmarc_reporting_ok'
+            });
+        } else {
+            findings.push({
+                status: 'warning',
+                key: 'finding_dmarc_reporting_err'
+            });
+        }
+    } else {
+        findings.push({
+            status: 'error',
+            key: 'finding_dmarc_err'
+        });
+    }
+
+    // 3. DKIM Check
+    const dkimCount = (result.dkimRecords && result.dkimRecords.records) ? result.dkimRecords.records.length : 0;
+    if (dkimCount > 0) {
+        score += 10;
+        findings.push({
+            status: 'success',
+            key: 'finding_dkim_ok',
+            replacements: { '{count}': dkimCount }
+        });
+    } else {
+        findings.push({
+            status: 'warning',
+            key: 'finding_dkim_err'
+        });
+    }
+
+    // 4. BIMI Check
+    const hasBimi = result.bimiRecord && !result.bimiRecord.error && result.bimiRecord.record;
+    if (hasBimi) {
+        score += 5;
+        findings.push({
+            status: 'success',
+            key: 'finding_bimi_ok'
+        });
+    } else {
+        findings.push({
+            status: 'info',
+            key: 'finding_bimi_err'
+        });
+    }
+
+    // Determine Grade
+    let grade = 'F';
+    let cardClass = 'danger';
+    if (score >= 95) { grade = 'A+'; cardClass = 'safe'; }
+    else if (score >= 90) { grade = 'A'; cardClass = 'safe'; }
+    else if (score >= 80) { grade = 'B'; cardClass = 'safe'; }
+    else if (score >= 70) { grade = 'C'; cardClass = 'warning'; }
+    else if (score >= 50) { grade = 'D'; cardClass = 'warning'; }
+    else { grade = 'F'; cardClass = 'danger'; }
+
+    return { score, grade, cardClass, findings };
+}
+

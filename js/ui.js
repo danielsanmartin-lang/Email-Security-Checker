@@ -280,128 +280,8 @@ export function renderResults(domain, result) {
     const lang = getLanguage();
     const t = translations[lang];
 
-    // Calculate Security Score
-    let score = 0;
-    const findings = [];
-
-    // 1. SPF Check
-    if (result.spfRaw) {
-        score += 20;
-        findings.push({
-            status: 'success',
-            text: t.finding_spf_ok
-        });
-        
-        const spfLookups = result.spfLookups || 0;
-        if (spfLookups <= 10) {
-            score += 10;
-            findings.push({
-                status: 'success',
-                text: t.finding_spf_lookups_ok.replace('{lookups}', spfLookups)
-            });
-        } else {
-            findings.push({
-                status: 'error',
-                text: t.finding_spf_lookups_err.replace('{lookups}', spfLookups)
-            });
-        }
-    } else {
-        findings.push({
-            status: 'error',
-            text: t.finding_spf_err
-        });
-    }
-
-    // 2. DMARC Check
-    if (result.dmarcRaw) {
-        score += 20;
-        const policy = result.dmarcPolicy || 'none';
-        findings.push({
-            status: 'success',
-            text: t.finding_dmarc_ok.replace('{policy}', policy.toUpperCase())
-        });
-
-        if (policy === 'reject') {
-            score += 30;
-            findings.push({
-                status: 'success',
-                text: t.finding_dmarc_policy_reject
-            });
-        } else if (policy === 'quarantine') {
-            score += 20;
-            findings.push({
-                status: 'warning',
-                text: t.finding_dmarc_policy_quarantine
-            });
-        } else if (policy === 'none') {
-            score += 5;
-            findings.push({
-                status: 'warning',
-                text: t.finding_dmarc_policy_none
-            });
-        }
-
-        // DMARC Reporting (rua/ruf)
-        const hasRua = result.dmarcRua && result.dmarcRua.length > 0;
-        const hasRuf = result.dmarcRuf && result.dmarcRuf.length > 0;
-        if (hasRua || hasRuf) {
-            score += 5;
-            findings.push({
-                status: 'success',
-                text: t.finding_dmarc_reporting_ok
-            });
-        } else {
-            findings.push({
-                status: 'warning',
-                text: t.finding_dmarc_reporting_err
-            });
-        }
-    } else {
-        findings.push({
-            status: 'error',
-            text: t.finding_dmarc_err
-        });
-    }
-
-    // 3. DKIM Check
-    const dkimCount = (result.dkimRecords && result.dkimRecords.records) ? result.dkimRecords.records.length : 0;
-    if (dkimCount > 0) {
-        score += 10;
-        findings.push({
-            status: 'success',
-            text: t.finding_dkim_ok.replace('{count}', dkimCount)
-        });
-    } else {
-        findings.push({
-            status: 'warning',
-            text: t.finding_dkim_err
-        });
-    }
-
-    // 4. BIMI Check
-    const hasBimi = result.bimiRecord && !result.bimiRecord.error && result.bimiRecord.record;
-    if (hasBimi) {
-        score += 5;
-        findings.push({
-            status: 'success',
-            text: t.finding_bimi_ok
-        });
-    } else {
-        findings.push({
-            status: 'info',
-            text: t.finding_bimi_err
-        });
-    }
-
-    // Determine Grade
-    let grade = 'F';
-    let cardClass = 'danger';
-    if (score >= 95) { grade = 'A+'; cardClass = 'safe'; }
-    else if (score >= 90) { grade = 'A'; cardClass = 'safe'; }
-    else if (score >= 80) { grade = 'B'; cardClass = 'safe'; }
-    else if (score >= 70) { grade = 'C'; cardClass = 'warning'; }
-    else if (score >= 50) { grade = 'D'; cardClass = 'warning'; }
-    else { grade = 'F'; cardClass = 'danger'; }
+    // Retrieve Security Score from result.scoreCard
+    const { score, grade, cardClass, findings } = result.scoreCard || { score: 0, grade: 'F', cardClass: 'danger', findings: [] };
 
     // Render Score UI
     const scoreCard = document.getElementById('score-card');
@@ -452,9 +332,17 @@ export function renderResults(domain, result) {
                         <line x1="12" y1="8" x2="12.01" y2="8" />
                     </svg>`;
                 }
+                
+                let text = t[f.key] || '';
+                if (f.replacements) {
+                    for (const [placeholder, val] of Object.entries(f.replacements)) {
+                        text = text.replace(placeholder, val);
+                    }
+                }
+
                 return `<div class="finding-item">
                     <div class="finding-item__icon">${svgIcon}</div>
-                    <span class="finding-item__text">${f.text}</span>
+                    <span class="finding-item__text">${text}</span>
                 </div>`;
             }).join('');
         }

@@ -1,5 +1,5 @@
 import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL } from './api.js';
-import { analyze } from './analyzer.js';
+import { analyze, calculateScoreAndFindings } from './analyzer.js';
 import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
@@ -65,6 +65,7 @@ async function runAnalysis(domain, dkimSelector = null) {
         result.dkimRecords = dkimRecords;
         result.bimiRecord = bimiRecord;
         result.rblResults = rblResults;
+        result.scoreCard = calculateScoreAndFindings(result);
         
         state.currentDomain = domain;
         state.currentResult = result;
