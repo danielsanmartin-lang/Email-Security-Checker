@@ -56,7 +56,13 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.4.0 — Soporte Multilingüe e Informes PDF Optimizados (Actual)
+### v1.5.0 — Tarjeta de Puntuación de Seguridad Interactiva (Actual)
+* **Puntuación de Seguridad (Security Score Card):** Integración de un panel dinámico que calcula una nota (A+ hasta F) sobre 100 puntos basada en la configuración DNS de la seguridad del correo (SPF, límites de lookup, DMARC y sus políticas, configuración de rua/ruf, DKIM y BIMI).
+* **Indicador Radial Animado:** Implementación visual de la puntuación a través de un anillo SVG interactivo animado.
+* **Auditoría Dinámica Multilingüe:** Generación de una lista de hallazgos instantáneos (positivos y alertas) que se traduce en tiempo real al cambiar entre Inglés y Español.
+* **Diseño e Impresión Optimizados:** Adaptación fluida del Score Card al modo oscuro y exportación a PDF.
+
+### v1.4.0 — Soporte Multilingüe e Informes PDF Optimizados
 * **Soporte Multilingüe (Español / Inglés):** Implementación multi-idioma (`js/lang.js` y `js/i18n.js`) traduciendo toda la interfaz web, formularios, descripciones y mensajes informativos.
 * **Selector de Idiomas:** Menú interactivo en la cabecera con indicadores visuales de banderas y persistencia del idioma seleccionado vía `localStorage`.
 * **Reportes Localizados Dinámicos:** Generación de informes en Google Docs, archivos de Word (.doc) e impresión PDF completamente traducidos al idioma activo en el selector.

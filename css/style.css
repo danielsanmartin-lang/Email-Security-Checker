@@ -408,6 +408,118 @@ body {
 
 .no-data { color: var(--text-muted); font-style: italic; font-size: 0.85rem; padding: 8px 0; }
 
+/* ===== Security Score Card ===== */
+.score-card {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 24px 32px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+    margin-bottom: 24px;
+    transition: border-color 0.3s, transform 0.2s;
+}
+.score-card:hover {
+    border-color: var(--border-hover);
+}
+.score-card__radial {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.score-ring {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+.score-ring__bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.05);
+    stroke-width: 8;
+}
+.score-ring__fill {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s ease-in-out, stroke 0.5s ease;
+}
+.score-card__info {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.1;
+}
+.score-card__number {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+.score-card__grade {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 2px;
+}
+.score-card__details {
+    flex: 1;
+}
+.score-card__title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.score-card__desc {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+}
+.score-card__findings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+}
+.finding-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+}
+.finding-item__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+}
+.finding-item__text {
+    flex: 1;
+}
+
+/* Color states for findings and radial score */
+.score-card.safe .score-ring__fill { stroke: var(--accent-emerald); filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4)); }
+.score-card.safe .score-card__grade { color: var(--accent-emerald); }
+
+.score-card.warning .score-ring__fill { stroke: var(--accent-amber); filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.4)); }
+.score-card.warning .score-card__grade { color: var(--accent-amber); }
+
+.score-card.danger .score-ring__fill { stroke: var(--accent-rose); filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.4)); }
+.score-card.danger .score-card__grade { color: var(--accent-rose); }
+
 /* ===== Footer ===== */
 .footer {
     text-align: center; padding: 32px 0 0; margin-top: 48px;
@@ -464,6 +576,8 @@ body {
     .summary-grid { grid-template-columns: 1fr 1fr; }
     .spf-table { font-size: 0.72rem; }
     .spf-table thead th, .spf-table tbody td { padding: 8px 6px; }
+    .score-card { flex-direction: column; text-align: center; gap: 20px; padding: 24px 20px; }
+    .score-card__findings { grid-template-columns: 1fr; text-align: left; }
 }
 
 @media (max-width: 480px) {
@@ -666,6 +780,22 @@ body {
         box-shadow: none !important;
         margin-bottom: 20px !important;
     }
+
+    .score-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        border: 1px solid #e5e7eb !important;
+        background: #ffffff !important;
+        box-shadow: none !important;
+        color: #111827 !important;
+        margin-bottom: 20px !important;
+    }
+    .score-card.safe .score-ring__fill { stroke: #059669 !important; }
+    .score-card.safe .score-card__grade { color: #059669 !important; }
+    .score-card.warning .score-ring__fill { stroke: #d97706 !important; }
+    .score-card.warning .score-card__grade { color: #d97706 !important; }
+    .score-card.danger .score-ring__fill { stroke: #dc2626 !important; }
+    .score-card.danger .score-card__grade { color: #dc2626 !important; }
 
     .summary-card {
         break-inside: avoid;

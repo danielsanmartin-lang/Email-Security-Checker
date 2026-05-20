@@ -349,6 +349,27 @@
                 </div>
             </div>
 
+            <!-- Security Score Card -->
+            <div class="score-card" id="score-card">
+                <div class="score-card__radial">
+                    <svg viewBox="0 0 120 120" class="score-ring">
+                        <circle cx="60" cy="60" r="50" class="score-ring__bg" />
+                        <circle cx="60" cy="60" r="50" class="score-ring__fill" id="score-ring-fill" stroke-dasharray="314" stroke-dashoffset="314" />
+                    </svg>
+                    <div class="score-card__info">
+                        <span class="score-card__number" id="score-number">0</span>
+                        <span class="score-card__grade" id="score-grade">F</span>
+                    </div>
+                </div>
+                <div class="score-card__details">
+                    <h3 class="score-card__title" data-i18n="score_title_panel">Puntuación de Seguridad</h3>
+                    <p class="score-card__desc" data-i18n="score_desc_panel">Análisis automatizado de las políticas y configuración de seguridad.</p>
+                    <div class="score-card__findings" id="score-findings">
+                        <!-- Will be populated by JS -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Summary Cards -->
             <div class="summary-grid" id="summary-grid">
                 <div class="summary-card" id="summary-provider">
