@@ -56,8 +56,10 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.6.0 — Tooltips Didácticos, Auto-descubrimiento DKIM y Reputación RBL (Actual)
-* **Explicador Didáctico de Etiquetas DNS:** Tooltips contextuales interactivos y multilingües (Español/Inglés) al pasar el cursor sobre los calificadores y mecanismos de SPF y etiquetas principales de DMARC, educando al usuario en los estándares.
+### v1.6.1 — Mejoras en Exportación a Google Docs (Actual)
+* **Auto-titulado Inteligente:** Se ha optimizado la exportación a Google Docs añadiendo el nombre del dominio auditado al inicio del reporte. Esto permite que, al pegar el contenido y hacer clic en el nombre del documento, Google Docs lo asigne automáticamente.
+
+### v1.6.0 — Tooltips Didácticos, Auto-descubrimiento DKIM y Reputación RBL
 * **Auto-descubrimiento Inteligente de Selectores DKIM:** Búsqueda automática de hasta 10 selectores DKIM más comunes en paralelo, complementada con un extractor inteligente que analiza el SPF en busca de subdominios y patrones conocidos para auto-descubrir los selectores activos sin requerir entrada del usuario.
 * **Auditoría de Reputación de Dominio (Listas Negras/RBLs):** Resolución en tiempo real de IPs de servidores MX y verificación paralela contra listas de reputación globales (SORBS, Spamcop, DroneBL) con badges visuales de estado y resumen de reputación general.
 * **Exportaciones e Informes Premium:** Rediseño completo del motor de exportación a Google Docs, archivos Word (.doc) e impresión PDF, integrando de forma nativa la tarjeta de puntuación de seguridad, lista de hallazgos traducida, selectores DKIM descubiertos y la auditoría detallada de reputación en listas negras (RBLs) con un diseño corporativo premium y de alta fidelidad.

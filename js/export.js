@@ -161,6 +161,7 @@ export function generateReportHTML() {
 
     return `
         <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; text-align: left;">
+            <p style="font-size: 22px; font-weight: bold; margin: 0 0 15px 0;">${currentDomain}</p>
             <!-- Header Banner -->
             <div style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 30px; border-radius: 12px; color: #ffffff; margin-bottom: 30px; text-align: left;">
                 <h1 style="margin: 0; font-size: 26px; font-weight: 700; font-family: sans-serif; letter-spacing: -0.5px;">${mainTitle}</h1>
