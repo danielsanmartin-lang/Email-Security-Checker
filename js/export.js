@@ -159,6 +159,76 @@ export function generateReportHTML() {
         `;
     }
 
+    // Advanced DNS HTML
+    let advDnsHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🌐 6. Advanced DNS</h2>`;
+    
+    // MTA-STS
+    advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
+    advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_mta_sts_title || 'MTA-STS'} - <span style="color: ${currentResult.mtaSts ? '#059669' : '#64748b'}; font-size: 13px;">${currentResult.mtaSts ? (t.adv_mta_sts_configured || 'Configurado') : (t.adv_mta_sts_not_configured || 'No configurado')}</span></h4>`;
+    if (currentResult.mtaSts) {
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.adv_mta_sts_id || 'ID'}:</strong> ${currentResult.mtaSts.id || '—'}</p>`;
+        advDnsHtml += `<div style="background-color: #f1f5f9; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; border: 1px solid #e2e8f0; word-break: break-all;">${currentResult.mtaSts.record}</div>`;
+    } else {
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; color: #64748b; margin: 0;">${t.adv_mta_sts_desc || 'Sin política estricta de transporte.'}</p>`;
+    }
+    advDnsHtml += `</div>`;
+
+    // TLS-RPT
+    advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
+    advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_tls_rpt_title || 'TLS-RPT'} - <span style="color: ${currentResult.tlsRpt ? '#059669' : '#64748b'}; font-size: 13px;">${currentResult.tlsRpt ? (t.adv_tls_rpt_configured || 'Configurado') : (t.adv_tls_rpt_not_configured || 'No configurado')}</span></h4>`;
+    if (currentResult.tlsRpt) {
+        advDnsHtml += `<div style="background-color: #f1f5f9; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; border: 1px solid #e2e8f0; word-break: break-all; margin-bottom: 10px;">${currentResult.tlsRpt.record}</div>`;
+        if (currentResult.tlsrptReporters && currentResult.tlsrptReporters.length > 0) {
+            currentResult.tlsrptReporters.forEach(r => {
+                advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.adv_tls_rpt_dest || 'Destino'}:</strong> ${r.uri}${r.reporter ? ` (${t.adv_tls_rpt_reporter || 'Reporter'}: ${r.reporter})` : ''}</p>`;
+            });
+        }
+    } else {
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; color: #64748b; margin: 0;">${t.adv_tls_rpt_desc || 'No hay reportes de TLS.'}</p>`;
+    }
+    advDnsHtml += `</div>`;
+
+    // NS Provider
+    advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
+    advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_ns_title || 'Nameservers (NS)'}</h4>`;
+    if (currentResult.nsProvider) {
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>Provider:</strong> ${currentResult.nsProvider.name}</p>`;
+        if (currentResult.nsProvider.hint) {
+            advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0; color: #4f46e5;"><strong>${t.adv_ns_hint || 'Hint'}:</strong> ${currentResult.nsProvider.hint}</p>`;
+        }
+        if (currentResult.nsRecords && currentResult.nsRecords.length > 0) {
+            advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.adv_ns_servers || 'Servidores'}:</strong> <span style="font-family: monospace;">${currentResult.nsRecords.join(', ')}</span></p>`;
+        }
+    } else if (currentResult.nsRecords && currentResult.nsRecords.length > 0) {
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0;"><strong>${t.adv_ns_servers || 'Servidores'}:</strong> <span style="font-family: monospace;">${currentResult.nsRecords.join(', ')}</span></p>`;
+    } else {
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; color: #64748b; margin: 0;">—</p>`;
+    }
+    advDnsHtml += `</div>`;
+
+    // TXT Verifications
+    advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
+    advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_txt_title || 'Verificaciones TXT'}</h4>`;
+    if (currentResult.txtVerifications && currentResult.txtVerifications.length > 0) {
+        advDnsHtml += `<table border="1" cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 13px; text-align: left;">
+            <tr style="background-color: #f1f5f9;">
+                <th style="padding: 8px; border: 1px solid #e2e8f0;">Name</th>
+                <th style="padding: 8px; border: 1px solid #e2e8f0;">Category</th>
+                <th style="padding: 8px; border: 1px solid #e2e8f0;">Record</th>
+            </tr>`;
+        for (const v of currentResult.txtVerifications) {
+            advDnsHtml += `<tr>
+                <td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold;">${v.name}</td>
+                <td style="padding: 8px; border: 1px solid #e2e8f0; color: ${['seg', 'ices'].includes(v.category) ? '#8b5cf6' : '#64748b'}; text-transform: uppercase; font-size: 11px;">${v.category}</td>
+                <td style="padding: 8px; border: 1px solid #e2e8f0; font-family: monospace; word-break: break-all;">${v.record}</td>
+            </tr>`;
+        }
+        advDnsHtml += `</table>`;
+    } else {
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; color: #64748b; margin: 0;">${t.adv_txt_none || 'No hay verificaciones'}</p>`;
+    }
+    advDnsHtml += `</div>`;
+
     return `
         <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; text-align: left;">
             <p style="font-size: 22px; font-weight: bold; margin: 0 0 15px 0;">${currentDomain}</p>
@@ -302,6 +372,9 @@ export function generateReportHTML() {
                     <p style="color: #64748b; font-style: italic; font-family: sans-serif; font-size: 13px; text-align: left;">${t.no_bimi_record}</p>
                 `}
             </div>
+
+            <!-- Advanced DNS Section -->
+            ${advDnsHtml}
 
             <!-- RBL Reputation Section -->
             ${rblHtml}
