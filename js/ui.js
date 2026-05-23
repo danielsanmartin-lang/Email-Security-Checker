@@ -391,7 +391,7 @@ export function renderResults(domain, result) {
     } else {
         mxBody.innerHTML = result.mxRecords.map(mx => {
             const id = identifyMX(mx.host);
-            const tagClass = id.type === 'provider' ? 'tag--provider' : id.type === 'seg' ? 'tag--seg' : 'tag--unknown';
+            const tagClass = id.type === 'provider' ? 'tag--provider' : id.type === 'seg' ? 'tag--seg' : id.type === 'ices' ? 'tag--ices' : 'tag--unknown';
             return `<div class="mx-record">
                 <span class="mx-record__priority">${mx.priority}</span>
                 <span class="mx-record__host">${mx.host}</span>
@@ -648,6 +648,9 @@ export function renderResults(domain, result) {
 
     // Render RBL reputation panel
     renderReputation(result.rblResults, lang, t);
+
+    // Render Advanced DNS panel
+    renderAdvancedDNS(result, lang, t);
 }
 
 export function renderReputation(rblResults, lang, t) {
@@ -696,4 +699,133 @@ export function renderReputation(rblResults, lang, t) {
         badge.style.background = 'rgba(16,185,129,0.15)';
         badge.style.color = 'var(--accent-emerald)';
     }
+}
+
+export function renderAdvancedDNS(result, lang, t) {
+    const body = document.getElementById('advanced-dns-body');
+    if (!body) return;
+
+    let html = '<div class="advanced-dns-grid">';
+
+    // === MTA-STS ===
+    html += '<div class="advanced-dns-section">';
+    html += `<div class="advanced-dns-section__header">
+        <h4 class="advanced-dns-section__title">${t.adv_mta_sts_title}</h4>
+        <span class="advanced-dns-section__badge ${result.mtaSts ? 'badge--success' : 'badge--neutral'}">${result.mtaSts ? t.adv_mta_sts_configured : t.adv_mta_sts_not_configured}</span>
+    </div>`;
+    if (result.mtaSts) {
+        html += `<div class="advanced-dns-section__body">
+            <div class="info-block">
+                <div class="info-block__label">${t.adv_mta_sts_id}</div>
+                <div class="info-block__value" style="font-family:'JetBrains Mono',monospace;font-size:13px;">${result.mtaSts.id || '—'}</div>
+            </div>
+            <div class="panel__raw-record" style="margin-top:8px;font-size:12px;">${result.mtaSts.record}</div>
+        </div>`;
+    } else {
+        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_mta_sts_desc}</p></div>`;
+    }
+    html += '</div>';
+
+    // === TLS-RPT ===
+    html += '<div class="advanced-dns-section">';
+    html += `<div class="advanced-dns-section__header">
+        <h4 class="advanced-dns-section__title">${t.adv_tls_rpt_title}</h4>
+        <span class="advanced-dns-section__badge ${result.tlsRpt ? 'badge--success' : 'badge--neutral'}">${result.tlsRpt ? t.adv_tls_rpt_configured : t.adv_tls_rpt_not_configured}</span>
+    </div>`;
+    if (result.tlsRpt) {
+        let tlsBody = `<div class="panel__raw-record" style="font-size:12px;margin-bottom:8px;">${result.tlsRpt.record}</div>`;
+        if (result.tlsrptReporters && result.tlsrptReporters.length > 0) {
+            tlsBody += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+            for (const r of result.tlsrptReporters) {
+                tlsBody += `<div class="reporting-item" style="padding:8px 12px;">
+                    <div class="reporting-item__type">${t.adv_tls_rpt_dest}</div>
+                    <div class="reporting-item__value" style="font-size:13px;">${r.uri}</div>
+                    ${r.reporter ? `<div class="reporting-item__service">${t.adv_tls_rpt_reporter}: ${r.reporter}</div>` : ''}
+                </div>`;
+            }
+            tlsBody += '</div>';
+        }
+        html += `<div class="advanced-dns-section__body">${tlsBody}</div>`;
+    } else {
+        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_tls_rpt_desc}</p></div>`;
+    }
+    html += '</div>';
+
+    // === NS Provider ===
+    html += '<div class="advanced-dns-section">';
+    html += `<div class="advanced-dns-section__header">
+        <h4 class="advanced-dns-section__title">${t.adv_ns_title}</h4>
+    </div>`;
+    if (result.nsProvider) {
+        let nsBody = `<div class="info-block">
+            <div class="info-block__value">${result.nsProvider.name}</div>
+        </div>`;
+        if (result.nsProvider.hint) {
+            nsBody += `<div class="info-block" style="margin-top:6px;">
+                <div class="info-block__label">${t.adv_ns_hint}</div>
+                <div class="info-block__detail" style="color:var(--accent-violet);">${result.nsProvider.hint}</div>
+            </div>`;
+        }
+        if (result.nsRecords && result.nsRecords.length > 0) {
+            nsBody += `<div class="info-block" style="margin-top:6px;">
+                <div class="info-block__label">${t.adv_ns_servers}</div>
+                <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">${result.nsRecords.join(', ')}</div>
+            </div>`;
+        }
+        html += `<div class="advanced-dns-section__body">${nsBody}</div>`;
+    } else if (result.nsRecords && result.nsRecords.length > 0) {
+        html += `<div class="advanced-dns-section__body">
+            <div class="info-block">
+                <div class="info-block__label">${t.adv_ns_servers}</div>
+                <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">${result.nsRecords.join(', ')}</div>
+            </div>
+        </div>`;
+    } else {
+        html += `<div class="advanced-dns-section__body"><p class="no-data">—</p></div>`;
+    }
+    html += '</div>';
+
+    html += '</div>'; // close advanced-dns-grid
+
+    // === TXT Verifications ===
+    html += `<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">`;
+    html += `<h4 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text-primary);">${t.adv_txt_title}</h4>`;
+
+    if (result.txtVerifications && result.txtVerifications.length > 0) {
+        const securityTxt = result.txtVerifications.filter(v => ['seg', 'ices'].includes(v.category));
+        const otherTxt = result.txtVerifications.filter(v => !['seg', 'ices'].includes(v.category));
+
+        if (securityTxt.length > 0) {
+            html += `<div style="margin-bottom:12px;"><span style="font-size:12px;font-weight:600;color:var(--accent-violet);text-transform:uppercase;letter-spacing:0.5px;">${t.adv_txt_security_label}</span></div>`;
+            html += '<div class="txt-verifications-grid">';
+            for (const v of securityTxt) {
+                const catColor = v.category === 'ices' ? 'var(--accent-violet)' : 'var(--accent-purple)';
+                html += `<div class="txt-verification-item txt-verification-item--security">
+                    <div class="txt-verification-item__name">${v.name}</div>
+                    <div class="txt-verification-item__category" style="color:${catColor};">${v.category.toUpperCase()}</div>
+                    <div class="txt-verification-item__record">${v.record}</div>
+                </div>`;
+            }
+            html += '</div>';
+        }
+
+        if (otherTxt.length > 0) {
+            html += `<div style="margin-top:${securityTxt.length > 0 ? '16px' : '0'};margin-bottom:12px;"><span style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">${t.adv_txt_other_label}</span></div>`;
+            html += '<div class="txt-verifications-grid">';
+            for (const v of otherTxt) {
+                html += `<div class="txt-verification-item">
+                    <div class="txt-verification-item__name">${v.name}</div>
+                    <div class="txt-verification-item__category">${v.category}</div>
+                    <div class="txt-verification-item__record">${v.record}</div>
+                </div>`;
+            }
+            html += '</div>';
+        }
+    } else {
+        html += `<p class="no-data">${t.adv_txt_none}</p>`;
+    }
+
+    html += '</div>';
+
+    body.innerHTML = html;
 }

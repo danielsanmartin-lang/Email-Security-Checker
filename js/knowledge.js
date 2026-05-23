@@ -23,6 +23,12 @@ export const KB = {
         { pattern: 'securence.com', name: 'Securence', type: 'seg' },
         { pattern: 'spamexperts.com', name: 'SpamExperts', type: 'seg' },
         { pattern: 'hornetsecurity.com', name: 'Hornetsecurity', type: 'seg' },
+        // ICES inline MX patterns
+        { pattern: 'perception-point.io', name: 'Perception Point', type: 'ices' },
+        { pattern: 'xorlab.com', name: 'xorlab', type: 'ices' },
+        { pattern: 'mailprotection.checkpoint.com', name: 'Avanan (Check Point)', type: 'ices' },
+        { pattern: 'material.security', name: 'Material Security', type: 'ices' },
+        // Providers
         { pattern: 'zoho.com', name: 'Zoho Mail', type: 'provider' },
         { pattern: 'yahoodns.net', name: 'Yahoo Mail', type: 'provider' },
         { pattern: 'amazonaws.com', name: 'Amazon SES/WorkMail', type: 'provider' },
@@ -80,6 +86,19 @@ export const KB = {
         { pattern: 'ironscales.com', name: 'Ironscales', category: 'ices', cat_label: 'ICES' },
         { pattern: 'darktrace.com', name: 'Darktrace', category: 'ices', cat_label: 'ICES' },
         { pattern: 'tessian.com', name: 'Tessian', category: 'ices', cat_label: 'ICES' },
+        // New ICES providers
+        { pattern: 'perception-point.io', name: 'Perception Point', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'material.security', name: 'Material Security', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'greathorn.com', name: 'GreatHorn', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'xorlab.com', name: 'xorlab', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'inky.com', name: 'INKY', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'agari.com', name: 'Agari (Fortra)', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'area1security.com', name: 'Cloudflare Email Security (Area 1)', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'cofense.com', name: 'Cofense', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'sublime.security', name: 'Sublime Security', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'valimail.com', name: 'Valimail', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'guardiandigital.com', name: 'Guardian Digital', category: 'ices', cat_label: 'ICES' },
+        // Existing non-ICES
         { pattern: 'knowbe4.com', name: 'KnowBe4', category: 'other', cat_label: 'Concienciación' },
         { pattern: 'docusign.com', name: 'DocuSign', category: 'other', cat_label: 'Firmas Digitales' },
         { pattern: 'netsuite.com', name: 'NetSuite (Oracle)', category: 'crm', cat_label: 'ERP/CRM' },
@@ -87,6 +106,59 @@ export const KB = {
         { pattern: 'servicenow.com', name: 'ServiceNow', category: 'other', cat_label: 'ITSM' },
         { pattern: 'fideltour.com', name: 'Fideltour', category: 'other', cat_label: 'Turismo/CRM' },
         { pattern: 'managed-otrs.com', name: 'OTRS', category: 'support', cat_label: 'Soporte/ITSM' },
+    ],
+    // TXT domain verification patterns that reveal security vendors
+    txt_verification: [
+        { pattern: 'proofpoint-verification', name: 'Proofpoint', category: 'seg' },
+        { pattern: 'mimecast', name: 'Mimecast', category: 'seg' },
+        { pattern: 'cisco-ci-domain-verification', name: 'Cisco Email Security', category: 'seg' },
+        { pattern: 'sophos-domain-verification', name: 'Sophos', category: 'seg' },
+        { pattern: 'ironscales-domain-verification', name: 'Ironscales', category: 'ices' },
+        { pattern: 'abnormal-security', name: 'Abnormal Security', category: 'ices' },
+        { pattern: 'knowbe4-site-verification', name: 'KnowBe4', category: 'other' },
+        { pattern: 'atlassian-domain-verification', name: 'Atlassian', category: 'other' },
+        { pattern: 'facebook-domain-verification', name: 'Meta (Facebook)', category: 'other' },
+        { pattern: 'apple-domain-verification', name: 'Apple', category: 'other' },
+        { pattern: 'google-site-verification', name: 'Google', category: 'other' },
+        { pattern: 'MS=ms', name: 'Microsoft 365', category: 'email' },
+        { pattern: 'docusign', name: 'DocuSign', category: 'other' },
+        { pattern: 'stripe-verification', name: 'Stripe', category: 'other' },
+        { pattern: 'hubspot-developer-verification', name: 'HubSpot', category: 'crm' },
+        { pattern: 'pardot', name: 'Pardot (Salesforce)', category: 'marketing' },
+        { pattern: 'spycloud-domain-verification', name: 'SpyCloud', category: 'ices' },
+        { pattern: 'canva-site-verification', name: 'Canva', category: 'other' },
+        { pattern: 'duo_sso_verification', name: 'Duo Security (Cisco)', category: 'other' },
+        { pattern: 'cloudflare-verify', name: 'Cloudflare', category: 'other' },
+    ],
+    // NS patterns to identify DNS providers (some imply email security services)
+    ns_providers: [
+        { pattern: 'cloudflare.com', name: 'Cloudflare', hint: 'Cloudflare Email Security (Area 1)' },
+        { pattern: 'awsdns', name: 'Amazon Route 53', hint: null },
+        { pattern: 'google.com', name: 'Google Cloud DNS', hint: null },
+        { pattern: 'azure-dns.com', name: 'Azure DNS', hint: null },
+        { pattern: 'domaincontrol.com', name: 'GoDaddy DNS', hint: null },
+    ],
+    // Additional DKIM selectors specific to ICES/SEG vendors
+    ices_dkim_selectors: [
+        'pp1', 'pphosted',           // Proofpoint
+        'mimecast20190707',           // Mimecast (typical year-based)
+        'mimecast20210101',
+        'mimecast20230101',
+        'avanan',                      // Avanan
+        'proofpoint',                  // Proofpoint re-signing
+        'everbridge',                  // Everbridge
+        'barracuda',                   // Barracuda
+    ],
+    // TLS-RPT reporter identification
+    tlsrpt_reporters: [
+        { pattern: 'google.com', name: 'Google' },
+        { pattern: 'microsoft.com', name: 'Microsoft' },
+        { pattern: 'proofpoint.com', name: 'Proofpoint' },
+        { pattern: 'mimecast.com', name: 'Mimecast' },
+        { pattern: 'agari.com', name: 'Agari' },
+        { pattern: 'cloudflare.com', name: 'Cloudflare' },
+        { pattern: 'valimail.com', name: 'Valimail' },
+        { pattern: 'mailhardener.com', name: 'Mail Hardener' },
     ],
     dmarc_reporters: [
         { pattern: 'agari.com', name: 'Agari' },

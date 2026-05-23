@@ -56,7 +56,12 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.6.1 — Mejoras en Exportación a Google Docs (Actual)
+### v1.7.0 — Detección Avanzada de ICES y Consultas DNS Paralelas (Actual)
+* **Auditoría DNS Avanzada:** Incorporación de consultas DNS sobre registros TXT raíz, NS, MTA-STS y TLS-RPT para realizar un escrutinio de seguridad de nivel empresarial en tiempo real y sin servidor.
+* **Detección de Soluciones ICES Ocultas:** Nuevo motor de cruce de datos que detecta pasarelas de seguridad cloud y soluciones ICES de próxima generación (Perception Point, xorlab, Material Security, Area 1, etc.) analizando registros de verificación (TXT) y enrutadores (NS) incluso cuando no dejan rastro visible en el SPF.
+* **Panel de Resultados Avanzado:** Nuevo módulo en la interfaz de resultados que expone de forma amigable la adopción de tecnologías MTA-STS y TLS-RPT, incluyendo la identificación de proveedores de reporte y un desglose detallado de todos los tokens de verificación y propiedad del dominio detectados.
+
+### v1.6.1 — Mejoras en Exportación a Google Docs
 * **Auto-titulado Inteligente:** Se ha optimizado la exportación a Google Docs añadiendo el nombre del dominio auditado al inicio del reporte. Esto permite que, al pegar el contenido y hacer clic en el nombre del documento, Google Docs lo asigne automáticamente.
 
 ### v1.6.0 — Tooltips Didácticos, Auto-descubrimiento DKIM y Reputación RBL

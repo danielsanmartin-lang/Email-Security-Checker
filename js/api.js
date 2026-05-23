@@ -90,11 +90,13 @@ export function discoverDKIMSelectors(spfRaw) {
     return [...new Set(selectors)];
 }
 
-export async function getDKIM(domain, customSelector = null, spfRaw = null) {
+export async function getDKIM(domain, customSelector = null, spfRaw = null, icesSelectors = []) {
     let selectors = customSelector ? [customSelector] : COMMON_DKIM_SELECTORS;
     if (!customSelector && spfRaw) {
         const discovered = discoverDKIMSelectors(spfRaw);
-        selectors = [...new Set([...discovered, ...COMMON_DKIM_SELECTORS])];
+        selectors = [...new Set([...discovered, ...COMMON_DKIM_SELECTORS, ...icesSelectors])];
+    } else if (!customSelector && icesSelectors.length > 0) {
+        selectors = [...new Set([...COMMON_DKIM_SELECTORS, ...icesSelectors])];
     }
     const results = [];
     const errors = [];
@@ -211,3 +213,67 @@ export async function checkRBL(ip, rblHost) {
     }
     return { listed: false, rbl: rblHost };
 }
+
+// ===== NEW: Advanced DNS queries for ICES detection =====
+
+export async function getAllTXT(domain) {
+    try {
+        const data = await queryDNS(domain, 'TXT');
+        if (!data.Answer) return [];
+        return data.Answer
+            .filter(a => a.type === 16)
+            .map(a => a.data.replace(/"/g, ''));
+    } catch (e) {
+        console.warn(`Failed to get all TXT for ${domain}`, e);
+        return [];
+    }
+}
+
+export async function getMTASTS(domain) {
+    try {
+        const data = await queryDNS(`_mta-sts.${domain}`, 'TXT');
+        if (!data.Answer) return null;
+        for (const a of data.Answer) {
+            const txt = a.data.replace(/"/g, '');
+            if (txt.startsWith('v=STSv1')) {
+                const idMatch = txt.match(/id=([^;]+)/);
+                return { record: txt, id: idMatch ? idMatch[1].trim() : null };
+            }
+        }
+    } catch (e) {
+        console.warn(`Failed to get MTA-STS for ${domain}`, e);
+    }
+    return null;
+}
+
+export async function getTLSRPT(domain) {
+    try {
+        const data = await queryDNS(`_smtp._tls.${domain}`, 'TXT');
+        if (!data.Answer) return null;
+        for (const a of data.Answer) {
+            const txt = a.data.replace(/"/g, '');
+            if (txt.startsWith('v=TLSRPTv1')) {
+                const ruaMatch = txt.match(/rua=([^;]+)/);
+                const rua = ruaMatch ? ruaMatch[1].trim().split(',').map(s => s.trim()) : [];
+                return { record: txt, rua };
+            }
+        }
+    } catch (e) {
+        console.warn(`Failed to get TLS-RPT for ${domain}`, e);
+    }
+    return null;
+}
+
+export async function getNS(domain) {
+    try {
+        const data = await queryDNS(domain, 'NS');
+        if (!data.Answer) return [];
+        return data.Answer
+            .filter(a => a.type === 2)
+            .map(a => a.data.replace(/\.$/, ''));
+    } catch (e) {
+        console.warn(`Failed to get NS for ${domain}`, e);
+        return [];
+    }
+}
+

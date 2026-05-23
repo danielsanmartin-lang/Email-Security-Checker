@@ -1,5 +1,5 @@
-import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL } from './api.js';
-import { analyze, calculateScoreAndFindings } from './analyzer.js';
+import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS } from './api.js';
+import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
 import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
@@ -16,7 +16,7 @@ async function runAnalysis(domain, dkimSelector = null) {
     btn.classList.add('loading');
     showSection('loading-section');
     
-    ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-analysis'].forEach(s => setStep(s, null));
+    ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis'].forEach(s => setStep(s, null));
     
     const lang = getLanguage();
     const t = translations[lang];
@@ -37,12 +37,28 @@ async function runAnalysis(domain, dkimSelector = null) {
         setStep('step-dmarc', 'done');
 
         setStep('step-dkim', 'active');
-        const dkimRecords = await getDKIM(domain, dkimSelector, spfRaw);
+        const icesSelectors = KB.ices_dkim_selectors || [];
+        const dkimRecords = await getDKIM(domain, dkimSelector, spfRaw, icesSelectors);
         setStep('step-dkim', 'done');
 
         setStep('step-bimi', 'active');
         const bimiRecord = await getBIMI(domain);
         setStep('step-bimi', 'done');
+
+        // NEW: Advanced DNS checks (parallel)
+        setStep('step-advanced', 'active');
+        const [allTxtRecords, mtaSts, tlsRpt, nsRecords] = await Promise.all([
+            getAllTXT(domain),
+            getMTASTS(domain),
+            getTLSRPT(domain),
+            getNS(domain)
+        ]);
+
+        // Process advanced data
+        const txtVerifications = identifyTXTVerifications(allTxtRecords);
+        const nsProvider = identifyNSProvider(nsRecords);
+        const tlsrptReporters = analyzeTLSRPT(tlsRpt);
+        setStep('step-advanced', 'done');
 
         setStep('step-analysis', 'active');
         await new Promise(r => setTimeout(r, 400));
@@ -59,7 +75,14 @@ async function runAnalysis(domain, dkimSelector = null) {
             })
         );
         
-        const result = analyze(mxRecords, spfRaw, dmarcRaw);
+        const result = analyze(mxRecords, spfRaw, dmarcRaw, {
+            txtVerifications,
+            nsProvider,
+            nsRecords,
+            mtaSts,
+            tlsRpt,
+            tlsrptReporters
+        });
         result.spfLookups = spfLookups;
         result.spfTree = spfTree;
         result.dkimRecords = dkimRecords;

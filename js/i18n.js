@@ -20,6 +20,7 @@ export const translations = {
         step_dmarc: "Consultando DMARC...",
         step_dkim: "Verificando DKIM...",
         step_bimi: "Consultando BIMI...",
+        step_advanced: "Comprobaciones avanzadas (MTA-STS, TLS-RPT, NS, TXT)...",
         step_analysis: "Analizando pila tecnológica...",
 
         // Error Section
@@ -50,6 +51,7 @@ export const translations = {
         panel_dkim_title: "Verificación DKIM",
         panel_bimi_title: "Verificación BIMI",
         panel_spf_tree_title: "Árbol de Consultas SPF",
+        panel_advanced_dns_title: "DNS Avanzado (ICES Detection)",
 
         // Score Card Findings (ES)
         score_title_panel: "Puntuación de Seguridad",
@@ -69,6 +71,10 @@ export const translations = {
         finding_dkim_err: "No se detectaron firmas DKIM en los selectores comunes.",
         finding_bimi_ok: "Registro BIMI configurado con logotipo corporativo.",
         finding_bimi_err: "Registro BIMI no configurado o incorrecto.",
+        finding_mta_sts_ok: "MTA-STS configurado (TLS forzado para correo entrante).",
+        finding_mta_sts_err: "MTA-STS no configurado (correo entrante sin TLS forzado).",
+        finding_tls_rpt_ok: "TLS-RPT configurado (reportes de fallos TLS habilitados).",
+        finding_tls_rpt_err: "TLS-RPT no configurado (sin visibilidad de fallos TLS).",
 
         spf_header_prefix: "Prefijo",
         spf_header_type: "Tipo",
@@ -168,6 +174,26 @@ export const translations = {
         footer_text: "Email Security Checker — Consultas DNS en tiempo real vía DoH (DNS-over-HTTPS)",
         footer_disclaimer: "Los datos se obtienen de registros DNS públicos. No se almacena ninguna información.",
 
+        // ===== Advanced DNS panel =====
+        adv_mta_sts_title: "MTA-STS",
+        adv_mta_sts_configured: "Configurado",
+        adv_mta_sts_not_configured: "No configurado",
+        adv_mta_sts_desc: "MTA-STS fuerza el uso de TLS para el correo entrante, evitando ataques de downgrade.",
+        adv_mta_sts_id: "ID de política",
+        adv_tls_rpt_title: "TLS-RPT",
+        adv_tls_rpt_configured: "Configurado",
+        adv_tls_rpt_not_configured: "No configurado",
+        adv_tls_rpt_desc: "TLS-RPT envía reportes cuando hay fallos de conexión TLS al entregar correo al dominio.",
+        adv_tls_rpt_dest: "Destino de reportes",
+        adv_tls_rpt_reporter: "Herramienta",
+        adv_ns_title: "Proveedor DNS (NS)",
+        adv_ns_hint: "Pista de seguridad",
+        adv_ns_servers: "Servidores NS",
+        adv_txt_title: "Verificaciones TXT detectadas",
+        adv_txt_none: "No se detectaron tokens de verificación de terceros relevantes.",
+        adv_txt_security_label: "Seguridad",
+        adv_txt_other_label: "Otros servicios",
+
         // Dynamic strings
         plural_records: "registros",
         singular_record: "registro",
@@ -232,6 +258,7 @@ export const translations = {
         step_dmarc: "Querying DMARC...",
         step_dkim: "Verifying DKIM...",
         step_bimi: "Querying BIMI...",
+        step_advanced: "Advanced checks (MTA-STS, TLS-RPT, NS, TXT)...",
         step_analysis: "Analyzing technology stack...",
 
         // Error Section
@@ -262,6 +289,7 @@ export const translations = {
         panel_dkim_title: "DKIM Verification",
         panel_bimi_title: "BIMI Verification",
         panel_spf_tree_title: "SPF Lookup Tree",
+        panel_advanced_dns_title: "Advanced DNS (ICES Detection)",
 
         // Score Card Findings (EN)
         score_title_panel: "Security Score",
@@ -281,6 +309,10 @@ export const translations = {
         finding_dkim_err: "No DKIM signatures detected using common selectors.",
         finding_bimi_ok: "BIMI record configured with corporate logo.",
         finding_bimi_err: "BIMI record not configured or incorrect.",
+        finding_mta_sts_ok: "MTA-STS configured (forced TLS for inbound email).",
+        finding_mta_sts_err: "MTA-STS not configured (inbound email without forced TLS).",
+        finding_tls_rpt_ok: "TLS-RPT configured (TLS failure reports enabled).",
+        finding_tls_rpt_err: "TLS-RPT not configured (no visibility into TLS failures).",
 
         spf_header_prefix: "Prefix",
         spf_header_type: "Type",
@@ -379,6 +411,26 @@ export const translations = {
         // Footer disclaimer
         footer_text: "Email Security Checker — Real-time DNS queries via DoH (DNS-over-HTTPS)",
         footer_disclaimer: "Data is retrieved from public DNS records. No information is stored.",
+
+        // ===== Advanced DNS panel =====
+        adv_mta_sts_title: "MTA-STS",
+        adv_mta_sts_configured: "Configured",
+        adv_mta_sts_not_configured: "Not configured",
+        adv_mta_sts_desc: "MTA-STS enforces TLS for inbound email, preventing downgrade attacks.",
+        adv_mta_sts_id: "Policy ID",
+        adv_tls_rpt_title: "TLS-RPT",
+        adv_tls_rpt_configured: "Configured",
+        adv_tls_rpt_not_configured: "Not configured",
+        adv_tls_rpt_desc: "TLS-RPT sends reports when TLS connection failures occur while delivering email to the domain.",
+        adv_tls_rpt_dest: "Report destination",
+        adv_tls_rpt_reporter: "Tool",
+        adv_ns_title: "DNS Provider (NS)",
+        adv_ns_hint: "Security hint",
+        adv_ns_servers: "NS servers",
+        adv_txt_title: "Detected TXT Verifications",
+        adv_txt_none: "No relevant third-party verification tokens detected.",
+        adv_txt_security_label: "Security",
+        adv_txt_other_label: "Other services",
 
         // Dynamic strings
         plural_records: "records",

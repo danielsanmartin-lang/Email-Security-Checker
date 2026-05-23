@@ -50,13 +50,70 @@ export function identifyDMARCReporter(uri) {
     return null;
 }
 
-export function analyze(mxRecords, spfRaw, dmarcRaw) {
+// NEW: Identify ICES/SEG/other services from TXT verification tokens
+export function identifyTXTVerifications(txtRecords) {
+    if (!txtRecords || txtRecords.length === 0) return [];
+    const found = [];
+    const seen = new Set();
+    for (const txt of txtRecords) {
+        const lower = txt.toLowerCase();
+        // Skip SPF and DMARC records (already analyzed elsewhere)
+        if (lower.startsWith('v=spf1') || lower.startsWith('v=dmarc1')) continue;
+        for (const entry of KB.txt_verification) {
+            if (lower.includes(entry.pattern.toLowerCase()) && !seen.has(entry.name)) {
+                seen.add(entry.name);
+                found.push({
+                    name: entry.name,
+                    category: entry.category,
+                    record: txt.length > 80 ? txt.substring(0, 77) + '...' : txt,
+                    fullRecord: txt
+                });
+            }
+        }
+    }
+    return found;
+}
+
+// NEW: Identify DNS provider from NS records
+export function identifyNSProvider(nsRecords) {
+    if (!nsRecords || nsRecords.length === 0) return null;
+    for (const ns of nsRecords) {
+        const lower = ns.toLowerCase();
+        for (const entry of KB.ns_providers) {
+            if (lower.includes(entry.pattern)) {
+                return { name: entry.name, hint: entry.hint, ns };
+            }
+        }
+    }
+    return null;
+}
+
+// NEW: Analyze TLS-RPT reporting destinations
+export function analyzeTLSRPT(tlsrpt) {
+    if (!tlsrpt || !tlsrpt.rua || tlsrpt.rua.length === 0) return [];
+    const reporters = [];
+    for (const rua of tlsrpt.rua) {
+        const lower = rua.toLowerCase();
+        let identified = null;
+        for (const entry of KB.tlsrpt_reporters) {
+            if (lower.includes(entry.pattern)) {
+                identified = entry.name;
+                break;
+            }
+        }
+        reporters.push({ uri: rua, reporter: identified });
+    }
+    return reporters;
+}
+
+export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     const spfEntries = parseSPF(spfRaw);
     const dmarcParsed = parseDMARC(dmarcRaw);
 
     let provider = null;
     let providerSource = '';
     const segList = [];
+    const icesList = [];
     
     for (const mx of mxRecords) {
         const id = identifyMX(mx.host);
@@ -67,10 +124,14 @@ export function analyze(mxRecords, spfRaw, dmarcRaw) {
         if (id.type === 'seg') {
             segList.push({ name: id.name, source: `MX: ${mx.host}` });
         }
+        if (id.type === 'ices') {
+            if (!icesList.find(i => i.name === id.name)) {
+                icesList.push({ name: id.name, source: `MX: ${mx.host}` });
+            }
+        }
     }
 
     const spfServices = [];
-    const icesList = [];
     
     for (const entry of spfEntries) {
         if (entry.type === 'include' || entry.type === 'a' || entry.type === 'redirect') {
@@ -83,13 +144,30 @@ export function analyze(mxRecords, spfRaw, dmarcRaw) {
                 if (svc.category === 'seg' && !segList.find(s => s.name === svc.name)) {
                     segList.push({ name: svc.name, source: `SPF: ${entry.value}` });
                 }
-                if (svc.category === 'ices') {
+                if (svc.category === 'ices' && !icesList.find(i => i.name === svc.name)) {
                     icesList.push({ name: svc.name, source: `SPF: ${entry.value}` });
                 }
                 spfServices.push({ ...svc, raw: entry.value });
             }
         }
     }
+
+    // NEW: Process TXT verification tokens
+    const txtVerifications = advancedData.txtVerifications || [];
+    for (const v of txtVerifications) {
+        if (v.category === 'seg' && !segList.find(s => s.name === v.name)) {
+            segList.push({ name: v.name, source: `TXT verification: ${v.record}` });
+        }
+        if (v.category === 'ices' && !icesList.find(i => i.name === v.name)) {
+            icesList.push({ name: v.name, source: `TXT verification: ${v.record}` });
+        }
+    }
+
+    // NEW: Process NS provider hints
+    const nsProvider = advancedData.nsProvider || null;
+
+    // NEW: Process TLS-RPT reporters
+    const tlsrptReporters = advancedData.tlsrptReporters || [];
 
     if (!provider) {
         provider = 'No identificado';
@@ -121,7 +199,14 @@ export function analyze(mxRecords, spfRaw, dmarcRaw) {
         spfRaw, spfEntries, spfServices,
         dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass,
         dmarcRua, dmarcRuf, dmarcDetails,
-        mxRecords
+        mxRecords,
+        // New advanced data
+        txtVerifications,
+        nsProvider,
+        nsRecords: advancedData.nsRecords || [],
+        mtaSts: advancedData.mtaSts || null,
+        tlsRpt: advancedData.tlsRpt || null,
+        tlsrptReporters
     };
 }
 
@@ -242,6 +327,32 @@ export function calculateScoreAndFindings(result) {
         });
     }
 
+    // 5. MTA-STS Check (bonus)
+    if (result.mtaSts) {
+        findings.push({
+            status: 'success',
+            key: 'finding_mta_sts_ok'
+        });
+    } else {
+        findings.push({
+            status: 'info',
+            key: 'finding_mta_sts_err'
+        });
+    }
+
+    // 6. TLS-RPT Check (bonus)
+    if (result.tlsRpt) {
+        findings.push({
+            status: 'success',
+            key: 'finding_tls_rpt_ok'
+        });
+    } else {
+        findings.push({
+            status: 'info',
+            key: 'finding_tls_rpt_err'
+        });
+    }
+
     // Determine Grade
     let grade = 'F';
     let cardClass = 'danger';
@@ -254,4 +365,5 @@ export function calculateScoreAndFindings(result) {
 
     return { score, grade, cardClass, findings };
 }
+
 
