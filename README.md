@@ -57,7 +57,7 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 ## 📅 Historial de Cambios
 
 ### v1.7.0 — Detección Avanzada de ICES y Consultas DNS Paralelas (Actual)
-* **Auditoría DNS Avanzada:** Incorporación de consultas DNS sobre registros TXT raíz, NS, MTA-STS y TLS-RPT para realizar un escrutinio de seguridad de nivel empresarial en tiempo real y sin servidor.
+* **Auditoría DNS Avanzada:** Incorporación de consultas DNS sobre registros TXT raíz, NS, MTA-STS y TLS-RPT para realizar un escrutinio de seguridad en tiempo real y sin servidor.
 * **Detección de Soluciones ICES Ocultas:** Nuevo motor de cruce de datos que detecta pasarelas de seguridad cloud y soluciones ICES de próxima generación (Perception Point, xorlab, Material Security, Area 1, etc.) analizando registros de verificación (TXT) y enrutadores (NS) incluso cuando no dejan rastro visible en el SPF.
 * **Panel de Resultados Avanzado:** Nuevo módulo en la interfaz de resultados que expone de forma amigable la adopción de tecnologías MTA-STS y TLS-RPT, incluyendo la identificación de proveedores de reporte y un desglose detallado de todos los tokens de verificación y propiedad del dominio detectados.
 
@@ -97,7 +97,6 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 * **Exportación PDF Nativa:** Incorporación de hojas de estilo `@media print` para limpiar la interfaz y permitir exportar el informe de manera perfecta como PDF usando el motor de impresión nativo del navegador.
 
 ### v1.1.0 — Clasificación de Servicios y Aprendizaje Dinámico
-* **Sugerencias de Búsqueda:** Adición de accesos directos de análisis rápido, incluyendo `salesforce.com` en segunda posición.
 * **Clasificación SPF Dinámica:** Implementación de un selector en caliente para que el auditor pueda clasificar y etiquetar firmas SPF no reconocidas en tiempo real.
 * **Creación de Reglas de Base de Datos:** Pop-up para añadir nuevos servicios (Nombre, Categoría, Patrón de SPF) directamente a la Base de Conocimiento persistida localmente con `localStorage`.
 
