@@ -163,8 +163,22 @@ export function setStep(stepId, state) {
 
 export function renderSPFTree(tree) {
     if (!tree) return '';
+    const lang = getLanguage();
+    const t = translations[lang] || translations.es;
+    
+    let errorSpan = '';
+    if (tree.error) {
+        if (tree.error === 'Loop detectado') {
+            const errLabel = lang === 'es' ? 'Loop detectado' : 'Loop detected';
+            const tooltipText = t.spf_loop_error_tooltip || '';
+            errorSpan = `<span class="tooltip-trigger" data-tooltip="${tooltipText}" style="color:#ef4444; margin-left: 8px; cursor: help; text-decoration: underline dotted;">[Error: ${errLabel}]</span>`;
+        } else {
+            errorSpan = `<span style="color:#ef4444; margin-left: 8px;">[Error: ${tree.error}]</span>`;
+        }
+    }
+
     let html = `<ul class="spf-tree">`;
-    html += `<li><strong>${tree.domain}</strong> <span style="color:var(--text-muted)">(${tree.lookups} lookups)</span> ${tree.error ? `<span style="color:#ef4444; margin-left: 8px;">[Error: ${tree.error}]</span>` : ''}`;
+    html += `<li><strong>${tree.domain}</strong> <span style="color:var(--text-muted)">(${tree.lookups} lookups)</span> ${errorSpan}`;
     if (tree.children && tree.children.length > 0) {
         html += `<ul>`;
         for (const child of tree.children) {

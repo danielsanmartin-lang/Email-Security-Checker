@@ -56,7 +56,10 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.7.0 — Detección Avanzada de ICES y Consultas DNS Paralelas (Actual)
+### v1.7.1 — Explicación de Bucles SPF en Árbol de Consultas (Actual)
+* **Tooltip Explicativo de Bucles (Loops) SPF:** Visualización interactiva y tooltip didáctico al pasar el cursor sobre la alerta `[Error: Loop detectado]`, explicando en detalle la causa raíz del error por referencias circulares en registros DNS SPF en español e inglés.
+
+### v1.7.0 — Detección Avanzada de ICES y Consultas DNS Paralelas
 * **Auditoría DNS Avanzada:** Incorporación de consultas DNS sobre registros TXT raíz, NS, MTA-STS y TLS-RPT para realizar un escrutinio de seguridad en tiempo real y sin servidor.
 * **Detección de Soluciones ICES Ocultas:** Nuevo motor de cruce de datos que detecta pasarelas de seguridad cloud y soluciones ICES de próxima generación (Perception Point, xorlab, Material Security, Area 1, etc.) analizando registros de verificación (TXT) y enrutadores (NS) incluso cuando no dejan rastro visible en el SPF.
 * **Panel de Resultados Avanzado:** Nuevo módulo en la interfaz de resultados que expone de forma amigable la adopción de tecnologías MTA-STS y TLS-RPT, incluyendo la identificación de proveedores de reporte y un desglose detallado de todos los tokens de verificación y propiedad del dominio detectados.

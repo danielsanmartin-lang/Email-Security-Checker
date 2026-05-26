@@ -236,7 +236,8 @@ export const translations = {
         dmarc_tooltip_sp: "Política para subdominios (sp=): Si se define, aplica una política diferente a los correos enviados desde subdominios del dominio principal.",
         dmarc_tooltip_pct: "Porcentaje (pct=): Solo aplica la política a este porcentaje del tráfico de correo. Útil para despliegues graduales. El valor recomendado en producción es 100.",
         dmarc_tooltip_adkim: "Alineación DKIM (adkim=): 'r' (Relaxed) permite que el dominio DKIM sea un subdominio del dominio 'From'. 's' (Strict) exige que coincidan exactamente.",
-        dmarc_tooltip_aspf: "Alineación SPF (aspf=): 'r' (Relaxed) permite que el dominio SMTP sea un subdominio del dominio 'From'. 's' (Strict) exige coincidencia exacta."
+        dmarc_tooltip_aspf: "Alineación SPF (aspf=): 'r' (Relaxed) permite que el dominio SMTP sea un subdominio del dominio 'From'. 's' (Strict) exige coincidencia exacta.",
+        spf_loop_error_tooltip: "Un bucle (loop) ocurre cuando el registro SPF de un dominio incluye a otro que a su vez te vuelve a incluir (referencia circular), lo que genera infinitas consultas DNS, supera los límites y anula la validación SPF."
     },
     en: {
         // App Header & Meta
@@ -474,6 +475,7 @@ export const translations = {
         dmarc_tooltip_sp: "Subdomain policy (sp=): If defined, applies a different policy to emails sent from subdomains of the main domain.",
         dmarc_tooltip_pct: "Percentage (pct=): Only applies the policy to this percentage of email traffic. Useful for gradual rollouts. Recommended production value is 100.",
         dmarc_tooltip_adkim: "DKIM alignment (adkim=): 'r' (Relaxed) allows the DKIM domain to be a subdomain of the From domain. 's' (Strict) requires an exact match.",
-        dmarc_tooltip_aspf: "SPF alignment (aspf=): 'r' (Relaxed) allows the SMTP domain to be a subdomain of the From domain. 's' (Strict) requires an exact match."
+        dmarc_tooltip_aspf: "SPF alignment (aspf=): 'r' (Relaxed) allows the SMTP domain to be a subdomain of the From domain. 's' (Strict) requires an exact match.",
+        spf_loop_error_tooltip: "A loop occurs when a domain's SPF record includes another domain that eventually includes the original domain back (circular reference), causing infinite DNS queries, exceeding lookup limits, and invalidating SPF validation."
     }
 };
