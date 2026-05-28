@@ -57,7 +57,7 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 ## 📅 Historial de Cambios
 
 ### v1.7.2 — Corrección en Detección de Hornetsecurity y Extracción de Dominio (Actual)
-* **Soporte Mejorado para Hornetsecurity:** Añadidas firmas de detección para Hornetsecurity en registros MX (patrón `antispameurope`) y registros SPF (patrones `hornetsecurity` y `antispameurope`), permitiendo identificar correctamente el uso de este SEG en cualquier dominio (por ejemplo, `egile.es`).
+* **Soporte Mejorado para Hornetsecurity:** Añadidas firmas de detección para Hornetsecurity en registros MX (patrón `antispameurope`) y registros SPF (patrones `hornetsecurity` y `antispameurope`), permitiendo identificar correctamente el uso de este SEG en cualquier dominio.
 * **Extracción de Dominio de Direcciones de Correo:** Al introducir o pegar una dirección de correo completa en el buscador, la herramienta limpia automáticamente la entrada ignorando el prefijo y el símbolo `@` para analizar directamente el dominio (ej. `nombre@empresa.com` pasa a ser analizado como `empresa.com`).
 
 ### v1.7.1 — Explicación de Bucles SPF en Árbol de Consultas
