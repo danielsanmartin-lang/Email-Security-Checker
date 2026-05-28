@@ -12,6 +12,17 @@ export const state = {
 };
 
 async function runAnalysis(domain, dkimSelector = null) {
+    domain = domain.trim().toLowerCase();
+    if (domain.includes('@')) {
+        domain = domain.substring(domain.indexOf('@') + 1);
+    }
+    domain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+
+    const input = document.getElementById('domain-input');
+    if (input) {
+        input.value = domain;
+    }
+
     const btn = document.getElementById('search-btn');
     btn.classList.add('loading');
     showSection('loading-section');
@@ -192,7 +203,11 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', e => {
         e.preventDefault();
         let domain = input.value.trim().toLowerCase();
+        if (domain.includes('@')) {
+            domain = domain.substring(domain.indexOf('@') + 1);
+        }
         domain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+        input.value = domain;
         let dkimSelector = null;
         if (dkimInput) {
             dkimSelector = dkimInput.value.trim().toLowerCase();
