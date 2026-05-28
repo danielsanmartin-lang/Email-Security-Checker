@@ -56,7 +56,10 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.7.1 — Explicación de Bucles SPF en Árbol de Consultas (Actual)
+### v1.7.2 — Corrección en Detección de Hornetsecurity (Actual)
+* **Soporte Mejorado para Hornetsecurity:** Añadidas firmas de detección para Hornetsecurity en registros MX (patrón `antispameurope`) y registros SPF (patrones `hornetsecurity` y `antispameurope`), permitiendo identificar correctamente el uso de este SEG en cualquier dominio (por ejemplo, `egile.es`).
+
+### v1.7.1 — Explicación de Bucles SPF en Árbol de Consultas
 * **Tooltip Explicativo de Bucles (Loops) SPF:** Visualización interactiva y tooltip didáctico al pasar el cursor sobre la alerta `[Error: Loop detectado]`, explicando en detalle la causa raíz del error por referencias circulares en registros DNS SPF en español e inglés.
 
 ### v1.7.0 — Detección Avanzada de ICES y Consultas DNS Paralelas

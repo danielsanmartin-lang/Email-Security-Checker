@@ -23,6 +23,7 @@ export const KB = {
         { pattern: 'securence.com', name: 'Securence', type: 'seg' },
         { pattern: 'spamexperts.com', name: 'SpamExperts', type: 'seg' },
         { pattern: 'hornetsecurity.com', name: 'Hornetsecurity', type: 'seg' },
+        { pattern: 'antispameurope', name: 'Hornetsecurity', type: 'seg' },
         // ICES inline MX patterns
         { pattern: 'perception-point.io', name: 'Perception Point', type: 'ices' },
         { pattern: 'xorlab.com', name: 'xorlab', type: 'ices' },
@@ -42,6 +43,8 @@ export const KB = {
         { pattern: '_spf.google.com', name: 'Google Workspace', category: 'email', cat_label: 'Proveedor Email' },
         { pattern: 'amazonses.com', name: 'Amazon SES', category: 'email', cat_label: 'Proveedor Email / Transaccional' },
         { pattern: 'awsapps.com', name: 'Amazon WorkMail', category: 'email', cat_label: 'Proveedor Email' },
+        { pattern: 'hornetsecurity', name: 'Hornetsecurity', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'antispameurope', name: 'Hornetsecurity', category: 'seg', cat_label: 'SEG' },
         { pattern: 'sendgrid.net', name: 'SendGrid (Twilio)', category: 'transactional', cat_label: 'Transaccional' },
         { pattern: 'mailgun.org', name: 'Mailgun', category: 'transactional', cat_label: 'Transaccional' },
         { pattern: 'mandrillapp.com', name: 'Mandrill (Mailchimp)', category: 'transactional', cat_label: 'Transaccional' },
