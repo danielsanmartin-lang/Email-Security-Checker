@@ -1,10 +1,17 @@
 import { KB } from './knowledge.js';
 import { parseSPF, parseDMARC } from './parsers.js';
 
-export function identifyMX(host) {
+export function identifyMX(host, domain) {
     const h = host.toLowerCase();
     for (const entry of KB.mx) {
         if (h.includes(entry.pattern)) return entry;
+    }
+    if (domain) {
+        const mxRoot = extractRootDomain(h);
+        const domainRoot = extractRootDomain(domain.toLowerCase());
+        if (domainRoot && mxRoot && mxRoot !== domainRoot) {
+            return { name: mxRoot, type: 'seg' };
+        }
     }
     return { name: host, type: 'unknown' };
 }
@@ -107,6 +114,7 @@ export function analyzeTLSRPT(tlsrpt) {
 }
 
 export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
+    const domain = advancedData.domain || '';
     const spfEntries = parseSPF(spfRaw);
     const dmarcParsed = parseDMARC(dmarcRaw);
 
@@ -116,7 +124,7 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     const icesList = [];
     
     for (const mx of mxRecords) {
-        const id = identifyMX(mx.host);
+        const id = identifyMX(mx.host, domain);
         if (id.type === 'provider' && !provider) {
             provider = id.name;
             providerSource = `MX apunta a ${mx.host}`;

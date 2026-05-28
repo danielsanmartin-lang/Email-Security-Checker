@@ -404,7 +404,7 @@ export function renderResults(domain, result) {
         mxBody.innerHTML = `<p class="no-data">${t.no_mx_records}</p>`;
     } else {
         mxBody.innerHTML = result.mxRecords.map(mx => {
-            const id = identifyMX(mx.host);
+            const id = identifyMX(mx.host, domain);
             const tagClass = id.type === 'provider' ? 'tag--provider' : id.type === 'seg' ? 'tag--seg' : id.type === 'ices' ? 'tag--ices' : 'tag--unknown';
             return `<div class="mx-record">
                 <span class="mx-record__priority">${mx.priority}</span>

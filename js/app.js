@@ -87,6 +87,7 @@ async function runAnalysis(domain, dkimSelector = null) {
         );
         
         const result = analyze(mxRecords, spfRaw, dmarcRaw, {
+            domain,
             txtVerifications,
             nsProvider,
             nsRecords,
