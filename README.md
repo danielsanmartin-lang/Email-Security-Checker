@@ -56,7 +56,13 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 
 ## 📅 Historial de Cambios
 
-### v1.7.2 — Corrección en Detección de Hornetsecurity y Extracción de Dominio (Actual)
+### v1.7.3 — Validaciones de Seguridad Robustas para SPF y DMARC (Actual)
+* **Detección de Múltiples Registros DNS:** Alertas críticas y penalización en la puntuación si se configuran múltiples registros SPF o DMARC (infracciones de RFC 7208 y RFC 7489 que rompen la autenticación de correos).
+* **Análisis del Calificador `all` en SPF:** Penalización y alertas específicas para directivas SPF inseguras o excesivamente permisivas como `+all` (pase libre para cualquier remitente) y `?all` (neutral/sin protección).
+* **Validación de Sintaxis DMARC:** Validación estricta para garantizar que la etiqueta de versión (`v=DMARC1`) y la directiva de política (`p=none|quarantine|reject`) cumplan con los estándares y no contengan valores inválidos.
+* **Interfaz de Registros Múltiples:** La interfaz ahora detecta, resalta y renderiza de forma independiente cada uno de los registros en conflicto detectados en el DNS.
+
+### v1.7.2 — Corrección en Detección de Hornetsecurity y Extracción de Dominio
 * **Soporte Mejorado para Hornetsecurity:** Añadidas firmas de detección para Hornetsecurity en registros MX (patrón `antispameurope`) y registros SPF (patrones `hornetsecurity` y `antispameurope`), permitiendo identificar correctamente el uso de este SEG en cualquier dominio.
 * **Extracción de Dominio de Direcciones de Correo:** Al introducir o pegar una dirección de correo completa en el buscador, la herramienta limpia automáticamente la entrada ignorando el prefijo y el símbolo `@` para analizar directamente el dominio (ej. `nombre@empresa.com` pasa a ser analizado como `empresa.com`).
 

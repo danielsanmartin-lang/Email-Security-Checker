@@ -31,23 +31,42 @@ export async function getMX(domain) {
 
 export async function getSPF(domain) {
     const data = await queryDNS(domain, 'TXT');
-    if (!data.Answer) return null;
+    if (!data.Answer) return { record: null, records: [], multiple: false };
+    const records = [];
     for (const a of data.Answer) {
-        const txt = a.data.replace(/"/g, '');
-        if (txt.startsWith('v=spf1')) return txt;
+        if (a.data) {
+            const txt = a.data.replace(/"/g, '');
+            if (txt.startsWith('v=spf1')) {
+                records.push(txt);
+            }
+        }
     }
-    return null;
+    return {
+        record: records[0] || null,
+        records: records,
+        multiple: records.length > 1
+    };
 }
 
 export async function getDMARC(domain) {
     const data = await queryDNS(`_dmarc.${domain}`, 'TXT');
-    if (!data.Answer) return null;
+    if (!data.Answer) return { record: null, records: [], multiple: false };
+    const records = [];
     for (const a of data.Answer) {
-        const txt = a.data.replace(/"/g, '');
-        if (txt.startsWith('v=DMARC1')) return txt;
+        if (a.data) {
+            const txt = a.data.replace(/"/g, '');
+            if (txt.startsWith('v=DMARC1')) {
+                records.push(txt);
+            }
+        }
     }
-    return null;
+    return {
+        record: records[0] || null,
+        records: records,
+        multiple: records.length > 1
+    };
 }
+
 
 export const COMMON_DKIM_SELECTORS = ['google', 'default', 's1', 's2', 'k1', 'k2', 'm1', 'mail', 'selector1'];
 
@@ -151,7 +170,8 @@ export async function getSPFLookupTree(domain, cache = new Set(), depth = 0) {
     cache.add(domain);
 
     try {
-        const spf = await getSPF(domain);
+        const spfData = await getSPF(domain);
+        const spf = spfData.record;
         if (!spf) return node;
         node.record = spf;
 

@@ -449,8 +449,12 @@ export function renderResults(domain, result) {
     }
 
     const spfRawEl = document.getElementById('spf-raw');
-    if (result.spfRaw) {
-        spfRawEl.textContent = result.spfRaw;
+    if (result.spfData && result.spfData.records && result.spfData.records.length > 0) {
+        if (result.spfData.multiple) {
+            spfRawEl.innerHTML = result.spfData.records.map(r => `<div style="color: #ef4444; margin-bottom: 4px; padding: 4px 8px; border-left: 3px solid #ef4444; background: rgba(239,68,68,0.05); font-family: monospace;">${r}</div>`).join('');
+        } else {
+            spfRawEl.textContent = result.spfRaw;
+        }
         spfRawEl.classList.remove('hidden');
     } else {
         spfRawEl.textContent = t.no_spf_record;
@@ -528,8 +532,12 @@ export function renderResults(domain, result) {
     }
 
     const dmarcRawEl = document.getElementById('dmarc-raw');
-    if (result.dmarcRaw) {
-        dmarcRawEl.textContent = result.dmarcRaw;
+    if (result.dmarcData && result.dmarcData.records && result.dmarcData.records.length > 0) {
+        if (result.dmarcData.multiple) {
+            dmarcRawEl.innerHTML = result.dmarcData.records.map(r => `<div style="color: #ef4444; margin-bottom: 4px; padding: 4px 8px; border-left: 3px solid #ef4444; background: rgba(239,68,68,0.05); font-family: monospace;">${r}</div>`).join('');
+        } else {
+            dmarcRawEl.textContent = result.dmarcRaw;
+        }
     } else {
         dmarcRawEl.textContent = t.no_dmarc_record;
     }

@@ -38,13 +38,15 @@ async function runAnalysis(domain, dkimSelector = null) {
         setStep('step-mx', 'done');
 
         setStep('step-spf', 'active');
-        const spfRaw = await getSPF(domain);
+        const spfData = await getSPF(domain);
+        const spfRaw = spfData.record;
         const spfTree = spfRaw ? await getSPFLookupTree(domain) : null;
         const spfLookups = spfTree ? spfTree.lookups : 0;
         setStep('step-spf', 'done');
 
         setStep('step-dmarc', 'active');
-        const dmarcRaw = await getDMARC(domain);
+        const dmarcData = await getDMARC(domain);
+        const dmarcRaw = dmarcData.record;
         setStep('step-dmarc', 'done');
 
         setStep('step-dkim', 'active');
@@ -93,7 +95,9 @@ async function runAnalysis(domain, dkimSelector = null) {
             nsRecords,
             mtaSts,
             tlsRpt,
-            tlsrptReporters
+            tlsrptReporters,
+            spfData,
+            dmarcData
         });
         result.spfLookups = spfLookups;
         result.spfTree = spfTree;

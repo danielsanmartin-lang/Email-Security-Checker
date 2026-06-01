@@ -205,8 +205,10 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     return {
         provider, providerSource, segList, icesList,
         spfRaw, spfEntries, spfServices,
+        spfData: advancedData.spfData || { record: spfRaw, records: spfRaw ? [spfRaw] : [], multiple: false },
         dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass,
         dmarcRua, dmarcRuf, dmarcDetails,
+        dmarcData: advancedData.dmarcData || { record: dmarcRaw, records: dmarcRaw ? [dmarcRaw] : [], multiple: false },
         mxRecords,
         // New advanced data
         txtVerifications,
@@ -224,11 +226,49 @@ export function calculateScoreAndFindings(result) {
 
     // 1. SPF Check
     if (result.spfRaw) {
-        score += 20;
-        findings.push({
-            status: 'success',
-            key: 'finding_spf_ok'
-        });
+        if (result.spfData && result.spfData.multiple) {
+            findings.push({
+                status: 'error',
+                key: 'finding_spf_multiple'
+            });
+            score -= 10;
+        } else {
+            score += 20;
+            findings.push({
+                status: 'success',
+                key: 'finding_spf_ok'
+            });
+        }
+
+        // SPF Qualifier check
+        if (result.spfEntries) {
+            const allEntry = result.spfEntries.find(e => e.type === 'all');
+            if (allEntry) {
+                if (allEntry.qualifier === '+') {
+                    score -= 25;
+                    findings.push({
+                        status: 'error',
+                        key: 'finding_spf_all_pass'
+                    });
+                } else if (allEntry.qualifier === '?' || allEntry.qualifier === '') {
+                    score -= 15;
+                    findings.push({
+                        status: 'warning',
+                        key: 'finding_spf_all_neutral'
+                    });
+                } else if (allEntry.qualifier === '~') {
+                    findings.push({
+                        status: 'success',
+                        key: 'finding_spf_all_softfail'
+                    });
+                } else if (allEntry.qualifier === '-') {
+                    findings.push({
+                        status: 'success',
+                        key: 'finding_spf_all_hardfail'
+                    });
+                }
+            }
+        }
         
         const spfLookups = result.spfLookups || 0;
         if (spfLookups <= 10) {
@@ -254,32 +294,62 @@ export function calculateScoreAndFindings(result) {
 
     // 2. DMARC Check
     if (result.dmarcRaw) {
-        score += 20;
-        const policy = result.dmarcPolicy || 'none';
-        findings.push({
-            status: 'success',
-            key: 'finding_dmarc_ok',
-            replacements: { '{policy}': policy.toUpperCase() }
-        });
-
-        if (policy === 'reject') {
-            score += 30;
+        if (result.dmarcData && result.dmarcData.multiple) {
+            findings.push({
+                status: 'error',
+                key: 'finding_dmarc_multiple'
+            });
+            score -= 10;
+        } else {
+            score += 20;
+            const policy = result.dmarcPolicy || 'none';
             findings.push({
                 status: 'success',
-                key: 'finding_dmarc_policy_reject'
+                key: 'finding_dmarc_ok',
+                replacements: { '{policy}': policy.toUpperCase() }
             });
-        } else if (policy === 'quarantine') {
-            score += 20;
-            findings.push({
-                status: 'warning',
-                key: 'finding_dmarc_policy_quarantine'
-            });
-        } else if (policy === 'none') {
-            score += 5;
-            findings.push({
-                status: 'warning',
-                key: 'finding_dmarc_policy_none'
-            });
+
+            if (policy === 'reject') {
+                score += 30;
+                findings.push({
+                    status: 'success',
+                    key: 'finding_dmarc_policy_reject'
+                });
+            } else if (policy === 'quarantine') {
+                score += 20;
+                findings.push({
+                    status: 'warning',
+                    key: 'finding_dmarc_policy_quarantine'
+                });
+            } else if (policy === 'none') {
+                score += 5;
+                findings.push({
+                    status: 'warning',
+                    key: 'finding_dmarc_policy_none'
+                });
+            }
+        }
+
+        // DMARC Syntax validation (new)
+        if (result.dmarcParsed) {
+            const v = result.dmarcParsed.v;
+            const p = result.dmarcParsed.p;
+
+            if (v !== 'DMARC1') {
+                score -= 10;
+                findings.push({
+                    status: 'error',
+                    key: 'finding_dmarc_version_invalid'
+                });
+            }
+
+            if (!p || !['none', 'quarantine', 'reject'].includes(p.toLowerCase())) {
+                score -= 25;
+                findings.push({
+                    status: 'error',
+                    key: 'finding_dmarc_policy_invalid'
+                });
+            }
         }
 
         // DMARC Reporting (rua/ruf)
