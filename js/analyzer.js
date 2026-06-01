@@ -9,6 +9,11 @@ export function identifyMX(host, domain) {
     if (domain) {
         const mxRoot = extractRootDomain(h);
         const domainRoot = extractRootDomain(domain.toLowerCase());
+        // If MX root matches the analyzed domain root, it's the company's own mail server — not a SEG
+        if (domainRoot && mxRoot && mxRoot === domainRoot) {
+            return { name: host, type: 'self' };
+        }
+        // Only flag as SEG if the MX clearly belongs to a different, external domain
         if (domainRoot && mxRoot && mxRoot !== domainRoot) {
             return { name: mxRoot, type: 'seg' };
         }
