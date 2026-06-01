@@ -194,7 +194,7 @@ export function renderSPFTree(tree) {
     return html;
 }
 
-function translateProviderSource(source, lang) {
+export function translateProviderSource(source, lang) {
     if (!source) return '';
     const t = translations[lang];
     if (source.includes('MX apunta a')) {

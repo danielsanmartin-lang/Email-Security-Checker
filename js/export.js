@@ -1,8 +1,8 @@
 import { state } from './app.js';
-import { identifySPFService } from './analyzer.js';
+import { identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { getLanguage } from './lang.js';
 import { translations } from './i18n.js';
-import { getCategoryLabel } from './ui.js';
+import { getCategoryLabel, translateProviderSource } from './ui.js';
 
 export function generateReportHTML() {
     if (!state.currentResult || !state.currentDomain) return '';
@@ -258,7 +258,8 @@ export function generateReportHTML() {
             <!-- Executive Summary -->
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">📋 ${execSummaryLabel}</h2>
             <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13.5px; color: #334155; line-height: 1.6; text-align: left;">
-                <li><strong>${t.summary_provider}:</strong> ${providerDisplay}</li>
+                <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100)</li>
+                <li><strong>${t.summary_provider}:</strong> ${providerDisplay} <br><small style="color: #64748b;">(${translateProviderSource(currentResult.providerSource, lang)})</small></li>
                 <li><strong>${t.summary_dmarc}:</strong> ${dmarcPolicyText}</li>
                 <li><strong>${authorizedServicesLabel}:</strong> ${currentResult.spfServices.length} ${t.detected_plural}</li>
                 <li><strong>${rblSummaryLabel}:</strong> ${rblStatusVal}</li>
@@ -300,6 +301,7 @@ export function generateReportHTML() {
                     <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold; text-align: left; width: 60px;">${t.spf_header_prefix}</th>
                     <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold; text-align: left; width: 90px;">${t.spf_header_type}</th>
                     <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold; text-align: left;">${t.spf_header_value}</th>
+                    <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold; text-align: left; width: 80px;">${t.spf_header_result || 'Resultado'}</th>
                     <th style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold; text-align: left;">${t.spf_header_service}</th>
                 </tr>
                 ${currentResult.spfEntries.map(e => {
@@ -313,11 +315,23 @@ export function generateReportHTML() {
                     } else if (e.type === 'all') {
                         svcName = t.spf_default_policy;
                     }
+
+                    let resultText = 'Pass';
+                    let resultColor = '#059669'; // Green
+                    if (e.qualifier === '-') { resultText = 'Fail'; resultColor = '#dc2626'; }
+                    else if (e.qualifier === '~') { resultText = 'SoftFail'; resultColor = '#d97706'; }
+                    else if (e.qualifier === '?') { resultText = 'Neutral'; resultColor = '#475569'; }
+                    
+                    if (e.type === 'v') { resultText = ''; }
+                    if (e.type === 'all' && e.qualifier === '-') { resultText = 'Fail'; resultColor = '#dc2626'; }
+                    if (e.type === 'all' && e.qualifier === '~') { resultText = 'SoftFail'; resultColor = '#d97706'; }
+
                     return `
                         <tr>
                             <td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; text-align: center;">${e.qualifier || ''}</td>
                             <td style="padding: 8px; border: 1px solid #e2e8f0; font-family: monospace; text-align: left;">${e.type}</td>
                             <td style="padding: 8px; border: 1px solid #e2e8f0; font-family: monospace; word-break: break-all; text-align: left;">${e.value || '—'}</td>
+                            <td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: bold; color: ${resultColor}; text-align: left;">${resultText}</td>
                             <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${svcName}</td>
                         </tr>
                     `;
@@ -330,11 +344,61 @@ export function generateReportHTML() {
             <div style="background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 12.5px; color: #1e293b; margin-bottom: 15px; word-break: break-all; text-align: left;">
                 ${currentResult.dmarcRaw || t.no_dmarc_record}
             </div>
+
+            <!-- Parsed DMARC Details Grid -->
+            ${(() => {
+                if (currentResult.dmarcParsed) {
+                    const d = currentResult.dmarcParsed;
+                    const pClassColor = d.p === 'reject' ? '#dc2626' : d.p === 'quarantine' ? '#d97706' : '#2563eb';
+                    const spClassColor = d.sp === 'reject' ? '#dc2626' : d.sp === 'quarantine' ? '#d97706' : '#2563eb';
+                    
+                    return `
+                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
+                            <h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b; font-size: 14px;">${lang === 'es' ? 'Configuración DMARC Analizada' : 'Analyzed DMARC Configuration'}</h4>
+                            <table border="0" cellpadding="6" cellspacing="0" style="width: 100%; font-family: sans-serif; font-size: 13px; text-align: left;">
+                                <tr>
+                                    <td style="width: 180px; font-weight: bold; color: #475569;">${t.dmarc_policy_p || 'Política (p)'}:</td>
+                                    <td style="font-weight: bold; color: ${pClassColor}; text-transform: uppercase;">${d.p || 'none'}</td>
+                                </tr>
+                                ${d.sp ? `
+                                <tr>
+                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_policy_sp || 'Subdominios (sp)'}:</td>
+                                    <td style="font-weight: bold; color: ${spClassColor}; text-transform: uppercase;">${d.sp}</td>
+                                </tr>` : ''}
+                                ${d.pct ? `
+                                <tr>
+                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_policy_pct || 'Porcentaje (pct)'}:</td>
+                                    <td>${d.pct}%</td>
+                                </tr>` : ''}
+                                ${d.adkim ? `
+                                <tr>
+                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_alignment_dkim || 'Alineación DKIM'}:</td>
+                                    <td>${d.adkim === 's' ? 'Strict (Estricta)' : 'Relaxed (Relajada)'}</td>
+                                </tr>` : ''}
+                                ${d.aspf ? `
+                                <tr>
+                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_alignment_spf || 'Alineación SPF'}:</td>
+                                    <td>${d.aspf === 's' ? 'Strict (Estricta)' : 'Relaxed (Relajada)'}</td>
+                                </tr>` : ''}
+                            </table>
+                        </div>
+                    `;
+                }
+                return '';
+            })()}
             
             <p style="font-family: sans-serif; font-size: 13.5px; color: #334155; font-weight: bold; margin-bottom: 5px; text-align: left;">${t.panel_dmarc_reporting_title}</p>
             <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5; text-align: left;">
-                ${currentResult.dmarcRua.length > 0 ? currentResult.dmarcRua.map(r => `<li><strong>RUA (Aggregate):</strong> <code>${r}</code></li>`).join('') : ''}
-                ${currentResult.dmarcRuf.length > 0 ? currentResult.dmarcRuf.map(r => `<li><strong>RUF (Forensic):</strong> <code>${r}</code></li>`).join('') : ''}
+                ${currentResult.dmarcRua.length > 0 ? currentResult.dmarcRua.map(r => {
+                    const reporter = identifyDMARCReporter(r);
+                    const reporterSuffix = reporter ? ` <strong style="color: #4f46e5;">(${lang === 'es' ? 'Herramienta' : 'Tool'}: ${reporter})</strong>` : '';
+                    return `<li><strong>RUA (Aggregate):</strong> <code>${r}</code>${reporterSuffix}</li>`;
+                }).join('') : ''}
+                ${currentResult.dmarcRuf.length > 0 ? currentResult.dmarcRuf.map(r => {
+                    const reporter = identifyDMARCReporter(r);
+                    const reporterSuffix = reporter ? ` <strong style="color: #4f46e5;">(${lang === 'es' ? 'Herramienta' : 'Tool'}: ${reporter})</strong>` : '';
+                    return `<li><strong>RUF (Forensic):</strong> <code>${r}</code>${reporterSuffix}</li>`;
+                }).join('') : ''}
                 ${currentResult.dmarcRua.length === 0 && currentResult.dmarcRuf.length === 0 ? `<li>${t.no_dmarc_reporting}</li>` : ''}
             </ul>
 
