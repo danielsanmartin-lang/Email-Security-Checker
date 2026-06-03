@@ -23,7 +23,7 @@ Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless
 
 ## 🛠️ Tecnologías utilizadas
 
-* HTML5 / CSS3 (Diseño responsivo y efectos avanzados)
+* HTML5 / CSS3
 * JavaScript Vanilla (ES6+)
 * API de DNS-over-HTTPS (Google / Cloudflare)
 
