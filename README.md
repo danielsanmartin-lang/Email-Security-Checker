@@ -15,7 +15,7 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 
 ## 🏗️ Arquitectura del Sistema
 
-Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless)**, lo que garantiza total privacidad y velocidad:
+Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless)**:
 
 * **Sin Backend:** Todo el procesamiento y parseo de registros ocurre en el cliente.
 * **DNS-over-HTTPS (DoH):** Utiliza la API pública de Google DNS para realizar consultas seguras directamente desde el navegador.
