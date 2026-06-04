@@ -96,10 +96,11 @@ export async function getSPF(domain) {
             }
         }
     }
+    const uniqueRecords = [...new Set(records)];
     return {
-        record: records[0] || null,
-        records: records,
-        multiple: records.length > 1
+        record: uniqueRecords[0] || null,
+        records: uniqueRecords,
+        multiple: uniqueRecords.length > 1
     };
 }
 
@@ -121,10 +122,11 @@ export async function getDMARC(domain) {
             }
         }
     }
+    const uniqueRecords = [...new Set(records)];
     return {
-        record: records[0] || null,
-        records: records,
-        multiple: records.length > 1
+        record: uniqueRecords[0] || null,
+        records: uniqueRecords,
+        multiple: uniqueRecords.length > 1
     };
 }
 
