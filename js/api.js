@@ -1,20 +1,67 @@
+import { parseMTASTSPolicy, validateMTASTSPolicy } from './parsers.js';
+
+// ===== DNS Cache =====
+const _dnsCache = new Map();
+const DNS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export function clearDnsCache() {
+    _dnsCache.clear();
+}
+
+function _getCached(name, type) {
+    const key = `${name}:${type}`;
+    const cached = _dnsCache.get(key);
+    if (cached && Date.now() - cached.ts < DNS_CACHE_TTL) return cached.data;
+    if (cached) _dnsCache.delete(key);
+    return null;
+}
+
+function _setCache(name, type, data) {
+    const key = `${name}:${type}`;
+    _dnsCache.set(key, { data, ts: Date.now() });
+    // Prune old entries if cache grows too large
+    if (_dnsCache.size > 500) {
+        const now = Date.now();
+        for (const [k, v] of _dnsCache) {
+            if (now - v.ts > DNS_CACHE_TTL) _dnsCache.delete(k);
+        }
+    }
+}
+
+// ===== DNS Query with timeout and fallback =====
+const DNS_TIMEOUT = 8000; // 8 seconds
+
 export async function queryDNS(name, type) {
+    // Check cache first
+    const cached = _getCached(name, type);
+    if (cached) return cached;
+
+    let data;
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
         const url = `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
         if (!res.ok) throw new Error(`Google DNS failed: ${res.status}`);
-        return await res.json();
+        data = await res.json();
     } catch (e) {
         console.warn('Google DNS failed, falling back to Cloudflare DoH', e);
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
             const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
-            const res = await fetch(url, { headers: { 'Accept': 'application/dns-json' } });
+            const res = await fetch(url, { headers: { 'Accept': 'application/dns-json' }, signal: controller.signal });
+            clearTimeout(timeoutId);
             if (!res.ok) throw new Error(`Cloudflare DNS failed: ${res.status}`);
-            return await res.json();
+            data = await res.json();
         } catch (err) {
             throw new Error(`DNS queries failed for ${name} (${type})`);
         }
     }
+
+    _setCache(name, type, data);
+    return data;
 }
 
 export async function getMX(domain) {
@@ -249,6 +296,89 @@ export async function getAllTXT(domain) {
     }
 }
 
+export async function fetchMTASTSPolicyFile(domain) {
+    const url = `https://mta-sts.${domain}/.well-known/mta-sts.txt`;
+    const base = {
+        url,
+        httpStatus: null,
+        fetchOk: false,
+        body: null,
+        parsed: null,
+        mode: null,
+        valid: false,
+        error: null,
+        validationReason: null
+    };
+
+    let res;
+    let body;
+    let usedUrl = url;
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        res = await fetch(url, {
+            method: 'GET',
+            cache: 'no-store',
+            redirect: 'follow',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        body = await res.text();
+    } catch (e) {
+        console.warn(`Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.`, e);
+        try {
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const proxyRes = await fetch(proxyUrl, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (!proxyRes.ok) throw new Error(`Proxy HTTP error: ${proxyRes.status}`);
+            const data = await proxyRes.json();
+            if (!data || !data.contents) throw new Error(`Empty contents from proxy`);
+            body = data.contents;
+            res = { ok: true, status: 200 };
+            usedUrl = `${url} (via CORS proxy)`;
+        } catch (proxyErr) {
+            const message = e.name === 'AbortError' || proxyErr.name === 'AbortError'
+                ? 'Policy fetch timed out'
+                : `Direct fetch failed (CORS/Network) and CORS proxy fallback failed: ${proxyErr.message}`;
+            return {
+                ...base,
+                error: message,
+                validationReason: 'fetch_failed'
+            };
+        }
+    }
+
+    try {
+        const parsed = parseMTASTSPolicy(body);
+        const mode = parsed?.mode ? String(parsed.mode).toLowerCase() : null;
+        const policyFetch = {
+            url: usedUrl,
+            httpStatus: res.status,
+            fetchOk: res.ok,
+            body,
+            parsed,
+            mode,
+            error: null
+        };
+        const validation = validateMTASTSPolicy(policyFetch);
+        return {
+            ...policyFetch,
+            valid: validation.valid,
+            validationReason: validation.reason
+        };
+    } catch (parseErr) {
+        return {
+            ...base,
+            url: usedUrl,
+            error: `Failed to parse policy: ${parseErr.message}`,
+            validationReason: 'parse_error'
+        };
+    }
+}
+
 export async function getMTASTS(domain) {
     try {
         const data = await queryDNS(`_mta-sts.${domain}`, 'TXT');
@@ -257,7 +387,12 @@ export async function getMTASTS(domain) {
             const txt = a.data.replace(/"/g, '');
             if (txt.startsWith('v=STSv1')) {
                 const idMatch = txt.match(/id=([^;]+)/);
-                return { record: txt, id: idMatch ? idMatch[1].trim() : null };
+                const result = {
+                    record: txt,
+                    id: idMatch ? idMatch[1].trim() : null
+                };
+                result.policy = await fetchMTASTSPolicyFile(domain);
+                return result;
             }
         }
     } catch (e) {

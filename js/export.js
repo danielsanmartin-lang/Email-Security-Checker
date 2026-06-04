@@ -97,7 +97,7 @@ export function generateReportHTML() {
                 bulletColor = '#ef4444';
             }
             
-            let text = t[f.key] || '';
+            let text = t[f.key] || f.message || '';
             if (f.replacements) {
                 for (const [placeholder, val] of Object.entries(f.replacements)) {
                     text = text.replace(placeholder, val);
@@ -164,10 +164,28 @@ export function generateReportHTML() {
     
     // MTA-STS
     advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
-    advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_mta_sts_title || 'MTA-STS'} - <span style="color: ${currentResult.mtaSts ? '#059669' : '#64748b'}; font-size: 13px;">${currentResult.mtaSts ? (t.adv_mta_sts_configured || 'Configurado') : (t.adv_mta_sts_not_configured || 'No configurado')}</span></h4>`;
+    const mtaPolicyValid = currentResult.mtaSts?.policy?.valid;
+    const mtaStsStatusColor = mtaPolicyValid ? '#059669' : (currentResult.mtaSts ? '#dc2626' : '#64748b');
+    const mtaStsStatusLabel = mtaPolicyValid
+        ? (t.adv_mta_sts_enforced || 'Enforce active')
+        : (currentResult.mtaSts ? (t.adv_mta_sts_policy_invalid || 'Invalid HTTPS policy') : (t.adv_mta_sts_not_configured || 'Not configured'));
+    advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_mta_sts_title || 'MTA-STS'} - <span style="color: ${mtaStsStatusColor}; font-size: 13px;">${mtaStsStatusLabel}</span></h4>`;
     if (currentResult.mtaSts) {
+        const policy = currentResult.mtaSts.policy || {};
         advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.adv_mta_sts_id || 'ID'}:</strong> ${currentResult.mtaSts.id || '—'}</p>`;
-        advDnsHtml += `<div style="background-color: #f1f5f9; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; border: 1px solid #e2e8f0; word-break: break-all;">${currentResult.mtaSts.record}</div>`;
+        advDnsHtml += `<div style="background-color: #f1f5f9; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; border: 1px solid #e2e8f0; word-break: break-all; margin-bottom: 8px;">${currentResult.mtaSts.record}</div>`;
+        if (policy.url) {
+            advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.adv_mta_sts_policy_url || 'Policy URL'}:</strong> ${policy.url}</p>`;
+        }
+        if (policy.httpStatus != null) {
+            advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.adv_mta_sts_policy_http || 'HTTP'}:</strong> ${policy.httpStatus}</p>`;
+        }
+        if (policy.mode) {
+            advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.adv_mta_sts_policy_mode || 'Mode'}:</strong> ${policy.mode}</p>`;
+        }
+        if (policy.error) {
+            advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0; color: #dc2626;"><strong>${t.adv_mta_sts_policy_error || 'Fetch error'}:</strong> ${policy.error}</p>`;
+        }
     } else {
         advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; color: #64748b; margin: 0;">${t.adv_mta_sts_desc || 'Sin política estricta de transporte.'}</p>`;
     }

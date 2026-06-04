@@ -410,16 +410,34 @@ export function calculateScoreAndFindings(result) {
         });
     }
 
-    // 5. MTA-STS Check (bonus)
-    if (result.mtaSts) {
+    // 5. MTA-STS Check (DNS TXT + HTTPS policy file with mode: enforce)
+    if (!result.mtaSts) {
+        findings.push({
+            status: 'info',
+            key: 'finding_mta_sts_err'
+        });
+    } else if (result.mtaSts.policy?.valid) {
+        score += 5;
         findings.push({
             status: 'success',
             key: 'finding_mta_sts_ok'
         });
     } else {
+        score -= 15;
+        const policy = result.mtaSts.policy || {};
+        const replacements = {};
+        if (policy.httpStatus != null && policy.httpStatus !== 200) {
+            replacements['{status}'] = String(policy.httpStatus);
+        } else if (policy.mode) {
+            replacements['{mode}'] = policy.mode;
+        }
         findings.push({
-            status: 'info',
-            key: 'finding_mta_sts_err'
+            status: 'error',
+            id: 'MTA_STS_POLICY_INVALID',
+            type: 'error',
+            key: 'finding_mta_sts_policy_invalid',
+            message: 'MTA-STS TXT record exists but the HTTPS policy file is missing, invalid, or not set to enforce.',
+            replacements: Object.keys(replacements).length ? replacements : undefined
         });
     }
 

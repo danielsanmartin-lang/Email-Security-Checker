@@ -71,6 +71,11 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 * **Validación de Sintaxis DMARC:** Validación estricta para garantizar que la etiqueta de versión (`v=DMARC1`) y la directiva de política (`p=none|quarantine|reject`) cumplan con los estándares y no contengan valores inválidos.
 * **Interfaz de Registros Múltiples:** La interfaz ahora detecta, resalta y renderiza de forma independiente cada uno de los registros en conflicto detectados en el DNS.
 
+### v1.7.3 — Seguridad contra XSS, Bypass de CORS en MTA-STS y Caché DNS
+* **Sanitización contra vulnerabilidades XSS en registros DNS:** Sanitización automática de caracteres HTML conflictivos (`<`, `>`, `&`, `"`, `'`) en cualquier registro recuperado de DNS antes de renderizarlo con `innerHTML`, mitigando ataques de inyección.
+* **Bypass de CORS en MTA-STS:** Fallback inteligente a un proxy CORS (allorigins.win) cuando la recuperación directa del archivo de políticas MTA-STS es bloqueada por restricciones CORS del navegador.
+* **Caché DNS en memoria:** Implementación de caché local con TTL de 5 minutos para evitar consultas DNS redundantes y optimizar la velocidad general de la auditoría.
+
 ### v1.7.2 — Corrección en Detección de Hornetsecurity y Extracción de Dominio
 * **Soporte Mejorado para Hornetsecurity:** Añadidas firmas de detección para Hornetsecurity en registros MX (patrón `antispameurope`) y registros SPF (patrones `hornetsecurity` y `antispameurope`), permitiendo identificar correctamente el uso de este SEG en cualquier dominio.
 * **Extracción de Dominio de Direcciones de Correo:** Al introducir o pegar una dirección de correo completa en el buscador, la herramienta limpia automáticamente la entrada ignorando el prefijo y el símbolo `@` para analizar directamente el dominio (ej. `nombre@empresa.com` pasa a ser analizado como `empresa.com`).

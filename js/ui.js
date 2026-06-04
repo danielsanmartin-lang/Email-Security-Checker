@@ -1,5 +1,6 @@
 import { KB } from './knowledge.js';
 import { identifyMX, identifySPFService, identifyDMARCReporter } from './analyzer.js';
+import { escapeHtml } from './parsers.js';
 import { translations } from './i18n.js';
 import { getLanguage } from './lang.js';
 
@@ -347,7 +348,7 @@ export function renderResults(domain, result) {
                     </svg>`;
                 }
                 
-                let text = t[f.key] || '';
+                let text = t[f.key] || f.message || '';
                 if (f.replacements) {
                     for (const [placeholder, val] of Object.entries(f.replacements)) {
                         text = text.replace(placeholder, val);
@@ -451,7 +452,7 @@ export function renderResults(domain, result) {
     const spfRawEl = document.getElementById('spf-raw');
     if (result.spfData && result.spfData.records && result.spfData.records.length > 0) {
         if (result.spfData.multiple) {
-            spfRawEl.innerHTML = result.spfData.records.map(r => `<div style="color: #ef4444; margin-bottom: 4px; padding: 4px 8px; border-left: 3px solid #ef4444; background: rgba(239,68,68,0.05); font-family: monospace;">${r}</div>`).join('');
+            spfRawEl.innerHTML = result.spfData.records.map(r => `<div style="color: #ef4444; margin-bottom: 4px; padding: 4px 8px; border-left: 3px solid #ef4444; background: rgba(239,68,68,0.05); font-family: monospace;">${escapeHtml(r)}</div>`).join('');
         } else {
             spfRawEl.textContent = result.spfRaw;
         }
@@ -499,10 +500,10 @@ export function renderResults(domain, result) {
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><span class="spf-prefix ${prefixClass}${qualifierTooltip ? ' tooltip-trigger' : ''}"${qualifierTooltip ? ` data-tooltip="${qualifierTooltip}"` : ''}>${prefixDisplay || ''}</span></td>
-            <td><span class="spf-type${typeTooltip ? ' tooltip-trigger' : ''}"${typeTooltip ? ` data-tooltip="${typeTooltip}"` : ''}>${entry.type}</span></td>
-            <td><span class="spf-value">${entry.value || '—'}</span></td>
-            <td><span class="spf-result ${resultClass}">${resultText}</span></td>
+            <td><span class="spf-prefix ${prefixClass}${qualifierTooltip ? ' tooltip-trigger' : ''}"${qualifierTooltip ? ` data-tooltip="${escapeHtml(qualifierTooltip)}"` : ''}>${prefixDisplay || ''}</span></td>
+            <td><span class="spf-type${typeTooltip ? ' tooltip-trigger' : ''}"${typeTooltip ? ` data-tooltip="${escapeHtml(typeTooltip)}"` : ''}>${escapeHtml(entry.type)}</span></td>
+            <td><span class="spf-value">${escapeHtml(entry.value || '—')}</span></td>
+            <td><span class="spf-result ${resultClass}">${escapeHtml(resultText)}</span></td>
             <td>${svcHTML}</td>`;
         spfTbody.appendChild(row);
     }
@@ -514,7 +515,7 @@ export function renderResults(domain, result) {
             const localizedCatLabel = getCategoryLabel(svc, lang);
             return `<span class="service-pill">
                 <span class="service-pill__dot" style="background:${color}"></span>
-                ${svc.name} <small style="color:var(--text-muted)">(${localizedCatLabel})</small>
+                ${escapeHtml(svc.name)} <small style="color:var(--text-muted)">(${escapeHtml(localizedCatLabel)})</small>
             </span>`;
         }).join('');
         spfSummary.innerHTML = `<div class="services-summary">${pills}</div>`;
@@ -534,7 +535,7 @@ export function renderResults(domain, result) {
     const dmarcRawEl = document.getElementById('dmarc-raw');
     if (result.dmarcData && result.dmarcData.records && result.dmarcData.records.length > 0) {
         if (result.dmarcData.multiple) {
-            dmarcRawEl.innerHTML = result.dmarcData.records.map(r => `<div style="color: #ef4444; margin-bottom: 4px; padding: 4px 8px; border-left: 3px solid #ef4444; background: rgba(239,68,68,0.05); font-family: monospace;">${r}</div>`).join('');
+            dmarcRawEl.innerHTML = result.dmarcData.records.map(r => `<div style="color: #ef4444; margin-bottom: 4px; padding: 4px 8px; border-left: 3px solid #ef4444; background: rgba(239,68,68,0.05); font-family: monospace;">${escapeHtml(r)}</div>`).join('');
         } else {
             dmarcRawEl.textContent = result.dmarcRaw;
         }
@@ -598,16 +599,16 @@ export function renderResults(domain, result) {
             const reporter = identifyDMARCReporter(rua);
             html += `<div class="reporting-item">
                 <div class="reporting-item__type">RUA (${lang === 'es' ? 'Agregados' : 'Aggregate'})</div>
-                <div class="reporting-item__value">${rua}</div>
-                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${reporter}</div>` : ''}
+                <div class="reporting-item__value">${escapeHtml(rua)}</div>
+                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${escapeHtml(reporter)}</div>` : ''}
             </div>`;
         }
         for (const ruf of result.dmarcRuf) {
             const reporter = identifyDMARCReporter(ruf);
             html += `<div class="reporting-item">
                 <div class="reporting-item__type">RUF (${lang === 'es' ? 'Forenses' : 'Forensic'})</div>
-                <div class="reporting-item__value">${ruf}</div>
-                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${reporter}</div>` : ''}
+                <div class="reporting-item__value">${escapeHtml(ruf)}</div>
+                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${escapeHtml(reporter)}</div>` : ''}
             </div>`;
         }
         repBody.innerHTML = html;
@@ -637,30 +638,30 @@ export function renderResults(domain, result) {
     if (result.dkimRecords && result.dkimRecords.records && result.dkimRecords.records.length > 0) {
         dkimHtml += result.dkimRecords.records.map(dkim => `
             <div class="info-block" style="margin-bottom:12px;">
-                <div class="info-block__label">Selector: ${dkim.selector}</div>
-                <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${dkim.record}</div>
+                <div class="info-block__label">Selector: ${escapeHtml(dkim.selector)}</div>
+                <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${escapeHtml(dkim.record)}</div>
             </div>`).join('');
     } else {
         dkimHtml += `<p class="no-data">${t.no_dkim_records}</p>`;
     }
     if (result.dkimRecords && result.dkimRecords.errors && result.dkimRecords.errors.length > 0) {
-        dkimHtml += `<div style="margin-top: 12px; color: #ef4444; font-size: 13px;">${t.dkim_network_error}: ${result.dkimRecords.errors.map(e => e.selector).join(', ')}</div>`;
+        dkimHtml += `<div style="margin-top: 12px; color: #ef4444; font-size: 13px;">${escapeHtml(t.dkim_network_error)}: ${escapeHtml(result.dkimRecords.errors.map(e => e.selector).join(', '))}</div>`;
     }
     dkimBody.innerHTML = dkimHtml;
 
     const bimiBody = document.getElementById('bimi-body');
     if (result.bimiRecord) {
         if (result.bimiRecord.error) {
-            bimiBody.innerHTML = `<p class="no-data" style="color:#ef4444">${t.bimi_error}: ${result.bimiRecord.error}</p>`;
+            bimiBody.innerHTML = `<p class="no-data" style="color:#ef4444">${escapeHtml(t.bimi_error)}: ${escapeHtml(result.bimiRecord.error)}</p>`;
         } else {
             let logoHtml = '';
             if (result.bimiRecord.logo) {
-                logoHtml = `<div style="margin-top: 16px;"><img src="${result.bimiRecord.logo}" alt="BIMI Logo" style="max-width: 120px; max-height: 120px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>`;
+                logoHtml = `<div style="margin-top: 16px;"><img src="${escapeHtml(result.bimiRecord.logo)}" alt="BIMI Logo" style="max-width: 120px; max-height: 120px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>`;
             }
             bimiBody.innerHTML = `
                 <div class="info-block">
-                    <div class="info-block__label">${t.bimi_record_found}</div>
-                    <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${result.bimiRecord.record}</div>
+                    <div class="info-block__label">${escapeHtml(t.bimi_record_found)}</div>
+                    <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${escapeHtml(result.bimiRecord.record)}</div>
                     ${logoHtml}
                 </div>`;
         }
@@ -696,15 +697,15 @@ export function renderReputation(rblResults, lang, t) {
             const cls = check.listed ? 'rbl-check__badge--listed' : 'rbl-check__badge--clean';
             const label = check.listed ? (t.rbl_listed || 'Listed') : (t.rbl_clean || 'Clean');
             checksHTML += `<div class="rbl-check">
-                <span class="rbl-check__name">${check.rbl}</span>
-                <span class="rbl-check__badge ${cls}">${label}</span>
+                <span class="rbl-check__name">${escapeHtml(check.rbl)}</span>
+                <span class="rbl-check__badge ${cls}">${escapeHtml(label)}</span>
             </div>`;
         }
         const ip = entry.ip ? entry.ip : (t.rbl_unresolved || 'Unresolved');
         html += `<div class="rbl-item">
             <div class="rbl-item__info">
-                <div class="rbl-item__host">${entry.host}</div>
-                <div class="rbl-item__ip">${ip}</div>
+                <div class="rbl-item__host">${escapeHtml(entry.host)}</div>
+                <div class="rbl-item__ip">${escapeHtml(ip)}</div>
             </div>
             <div class="rbl-item__checks">${checksHTML}</div>
         </div>`;
@@ -730,19 +731,60 @@ export function renderAdvancedDNS(result, lang, t) {
     let html = '<div class="advanced-dns-grid">';
 
     // === MTA-STS ===
+    const mtaPolicyValid = result.mtaSts?.policy?.valid;
+    const mtaPolicyPartial = result.mtaSts && !mtaPolicyValid;
+    const mtaBadgeClass = mtaPolicyValid ? 'badge--success' : (mtaPolicyPartial ? 'badge--danger' : 'badge--neutral');
+    const mtaBadgeText = mtaPolicyValid
+        ? t.adv_mta_sts_enforced
+        : (result.mtaSts ? t.adv_mta_sts_policy_invalid : t.adv_mta_sts_not_configured);
+
     html += '<div class="advanced-dns-section">';
     html += `<div class="advanced-dns-section__header">
         <h4 class="advanced-dns-section__title">${t.adv_mta_sts_title}</h4>
-        <span class="advanced-dns-section__badge ${result.mtaSts ? 'badge--success' : 'badge--neutral'}">${result.mtaSts ? t.adv_mta_sts_configured : t.adv_mta_sts_not_configured}</span>
-    </div>`;
+        <span class="advanced-dns-section__badge ${mtaBadgeClass}">${mtaBadgeText}</span>
     if (result.mtaSts) {
+        const policy = result.mtaSts.policy || {};
         html += `<div class="advanced-dns-section__body">
             <div class="info-block">
                 <div class="info-block__label">${t.adv_mta_sts_id}</div>
-                <div class="info-block__value" style="font-family:'JetBrains Mono',monospace;font-size:13px;">${result.mtaSts.id || '—'}</div>
+                <div class="info-block__value" style="font-family:'JetBrains Mono',monospace;font-size:13px;">${escapeHtml(result.mtaSts.id || '—')}</div>
             </div>
-            <div class="panel__raw-record" style="margin-top:8px;font-size:12px;">${result.mtaSts.record}</div>
-        </div>`;
+            <div class="panel__raw-record" style="margin-top:8px;font-size:12px;">${escapeHtml(result.mtaSts.record)}</div>`;
+        if (policy.url) {
+            html += `<div class="info-block" style="margin-top:12px;">
+                <div class="info-block__label">${t.adv_mta_sts_policy_url}</div>
+                <div class="info-block__value" style="font-family:'JetBrains Mono',monospace;font-size:12px;word-break:break-all;">${escapeHtml(policy.url)}</div>
+            </div>`;
+        }
+        if (policy.httpStatus != null) {
+            html += `<div class="info-block" style="margin-top:8px;">
+                <div class="info-block__label">${t.adv_mta_sts_policy_http}</div>
+                <div class="info-block__value" style="font-family:'JetBrains Mono',monospace;font-size:13px;">${escapeHtml(String(policy.httpStatus))}</div>
+            </div>`;
+        }
+        if (policy.mode) {
+            html += `<div class="info-block" style="margin-top:8px;">
+                <div class="info-block__label">${t.adv_mta_sts_policy_mode}</div>
+                <div class="info-block__value" style="font-family:'JetBrains Mono',monospace;font-size:13px;">${escapeHtml(policy.mode)}</div>
+            </div>`;
+        } else if (mtaPolicyPartial && !policy.error) {
+            html += `<div class="info-block" style="margin-top:8px;">
+                <div class="info-block__label">${t.adv_mta_sts_policy_mode}</div>
+                <div class="info-block__value" style="font-size:13px;color:var(--accent-rose);">—</div>
+            </div>`;
+        }
+        if (policy.error) {
+            html += `<div class="info-block" style="margin-top:8px;">
+                <div class="info-block__label">${t.adv_mta_sts_policy_error}</div>
+                <div class="info-block__value" style="font-size:13px;color:var(--accent-rose);">${escapeHtml(policy.error)}</div>
+            </div>`;
+        }
+        if (policy.body && mtaPolicyValid) {
+            html += `<div class="panel__raw-record" style="margin-top:8px;font-size:12px;white-space:pre-wrap;">${escapeHtml(policy.body).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`;
+        }
+        html += `</div>`;
+    }
++= `</div>`;
     } else {
         html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_mta_sts_desc}</p></div>`;
     }
@@ -755,14 +797,14 @@ export function renderAdvancedDNS(result, lang, t) {
         <span class="advanced-dns-section__badge ${result.tlsRpt ? 'badge--success' : 'badge--neutral'}">${result.tlsRpt ? t.adv_tls_rpt_configured : t.adv_tls_rpt_not_configured}</span>
     </div>`;
     if (result.tlsRpt) {
-        let tlsBody = `<div class="panel__raw-record" style="font-size:12px;margin-bottom:8px;">${result.tlsRpt.record}</div>`;
+        let tlsBody = `<div class="panel__raw-record" style="font-size:12px;margin-bottom:8px;">${escapeHtml(result.tlsRpt.record)}</div>`;
         if (result.tlsrptReporters && result.tlsrptReporters.length > 0) {
             tlsBody += `<div style="display:flex;flex-direction:column;gap:6px;">`;
             for (const r of result.tlsrptReporters) {
                 tlsBody += `<div class="reporting-item" style="padding:8px 12px;">
                     <div class="reporting-item__type">${t.adv_tls_rpt_dest}</div>
-                    <div class="reporting-item__value" style="font-size:13px;">${r.uri}</div>
-                    ${r.reporter ? `<div class="reporting-item__service">${t.adv_tls_rpt_reporter}: ${r.reporter}</div>` : ''}
+                    <div class="reporting-item__value" style="font-size:13px;">${escapeHtml(r.uri)}</div>
+                    ${r.reporter ? `<div class="reporting-item__service">${t.adv_tls_rpt_reporter}: ${escapeHtml(r.reporter)}</div>` : ''}
                 </div>`;
             }
             tlsBody += '</div>';
@@ -780,18 +822,18 @@ export function renderAdvancedDNS(result, lang, t) {
     </div>`;
     if (result.nsProvider) {
         let nsBody = `<div class="info-block">
-            <div class="info-block__value">${result.nsProvider.name}</div>
+            <div class="info-block__value">${escapeHtml(result.nsProvider.name)}</div>
         </div>`;
         if (result.nsProvider.hint) {
             nsBody += `<div class="info-block" style="margin-top:6px;">
                 <div class="info-block__label">${t.adv_ns_hint}</div>
-                <div class="info-block__detail" style="color:var(--accent-violet);">${result.nsProvider.hint}</div>
+                <div class="info-block__detail" style="color:var(--accent-violet);">${escapeHtml(result.nsProvider.hint)}</div>
             </div>`;
         }
         if (result.nsRecords && result.nsRecords.length > 0) {
             nsBody += `<div class="info-block" style="margin-top:6px;">
                 <div class="info-block__label">${t.adv_ns_servers}</div>
-                <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">${result.nsRecords.join(', ')}</div>
+                <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">${escapeHtml(result.nsRecords.join(', '))}</div>
             </div>`;
         }
         html += `<div class="advanced-dns-section__body">${nsBody}</div>`;
@@ -799,7 +841,7 @@ export function renderAdvancedDNS(result, lang, t) {
         html += `<div class="advanced-dns-section__body">
             <div class="info-block">
                 <div class="info-block__label">${t.adv_ns_servers}</div>
-                <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">${result.nsRecords.join(', ')}</div>
+                <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">${escapeHtml(result.nsRecords.join(', '))}</div>
             </div>
         </div>`;
     } else {
@@ -823,9 +865,9 @@ export function renderAdvancedDNS(result, lang, t) {
             for (const v of securityTxt) {
                 const catColor = v.category === 'ices' ? 'var(--accent-violet)' : 'var(--accent-purple)';
                 html += `<div class="txt-verification-item txt-verification-item--security">
-                    <div class="txt-verification-item__name">${v.name}</div>
-                    <div class="txt-verification-item__category" style="color:${catColor};">${v.category.toUpperCase()}</div>
-                    <div class="txt-verification-item__record">${v.record}</div>
+                    <div class="txt-verification-item__name">${escapeHtml(v.name)}</div>
+                    <div class="txt-verification-item__category" style="color:${catColor};">${escapeHtml(v.category.toUpperCase())}</div>
+                    <div class="txt-verification-item__record">${escapeHtml(v.record)}</div>
                 </div>`;
             }
             html += '</div>';
@@ -836,9 +878,9 @@ export function renderAdvancedDNS(result, lang, t) {
             html += '<div class="txt-verifications-grid">';
             for (const v of otherTxt) {
                 html += `<div class="txt-verification-item">
-                    <div class="txt-verification-item__name">${v.name}</div>
-                    <div class="txt-verification-item__category">${v.category}</div>
-                    <div class="txt-verification-item__record">${v.record}</div>
+                    <div class="txt-verification-item__name">${escapeHtml(v.name)}</div>
+                    <div class="txt-verification-item__category">${escapeHtml(v.category)}</div>
+                    <div class="txt-verification-item__record">${escapeHtml(v.record)}</div>
                 </div>`;
             }
             html += '</div>';

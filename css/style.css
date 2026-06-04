@@ -869,6 +869,10 @@ body {
     background: rgba(16, 185, 129, 0.15);
     color: var(--accent-emerald);
 }
+.badge--danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-rose);
+}
 .badge--neutral {
     background: rgba(100, 116, 139, 0.15);
     color: var(--text-muted);
