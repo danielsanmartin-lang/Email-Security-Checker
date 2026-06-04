@@ -65,7 +65,7 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 * **Corrección: Sin Falsos Positivos de SEG en Auto-hospedaje:** Cuando los registros MX apuntan al mismo dominio raíz que se analiza (ej. `mail.empresa.com` al auditar `empresa.com`), la herramienta ya no clasifica incorrectamente la infraestructura propia como una pasarela de seguridad (SEG). Se devuelve el tipo `self` para infraestructura de correo autogestionada.
 * **Detección de SEG Desconocido por Dominio MX Externo:** Si los registros MX apuntan a un dominio raíz diferente al analizado y no coinciden con ninguna firma conocida, la herramienta ahora lo reporta como pasarela de seguridad de proveedor desconocido en lugar de ignorarlo.
 
-### v1.7.3 — Validaciones de Seguridad Robustas para SPF y DMARC
+### v1.7.4 — Validaciones de Seguridad Robustas para SPF y DMARC
 * **Detección de Múltiples Registros DNS:** Alertas críticas y penalización en la puntuación si se configuran múltiples registros SPF o DMARC (infracciones de RFC 7208 y RFC 7489 que rompen la autenticación de correos).
 * **Análisis del Calificador `all` en SPF:** Penalización y alertas específicas para directivas SPF inseguras o excesivamente permisivas como `+all` (pase libre para cualquier remitente) y `?all` (neutral/sin protección).
 * **Validación de Sintaxis DMARC:** Validación estricta para garantizar que la etiqueta de versión (`v=DMARC1`) y la directiva de política (`p=none|quarantine|reject`) cumplan con los estándares y no contengan valores inválidos.
