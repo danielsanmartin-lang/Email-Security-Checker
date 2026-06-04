@@ -82,7 +82,15 @@ export async function getSPF(domain) {
     const records = [];
     for (const a of data.Answer) {
         if (a.data) {
-            const txt = a.data.replace(/"/g, '');
+            // A TXT record data field in Google/Cloudflare DoH may be enclosed in multiple quotes, e.g. "v=spf1 ..." "..."
+            // Or simple quotes. We split by spaces outside quotes or match all quoted parts, but matching all parts inside double quotes is safest:
+            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
+            let txt = '';
+            if (matches.length > 0) {
+                txt = matches.map(m => m[1]).join('');
+            } else {
+                txt = a.data.replace(/"/g, '');
+            }
             if (txt.startsWith('v=spf1')) {
                 records.push(txt);
             }
@@ -101,7 +109,13 @@ export async function getDMARC(domain) {
     const records = [];
     for (const a of data.Answer) {
         if (a.data) {
-            const txt = a.data.replace(/"/g, '');
+            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
+            let txt = '';
+            if (matches.length > 0) {
+                txt = matches.map(m => m[1]).join('');
+            } else {
+                txt = a.data.replace(/"/g, '');
+            }
             if (txt.startsWith('v=DMARC1')) {
                 records.push(txt);
             }
@@ -384,7 +398,13 @@ export async function getMTASTS(domain) {
         const data = await queryDNS(`_mta-sts.${domain}`, 'TXT');
         if (!data.Answer) return null;
         for (const a of data.Answer) {
-            const txt = a.data.replace(/"/g, '');
+            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
+            let txt = '';
+            if (matches.length > 0) {
+                txt = matches.map(m => m[1]).join('');
+            } else {
+                txt = a.data.replace(/"/g, '');
+            }
             if (txt.startsWith('v=STSv1')) {
                 const idMatch = txt.match(/id=([^;]+)/);
                 const result = {
@@ -406,7 +426,13 @@ export async function getTLSRPT(domain) {
         const data = await queryDNS(`_smtp._tls.${domain}`, 'TXT');
         if (!data.Answer) return null;
         for (const a of data.Answer) {
-            const txt = a.data.replace(/"/g, '');
+            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
+            let txt = '';
+            if (matches.length > 0) {
+                txt = matches.map(m => m[1]).join('');
+            } else {
+                txt = a.data.replace(/"/g, '');
+            }
             if (txt.startsWith('v=TLSRPTv1')) {
                 const ruaMatch = txt.match(/rua=([^;]+)/);
                 const rua = ruaMatch ? ruaMatch[1].trim().split(',').map(s => s.trim()) : [];
