@@ -784,12 +784,10 @@ export function renderAdvancedDNS(result, lang, t) {
             html += `<div class="panel__raw-record" style="margin-top:8px;font-size:12px;white-space:pre-wrap;">${escapeHtml(policy.body).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`;
         }
         html += `</div>`;
-    }
-    html += `</div>`;
     } else {
         html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_mta_sts_desc}</p></div>`;
-        html += `</div>`;
     }
+    html += '</div>';
     html += '</div>';
 
     // === TLS-RPT ===
