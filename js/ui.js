@@ -742,6 +742,7 @@ export function renderAdvancedDNS(result, lang, t) {
     html += `<div class="advanced-dns-section__header">
         <h4 class="advanced-dns-section__title">${t.adv_mta_sts_title}</h4>
         <span class="advanced-dns-section__badge ${mtaBadgeClass}">${mtaBadgeText}</span>
+    </div>`;
     if (result.mtaSts) {
         const policy = result.mtaSts.policy || {};
         html += `<div class="advanced-dns-section__body">
@@ -784,9 +785,10 @@ export function renderAdvancedDNS(result, lang, t) {
         }
         html += `</div>`;
     }
-+= `</div>`;
+    html += `</div>`;
     } else {
         html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_mta_sts_desc}</p></div>`;
+        html += `</div>`;
     }
     html += '</div>';
 
