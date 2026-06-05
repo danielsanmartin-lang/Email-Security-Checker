@@ -294,6 +294,29 @@
                             </svg>
                         </div>
                     </div>
+                    <!-- Awareness Detection Step -->
+                    <div class="loading-step" id="step-awareness">
+                        <div class="loading-step__icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                        </div>
+                        <div class="loading-step__info">
+                            <span class="loading-step__label" data-i18n="step_awareness">Detectando plataformas de Security Awareness...</span>
+                            <div class="loading-step__bar">
+                                <div class="loading-step__progress"></div>
+                            </div>
+                        </div>
+                        <div class="loading-step__status">
+                            <svg class="check-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="#10b981" stroke-width="2.5" stroke-linecap="round">
+                                <path d="M20 6 9 17l-5-5" />
+                            </svg>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -503,6 +526,27 @@
                     </div>
                     <div class="panel__body" id="security-body">
                         <!-- Security analysis -->
+                    </div>
+                </div>
+
+                <!-- Awareness Vendor Detector Panel -->
+                <div class="panel panel--awareness" id="panel-awareness">
+                    <div class="panel__header">
+                        <div class="panel__title-row">
+                            <div class="panel__icon panel__icon--awareness">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="9" cy="7" r="4"/>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                </svg>
+                            </div>
+                            <h3 class="panel__title" data-i18n="panel_awareness_title">Detector de Awareness / Phishing Sim</h3>
+                        </div>
+                        <span class="panel__badge panel__badge--awareness" id="awareness-badge"></span>
+                    </div>
+                    <div class="panel__body" id="awareness-body">
+                        <!-- Awareness vendors rendered here -->
                     </div>
                 </div>
 

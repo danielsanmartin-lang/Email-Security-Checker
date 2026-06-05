@@ -1,10 +1,11 @@
 import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS } from './api.js';
 import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
-import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
+import { renderResults, showSection, setStep, closeKbModal, translateDOM, renderAwarenessVendors } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
 import { getLanguage, setLanguage } from './lang.js';
 import { translations } from './i18n.js';
+import { detectAwarenessVendors } from './awarenessDetector.js';
 
 export const state = {
     currentDomain: '',
@@ -27,7 +28,7 @@ async function runAnalysis(domain, dkimSelector = null) {
     btn.classList.add('loading');
     showSection('loading-section');
     
-    ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis'].forEach(s => setStep(s, null));
+    ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis', 'step-awareness'].forEach(s => setStep(s, null));
     
     const lang = getLanguage();
     const t = translations[lang];
@@ -109,6 +110,17 @@ async function runAnalysis(domain, dkimSelector = null) {
         state.currentDomain = domain;
         state.currentResult = result;
         setStep('step-analysis', 'done');
+
+        // Awareness / Phishing Simulation detection (runs after main analysis)
+        setStep('step-awareness', 'active');
+        let awarenessResult = null;
+        try {
+            awarenessResult = await detectAwarenessVendors(domain);
+        } catch (err) {
+            console.warn('Awareness detection failed:', err);
+        }
+        result.awarenessResult = awarenessResult;
+        setStep('step-awareness', 'done');
 
         await new Promise(r => setTimeout(r, 300));
         renderResults(domain, result);

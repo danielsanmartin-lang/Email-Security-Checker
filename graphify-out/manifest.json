@@ -1,0 +1,57 @@
+{
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/analyzer.js": {
+    "mtime": 1779957382.8581867,
+    "ast_hash": "c928d62e50c74cb5bdfa41cc75bc3fce",
+    "semantic_hash": "c928d62e50c74cb5bdfa41cc75bc3fce"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/api.js": {
+    "mtime": 1779521501.5125496,
+    "ast_hash": "fdb5bad8d9d9e0e1db60e7b40c4840fc",
+    "semantic_hash": "fdb5bad8d9d9e0e1db60e7b40c4840fc"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/app.js": {
+    "mtime": 1779957382.8590143,
+    "ast_hash": "51a97ed77978fc314f0ef1a5aaca0108",
+    "semantic_hash": "51a97ed77978fc314f0ef1a5aaca0108"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/export.js": {
+    "mtime": 1779522318.339127,
+    "ast_hash": "ed7a20a001456b4bd486cd403f3dae71",
+    "semantic_hash": "ed7a20a001456b4bd486cd403f3dae71"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/i18n.js": {
+    "mtime": 1779799587.752366,
+    "ast_hash": "dfda7e11ef750d372a69f2eae3c0b4b8",
+    "semantic_hash": "dfda7e11ef750d372a69f2eae3c0b4b8"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/knowledge.js": {
+    "mtime": 1779952797.1933103,
+    "ast_hash": "66d4eee14a511223f998cf97e4996c81",
+    "semantic_hash": "66d4eee14a511223f998cf97e4996c81"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/lang.js": {
+    "mtime": 1779193958.383866,
+    "ast_hash": "5939c59dce63dd1bff0d2577856b7fa7",
+    "semantic_hash": "5939c59dce63dd1bff0d2577856b7fa7"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/parsers.js": {
+    "mtime": 1779127919.3176303,
+    "ast_hash": "142e94e2fe5e79e1cec7dbee25fdb216",
+    "semantic_hash": "142e94e2fe5e79e1cec7dbee25fdb216"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/ui.js": {
+    "mtime": 1779957382.859335,
+    "ast_hash": "e277b2fdf2437c6162684844418e8394",
+    "semantic_hash": "e277b2fdf2437c6162684844418e8394"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/README.md": {
+    "mtime": 1779957382.8496475,
+    "ast_hash": "9fdaf743813defc585b01442a9de666d",
+    "semantic_hash": "9fdaf743813defc585b01442a9de666d"
+  },
+  "/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/index.html": {
+    "mtime": 1779521696.6208973,
+    "ast_hash": "bf267be935c6d4c8d5b8162b71a21e94",
+    "semantic_hash": "bf267be935c6d4c8d5b8162b71a21e94"
+  }
+}

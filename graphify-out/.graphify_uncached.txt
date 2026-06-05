@@ -1,0 +1,11 @@
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/analyzer.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/api.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/app.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/export.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/i18n.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/knowledge.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/lang.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/parsers.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/js/ui.js
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/README.md
+/Users/danielsanmartin/Documents/Antigravity/Email Security Checker/index.html
