@@ -13,7 +13,10 @@ export const KB = {
         { pattern: 'fortimailcloud.com', name: 'FortiMail (Fortinet)', type: 'seg' },
         { pattern: 'fortimail.com', name: 'FortiMail (Fortinet)', type: 'seg' },
         { pattern: 'iphmx.com', name: 'Cisco Email Security (IronPort)', type: 'seg' },
-        { pattern: 'ess.cisco.com', name: 'Cisco Email Security', type: 'seg' },
+        { pattern: 'ess.cisco.com', name: 'Cisco Email Security (IronPort)', type: 'seg' },
+        // Cisco ESA on-premise: hostname prefix detection (e.g. esa01.company.com, ironport.company.com)
+        { pattern: 'esa', name: 'Cisco Email Security (IronPort)', type: 'seg', matchType: 'hostname_prefix' },
+        { pattern: 'ironport', name: 'Cisco Email Security (IronPort)', type: 'seg', matchType: 'hostname_prefix' },
         { pattern: 'trendmicro.com', name: 'Trend Micro Email Security', type: 'seg' },
         { pattern: 'in.trendmicro.com', name: 'Trend Micro Email Security', type: 'seg' },
         { pattern: 'sophos.com', name: 'Sophos Email', type: 'seg' },

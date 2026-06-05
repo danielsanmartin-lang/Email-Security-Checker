@@ -3,8 +3,15 @@ import { parseSPF, parseDMARC } from './parsers.js';
 
 export function identifyMX(host, domain) {
     const h = host.toLowerCase();
+    // First label of the MX hostname (e.g. "esa01" from "esa01.arquia.es")
+    const firstLabel = h.split('.')[0];
     for (const entry of KB.mx) {
-        if (h.includes(entry.pattern)) return entry;
+        if (entry.matchType === 'hostname_prefix') {
+            // Match if the first hostname label starts with the pattern (e.g. "esa" matches "esa01", "esa1", "esa-gw")
+            if (firstLabel.startsWith(entry.pattern)) return entry;
+        } else {
+            if (h.includes(entry.pattern)) return entry;
+        }
     }
     if (domain) {
         const mxRoot = extractRootDomain(h);
