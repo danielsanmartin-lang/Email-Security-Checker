@@ -27,6 +27,19 @@ export const KB = {
         { pattern: 'spamexperts.com', name: 'SpamExperts', type: 'seg' },
         { pattern: 'hornetsecurity.com', name: 'Hornetsecurity', type: 'seg' },
         { pattern: 'antispameurope', name: 'Hornetsecurity', type: 'seg' },
+        // On-premise appliance hostname prefixes
+        { pattern: 'smg', name: 'Symantec Messaging Gateway (Broadcom)', type: 'seg', matchType: 'hostname_prefix' },
+        { pattern: 'gwia', name: 'GroupWise Internet Agent (Micro Focus)', type: 'seg', matchType: 'hostname_prefix' },
+        // Additional cloud SEG MX domains
+        { pattern: 'reflexion.net', name: 'Sophos Email (Reflexion)', type: 'seg' },
+        { pattern: 'proofpointessentials.com', name: 'Proofpoint Essentials', type: 'seg' },
+        { pattern: 'mailcontrol.com', name: 'Forcepoint Email Security', type: 'seg' },
+        { pattern: 'forcepoint.com', name: 'Forcepoint Email Security', type: 'seg' },
+        { pattern: 'spamtitan.com', name: 'SpamTitan (TitanHQ)', type: 'seg' },
+        { pattern: 'mailroute.net', name: 'MailRoute', type: 'seg' },
+        { pattern: 'mailchannels.net', name: 'MailChannels', type: 'seg' },
+        { pattern: 'zixmail.net', name: 'Zix (OpenText)', type: 'seg' },
+        { pattern: 'zixmessagecenter.com', name: 'Zix (OpenText)', type: 'seg' },
         // ICES inline MX patterns
         { pattern: 'perception-point.io', name: 'Perception Point', type: 'ices' },
         { pattern: 'xorlab.com', name: 'xorlab', type: 'ices' },
@@ -40,6 +53,14 @@ export const KB = {
         { pattern: 'emailsrvr.com', name: 'Rackspace Email', type: 'provider' },
         { pattern: 'ovh.net', name: 'OVH Mail', type: 'provider' },
         { pattern: 'ionos.com', name: 'IONOS Mail', type: 'provider' },
+        { pattern: 'proton.ch', name: 'ProtonMail', type: 'provider' },
+        { pattern: 'protonmail.ch', name: 'ProtonMail', type: 'provider' },
+        { pattern: 'tutanota.de', name: 'Tuta (Tutanota)', type: 'provider' },
+        { pattern: 'tuta.io', name: 'Tuta (Tutanota)', type: 'provider' },
+        { pattern: 'fastmail.com', name: 'FastMail', type: 'provider' },
+        { pattern: 'fastmail.fm', name: 'FastMail', type: 'provider' },
+        { pattern: 'mailbox.org', name: 'Mailbox.org', type: 'provider' },
+        { pattern: 'mail.office365.us', name: 'Microsoft 365 GCC High', type: 'provider' },
     ],
     spf: [
         { pattern: 'spf.protection.outlook.com', name: 'Microsoft 365', category: 'email', cat_label: 'Proveedor Email' },
@@ -85,8 +106,23 @@ export const KB = {
         { pattern: 'barracuda', name: 'Barracuda', category: 'seg', cat_label: 'SEG' },
         { pattern: 'sophos.com', name: 'Sophos', category: 'seg', cat_label: 'SEG' },
         { pattern: 'trendmicro.com', name: 'Trend Micro', category: 'seg', cat_label: 'SEG' },
-        { pattern: 'cisco.com', name: 'Cisco Email Security', category: 'seg', cat_label: 'SEG' },
-        { pattern: 'mcafee.com', name: 'McAfee', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'cisco.com', name: 'Cisco Email Security (IronPort)', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'iphmx.com', name: 'Cisco Email Security (IronPort)', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'mcafee.com', name: 'McAfee / Trellix', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'trellix.com', name: 'Trellix (McAfee)', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'spf.proofpoint.com', name: 'Proofpoint', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'spf.pphosted.com', name: 'Proofpoint', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'ppe-hosted.com', name: 'Proofpoint Essentials', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'spf.proofpointessentials.com', name: 'Proofpoint Essentials', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'proofpointessentials.com', name: 'Proofpoint Essentials', category: 'seg', cat_label: 'SEG' },
+        { pattern: '_spf.mimecast.com', name: 'Mimecast', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'forcepoint.com', name: 'Forcepoint Email Security', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'mailcontrol.com', name: 'Forcepoint Email Security', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'trustwave.com', name: 'Trustwave SEG', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'spamtitan.com', name: 'SpamTitan (TitanHQ)', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'zixmail.net', name: 'Zix (OpenText)', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'zixmessagecenter.com', name: 'Zix (OpenText)', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'mailroute.net', name: 'MailRoute', category: 'seg', cat_label: 'SEG' },
         { pattern: 'avanan.net', name: 'Avanan (Check Point)', category: 'ices', cat_label: 'ICES' },
         { pattern: 'abnormalsecurity.com', name: 'Abnormal Security', category: 'ices', cat_label: 'ICES' },
         { pattern: 'ironscales.com', name: 'Ironscales', category: 'ices', cat_label: 'ICES' },
@@ -135,6 +171,17 @@ export const KB = {
         { pattern: 'canva-site-verification', name: 'Canva', category: 'other' },
         { pattern: 'duo_sso_verification', name: 'Duo Security (Cisco)', category: 'other' },
         { pattern: 'cloudflare-verify', name: 'Cloudflare', category: 'other' },
+        // Additional vendor TXT verifications
+        { pattern: 'barracuda-domain-verification', name: 'Barracuda', category: 'seg' },
+        { pattern: 'trendmicro-domain-verification', name: 'Trend Micro', category: 'seg' },
+        { pattern: 'hornetsecurity-domain-verification', name: 'Hornetsecurity', category: 'seg' },
+        { pattern: 'forcepoint-domain-verification', name: 'Forcepoint', category: 'seg' },
+        { pattern: 'zix-domain-verification', name: 'Zix (OpenText)', category: 'seg' },
+        { pattern: 'proofpointessentials', name: 'Proofpoint Essentials', category: 'seg' },
+        { pattern: 'cisco-ironport-av', name: 'Cisco Email Security (IronPort)', category: 'seg' },
+        { pattern: 'spamtitan', name: 'SpamTitan (TitanHQ)', category: 'seg' },
+        { pattern: 'perception-point-domain-verify', name: 'Perception Point', category: 'ices' },
+        { pattern: 'abnormalsecurity-domain-verification', name: 'Abnormal Security', category: 'ices' },
     ],
     // NS patterns to identify DNS providers (some imply email security services)
     ns_providers: [
@@ -150,10 +197,16 @@ export const KB = {
         'mimecast20190707',           // Mimecast (typical year-based)
         'mimecast20210101',
         'mimecast20230101',
+        'mimecast-key1',               // Mimecast alternative
         'avanan',                      // Avanan
         'proofpoint',                  // Proofpoint re-signing
         'everbridge',                  // Everbridge
         'barracuda',                   // Barracuda
+        'esa01', 'esa02', 'esa03',    // Cisco ESA on-premise
+        'ironport',                    // Cisco IronPort
+        'selector1', 'selector2',      // Microsoft 365
+        'google', '20161025',          // Google Workspace
+        'smg1', 'smg2',               // Symantec Messaging Gateway
     ],
     // TLS-RPT reporter identification
     tlsrpt_reporters: [
