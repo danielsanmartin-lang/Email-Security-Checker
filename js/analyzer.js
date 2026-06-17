@@ -570,7 +570,6 @@ export function calculateScoreAndFindings(result) {
         }
     }
     
-    const dkimCount = (result.dkimRecords && result.dkimRecords.records) ? result.dkimRecords.records.length : 0;
     const hasDkim = dkimCount > 0;
     const hasMtaSts = result.mtaSts && result.mtaSts.policy?.valid;
     
