@@ -3,6 +3,7 @@ import { identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { getLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { getCategoryLabel, translateProviderSource } from './ui.js';
+import { escapeHtml } from './parsers.js';
 
 export function generateReportHTML() {
     if (!state.currentResult || !state.currentDomain) return '';
@@ -44,6 +45,113 @@ export function generateReportHTML() {
             servicesHtml += `<li style="margin-bottom: 12px;"><strong>${svc.name}</strong> - <span style="color: #0284c7; font-weight: 600;">${localizedCatLabel}</span><br><small style="color: #475569;">${desc} (Regla SPF: <code>${svc.raw}</code>)</small></li>`;
         }
         servicesHtml += `</ul>`;
+    }
+
+    const levelColors = {
+        alta: '#10b981',
+        media: '#f59e0b',
+        baja: '#f43f5e'
+    };
+
+    let awarenessHtml = '';
+    let awarenessSummaryLine = '';
+    if (currentResult.awarenessResult) {
+        const ar = currentResult.awarenessResult;
+        const panelTitle = t.panel_awareness_title || 'Security Awareness / Phishing Simulation Detector';
+        
+        let vendorsHtml = '';
+        if (ar.detectedVendors && ar.detectedVendors.length > 0) {
+            vendorsHtml = ar.detectedVendors.map(v => {
+                const lvlLabel = t[`awareness_level_${v.level}`] || v.level;
+                const pct = Math.round(v.score * 100);
+                const color = levelColors[v.level] || '#f43f5e';
+                
+                const evidenceHtml = v.evidence.map(e => {
+                    const signal = t[`awareness_signal_${e.signal}`] || e.signal;
+                    return `<span style="display: inline-block; background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 3px 8px; margin: 3px; font-size: 11px; color: #475569; font-family: sans-serif;"><strong>${escapeHtml(signal)}:</strong> ${escapeHtml(e.value)}</span>`;
+                }).join('');
+                
+                const notesHtml = v.notes ? `
+                    <div style="margin-top: 8px; font-size: 12px; color: #475569; border-top: 1px dashed #e2e8f0; padding-top: 6px; font-family: sans-serif;">
+                        <strong>${t.awareness_vendor_notes || 'Notes'}:</strong> ${escapeHtml(v.notes)}
+                    </div>
+                ` : '';
+
+                return `
+                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
+                        <table border="0" cellpadding="0" cellspacing="0" style="width: 100%; margin-bottom: 8px;">
+                            <tr>
+                                <td style="font-weight: bold; color: #1e293b; font-size: 14px; font-family: sans-serif; text-align: left;">${escapeHtml(v.displayName)}</td>
+                                <td style="text-align: right; width: 150px;">
+                                    <span style="background-color: ${color}; color: #ffffff; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-family: sans-serif; text-transform: uppercase;">${escapeHtml(lvlLabel)} (${pct}%)</span>
+                                </td>
+                            </tr>
+                        </table>
+                        <div style="background-color: #e2e8f0; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 10px;">
+                            <table border="0" cellpadding="0" cellspacing="0" style="width: 100%; height: 100%;">
+                                <tr>
+                                    <td style="background-color: ${color}; width: ${pct}%; height: 100%;"></td>
+                                    <td style="width: ${100 - pct}%; height: 100%;"></td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div style="font-family: sans-serif; font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 4px; text-align: left;">${t.awareness_evidence_label || 'Evidence'}:</div>
+                        <div style="margin-left: -3px; margin-right: -3px; text-align: left;">
+                            ${evidenceHtml}
+                        </div>
+                        ${notesHtml}
+                    </div>
+                `;
+            }).join('');
+        } else {
+            vendorsHtml = `<p style="color: #64748b; font-style: italic; font-family: sans-serif; font-size: 13px; text-align: left;">${t.awareness_no_vendors}</p>`;
+        }
+        
+        let warningsHtml = '';
+        if (ar.spfPermError) {
+            warningsHtml += `
+                <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; color: #b45309; font-size: 12px; font-family: sans-serif; margin-bottom: 10px; text-align: left; line-height: 1.4;">
+                    <strong>⚠ SPF PermError:</strong> ${t.awareness_spf_perm_error || 'SPF chain exceeds 10 lookups.'}
+                </div>
+            `;
+        }
+        
+        warningsHtml += `
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; color: #64748b; font-size: 12px; font-family: sans-serif; margin-bottom: 10px; text-align: left; line-height: 1.4;">
+                <strong>${t.awareness_blind_spot || 'Blind spot'}:</strong> ${t.awareness_blind_spot_ms}
+            </div>
+        `;
+        
+        let generalNotesHtml = '';
+        if (ar.notes && ar.notes.length > 0) {
+            const filteredNotes = ar.notes.filter(n => !n.includes('Microsoft Attack Simulation'));
+            if (filteredNotes.length > 0) {
+                generalNotesHtml = `
+                    <div style="margin-top: 15px; text-align: left;">
+                        <div style="font-family: sans-serif; font-size: 12.5px; font-weight: bold; color: #475569; margin-bottom: 6px; text-align: left;">${t.awareness_notes_title || 'Notes'}:</div>
+                        <ul style="padding-left: 20px; font-family: sans-serif; font-size: 12px; color: #475569; line-height: 1.5; margin: 0; text-align: left;">
+                            ${filteredNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+        
+        awarenessHtml = `
+            <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">👥 ${panelTitle}</h2>
+            <div style="margin-top: 15px;">
+                ${vendorsHtml}
+                ${warningsHtml}
+                ${generalNotesHtml}
+            </div>
+        `;
+
+        const count = ar.detectedVendors ? ar.detectedVendors.length : 0;
+        const valText = count > 0 
+            ? `${count} ${count === 1 ? (lang === 'es' ? 'detectado' : 'detected') : (lang === 'es' ? 'detectados' : 'detected')} (${ar.detectedVendors.map(v => v.displayName).join(', ')})`
+            : (lang === 'es' ? 'Ninguno detectado por DNS' : 'None detected by DNS');
+        const awarenessSummaryLabel = lang === 'es' ? 'Plataformas de Awareness' : 'Awareness Platforms';
+        awarenessSummaryLine = `<li><strong>${awarenessSummaryLabel}:</strong> ${valText}</li>`;
     }
 
     let providerDisplay = currentResult.provider;
@@ -280,11 +388,13 @@ export function generateReportHTML() {
                 <li><strong>${t.summary_provider}:</strong> ${providerDisplay} <br><small style="color: #64748b;">(${translateProviderSource(currentResult.providerSource, lang)})</small></li>
                 <li><strong>${t.summary_dmarc}:</strong> ${dmarcPolicyText}</li>
                 <li><strong>${authorizedServicesLabel}:</strong> ${currentResult.spfServices.length} ${t.detected_plural}</li>
+                ${awarenessSummaryLine}
                 <li><strong>${rblSummaryLabel}:</strong> ${rblStatusVal}</li>
             </ul>
 
             ${segHtml}
             ${servicesHtml}
+            ${awarenessHtml}
 
             <!-- MX Records Section -->
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">✉️ 1. ${t.panel_mx_title}</h2>
