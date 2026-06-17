@@ -41,7 +41,7 @@
       "label": "extractRootDomain()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L19",
+      "source_location": "L31",
       "id": "js_analyzer_extractrootdomain",
       "community": 0,
       "norm_label": "extractrootdomain()"
@@ -50,7 +50,7 @@
       "label": "identifySPFService()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L31",
+      "source_location": "L102",
       "id": "js_analyzer_identifyspfservice",
       "community": 0,
       "norm_label": "identifyspfservice()"
@@ -59,7 +59,7 @@
       "label": "identifyDMARCReporter()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L52",
+      "source_location": "L123",
       "id": "js_analyzer_identifydmarcreporter",
       "community": 1,
       "norm_label": "identifydmarcreporter()"
@@ -68,7 +68,7 @@
       "label": "identifyTXTVerifications()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L61",
+      "source_location": "L132",
       "id": "js_analyzer_identifytxtverifications",
       "community": 0,
       "norm_label": "identifytxtverifications()"
@@ -77,7 +77,7 @@
       "label": "identifyNSProvider()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L85",
+      "source_location": "L156",
       "id": "js_analyzer_identifynsprovider",
       "community": 0,
       "norm_label": "identifynsprovider()"
@@ -86,7 +86,7 @@
       "label": "analyzeTLSRPT()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L99",
+      "source_location": "L170",
       "id": "js_analyzer_analyzetlsrpt",
       "community": 0,
       "norm_label": "analyzetlsrpt()"
@@ -95,7 +95,7 @@
       "label": "analyze()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L116",
+      "source_location": "L187",
       "id": "js_analyzer_analyze",
       "community": 0,
       "norm_label": "analyze()"
@@ -104,7 +104,7 @@
       "label": "calculateScoreAndFindings()",
       "file_type": "code",
       "source_file": "js/analyzer.js",
-      "source_location": "L223",
+      "source_location": "L296",
       "id": "js_analyzer_calculatescoreandfindings",
       "community": 0,
       "norm_label": "calculatescoreandfindings()"
@@ -115,14 +115,50 @@
       "source_file": "js/api.js",
       "source_location": "L1",
       "id": "js_api",
-      "community": 4,
+      "community": 2,
       "norm_label": "api.js"
+    },
+    {
+      "label": "_dnsCache",
+      "file_type": "code",
+      "source_file": "js/api.js",
+      "source_location": "L4",
+      "id": "js_api_dnscache",
+      "community": 2,
+      "norm_label": "_dnscache"
+    },
+    {
+      "label": "clearDnsCache()",
+      "file_type": "code",
+      "source_file": "js/api.js",
+      "source_location": "L7",
+      "id": "js_api_cleardnscache",
+      "community": 2,
+      "norm_label": "cleardnscache()"
+    },
+    {
+      "label": "_getCached()",
+      "file_type": "code",
+      "source_file": "js/api.js",
+      "source_location": "L11",
+      "id": "js_api_getcached",
+      "community": 2,
+      "norm_label": "_getcached()"
+    },
+    {
+      "label": "_setCache()",
+      "file_type": "code",
+      "source_file": "js/api.js",
+      "source_location": "L19",
+      "id": "js_api_setcache",
+      "community": 2,
+      "norm_label": "_setcache()"
     },
     {
       "label": "queryDNS()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L1",
+      "source_location": "L34",
       "id": "js_api_querydns",
       "community": 2,
       "norm_label": "querydns()"
@@ -131,7 +167,7 @@
       "label": "getMX()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L20",
+      "source_location": "L67",
       "id": "js_api_getmx",
       "community": 2,
       "norm_label": "getmx()"
@@ -140,52 +176,52 @@
       "label": "getSPF()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L32",
+      "source_location": "L79",
       "id": "js_api_getspf",
-      "community": 9,
+      "community": 2,
       "norm_label": "getspf()"
     },
     {
       "label": "getDMARC()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L51",
+      "source_location": "L107",
       "id": "js_api_getdmarc",
-      "community": 4,
+      "community": 2,
       "norm_label": "getdmarc()"
     },
     {
       "label": "COMMON_DKIM_SELECTORS",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L71",
+      "source_location": "L134",
       "id": "js_api_common_dkim_selectors",
-      "community": 4,
+      "community": 2,
       "norm_label": "common_dkim_selectors"
     },
     {
       "label": "discoverDKIMSelectors()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L73",
+      "source_location": "L136",
       "id": "js_api_discoverdkimselectors",
-      "community": 4,
+      "community": 2,
       "norm_label": "discoverdkimselectors()"
     },
     {
       "label": "getDKIM()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L112",
+      "source_location": "L175",
       "id": "js_api_getdkim",
-      "community": 4,
+      "community": 2,
       "norm_label": "getdkim()"
     },
     {
       "label": "getBIMI()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L141",
+      "source_location": "L204",
       "id": "js_api_getbimi",
       "community": 2,
       "norm_label": "getbimi()"
@@ -194,16 +230,16 @@
       "label": "getSPFLookupTree()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L160",
+      "source_location": "L223",
       "id": "js_api_getspflookuptree",
-      "community": 9,
+      "community": 2,
       "norm_label": "getspflookuptree()"
     },
     {
       "label": "getIPAddress()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L210",
+      "source_location": "L273",
       "id": "js_api_getipaddress",
       "community": 2,
       "norm_label": "getipaddress()"
@@ -212,25 +248,34 @@
       "label": "checkRBL()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L223",
+      "source_location": "L286",
       "id": "js_api_checkrbl",
-      "community": 8,
+      "community": 2,
       "norm_label": "checkrbl()"
     },
     {
       "label": "getAllTXT()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L239",
+      "source_location": "L302",
       "id": "js_api_getalltxt",
       "community": 2,
       "norm_label": "getalltxt()"
     },
     {
+      "label": "fetchMTASTSPolicyFile()",
+      "file_type": "code",
+      "source_file": "js/api.js",
+      "source_location": "L315",
+      "id": "js_api_fetchmtastspolicyfile",
+      "community": 2,
+      "norm_label": "fetchmtastspolicyfile()"
+    },
+    {
       "label": "getMTASTS()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L252",
+      "source_location": "L398",
       "id": "js_api_getmtasts",
       "community": 2,
       "norm_label": "getmtasts()"
@@ -239,7 +284,7 @@
       "label": "getTLSRPT()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L269",
+      "source_location": "L426",
       "id": "js_api_gettlsrpt",
       "community": 2,
       "norm_label": "gettlsrpt()"
@@ -248,10 +293,28 @@
       "label": "getNS()",
       "file_type": "code",
       "source_file": "js/api.js",
-      "source_location": "L287",
+      "source_location": "L450",
       "id": "js_api_getns",
       "community": 2,
       "norm_label": "getns()"
+    },
+    {
+      "label": "getSRV()",
+      "file_type": "code",
+      "source_file": "js/api.js",
+      "source_location": "L463",
+      "id": "js_api_getsrv",
+      "community": 2,
+      "norm_label": "getsrv()"
+    },
+    {
+      "label": "getDANE()",
+      "file_type": "code",
+      "source_file": "js/api.js",
+      "source_location": "L495",
+      "id": "js_api_getdane",
+      "community": 2,
+      "norm_label": "getdane()"
     },
     {
       "label": "app.js",
@@ -259,26 +322,224 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "id": "js_app",
-      "community": 3,
+      "community": 1,
       "norm_label": "app.js"
     },
     {
       "label": "state",
       "file_type": "code",
       "source_file": "js/app.js",
-      "source_location": "L9",
+      "source_location": "L10",
       "id": "js_app_state",
-      "community": 6,
+      "community": 1,
       "norm_label": "state"
     },
     {
       "label": "runAnalysis()",
       "file_type": "code",
       "source_file": "js/app.js",
-      "source_location": "L14",
+      "source_location": "L15",
       "id": "js_app_runanalysis",
       "community": 2,
       "norm_label": "runanalysis()"
+    },
+    {
+      "label": "awarenessDetector.js",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L1",
+      "id": "js_awarenessdetector",
+      "community": 4,
+      "norm_label": "awarenessdetector.js"
+    },
+    {
+      "label": "AWARENESS_FINGERPRINTS",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L22",
+      "id": "js_awarenessdetector_awareness_fingerprints",
+      "community": 4,
+      "norm_label": "awareness_fingerprints"
+    },
+    {
+      "label": "_cache",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L623",
+      "id": "js_awarenessdetector_cache",
+      "community": 4,
+      "norm_label": "_cache"
+    },
+    {
+      "label": "_cached()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L626",
+      "id": "js_awarenessdetector_cached",
+      "community": 4,
+      "norm_label": "_cached()"
+    },
+    {
+      "label": "_store()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L632",
+      "id": "js_awarenessdetector_store",
+      "community": 4,
+      "norm_label": "_store()"
+    },
+    {
+      "label": "DOH_ENDPOINTS",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L644",
+      "id": "js_awarenessdetector_doh_endpoints",
+      "community": 4,
+      "norm_label": "doh_endpoints"
+    },
+    {
+      "label": "_doh()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L649",
+      "id": "js_awarenessdetector_doh",
+      "community": 4,
+      "norm_label": "_doh()"
+    },
+    {
+      "label": "_getTxt()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L680",
+      "id": "js_awarenessdetector_gettxt",
+      "community": 4,
+      "norm_label": "_gettxt()"
+    },
+    {
+      "label": "_getMxRaw()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L691",
+      "id": "js_awarenessdetector_getmxraw",
+      "community": 4,
+      "norm_label": "_getmxraw()"
+    },
+    {
+      "label": "_getCname()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L703",
+      "id": "js_awarenessdetector_getcname",
+      "community": 4,
+      "norm_label": "_getcname()"
+    },
+    {
+      "label": "flattenSpf()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L715",
+      "id": "js_awarenessdetector_flattenspf",
+      "community": 4,
+      "norm_label": "flattenspf()"
+    },
+    {
+      "label": "_domainMatches()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L759",
+      "id": "js_awarenessdetector_domainmatches",
+      "community": 4,
+      "norm_label": "_domainmatches()"
+    },
+    {
+      "label": "_ipv4ToInt()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L765",
+      "id": "js_awarenessdetector_ipv4toint",
+      "community": 4,
+      "norm_label": "_ipv4toint()"
+    },
+    {
+      "label": "_ipv4InCidr()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L769",
+      "id": "js_awarenessdetector_ipv4incidr",
+      "community": 4,
+      "norm_label": "_ipv4incidr()"
+    },
+    {
+      "label": "_crtCache",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L781",
+      "id": "js_awarenessdetector_crtcache",
+      "community": 4,
+      "norm_label": "_crtcache"
+    },
+    {
+      "label": "_queryCrt()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L784",
+      "id": "js_awarenessdetector_querycrt",
+      "community": 4,
+      "norm_label": "_querycrt()"
+    },
+    {
+      "label": "detectAwarenessVendors()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L843",
+      "id": "js_awarenessdetector_detectawarenessvendors",
+      "community": 4,
+      "norm_label": "detectawarenessvendors()"
+    },
+    {
+      "label": "mergeFingerprints()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L1099",
+      "id": "js_awarenessdetector_mergefingerprints",
+      "community": 4,
+      "norm_label": "mergefingerprints()"
+    },
+    {
+      "label": "awarenessDetector.test.js",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L1",
+      "id": "js_awarenessdetector_test",
+      "community": 4,
+      "norm_label": "awarenessdetector.test.js"
+    },
+    {
+      "label": "DNS_FIXTURES",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L23",
+      "id": "js_awarenessdetector_test_dns_fixtures",
+      "community": 4,
+      "norm_label": "dns_fixtures"
+    },
+    {
+      "label": "makeDohResponse()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L115",
+      "id": "js_awarenessdetector_test_makedohresponse",
+      "community": 4,
+      "norm_label": "makedohresponse()"
+    },
+    {
+      "label": "buildFetchMock()",
+      "file_type": "code",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L131",
+      "id": "js_awarenessdetector_test_buildfetchmock",
+      "community": 4,
+      "norm_label": "buildfetchmock()"
     },
     {
       "label": "export.js",
@@ -286,43 +547,43 @@
       "source_file": "js/export.js",
       "source_location": "L1",
       "id": "js_export",
-      "community": 6,
+      "community": 1,
       "norm_label": "export.js"
     },
     {
       "label": "generateReportHTML()",
       "file_type": "code",
       "source_file": "js/export.js",
-      "source_location": "L7",
+      "source_location": "L8",
       "id": "js_export_generatereporthtml",
-      "community": 5,
+      "community": 1,
       "norm_label": "generatereporthtml()"
     },
     {
       "label": "exportToGoogle()",
       "file_type": "code",
       "source_file": "js/export.js",
-      "source_location": "L391",
+      "source_location": "L583",
       "id": "js_export_exporttogoogle",
-      "community": 5,
+      "community": 1,
       "norm_label": "exporttogoogle()"
     },
     {
       "label": "exportToFile()",
       "file_type": "code",
       "source_file": "js/export.js",
-      "source_location": "L421",
+      "source_location": "L613",
       "id": "js_export_exporttofile",
-      "community": 5,
+      "community": 1,
       "norm_label": "exporttofile()"
     },
     {
       "label": "exportToPDF()",
       "file_type": "code",
       "source_file": "js/export.js",
-      "source_location": "L441",
+      "source_location": "L633",
       "id": "js_export_exporttopdf",
-      "community": 5,
+      "community": 1,
       "norm_label": "exporttopdf()"
     },
     {
@@ -331,7 +592,7 @@
       "source_file": "js/i18n.js",
       "source_location": "L1",
       "id": "js_i18n",
-      "community": 6,
+      "community": 1,
       "norm_label": "i18n.js"
     },
     {
@@ -340,7 +601,7 @@
       "source_file": "js/i18n.js",
       "source_location": "L2",
       "id": "js_i18n_translations",
-      "community": 6,
+      "community": 1,
       "norm_label": "translations"
     },
     {
@@ -349,7 +610,7 @@
       "source_file": "js/knowledge.js",
       "source_location": "L1",
       "id": "js_knowledge",
-      "community": 3,
+      "community": 1,
       "norm_label": "knowledge.js"
     },
     {
@@ -358,7 +619,7 @@
       "source_file": "js/knowledge.js",
       "source_location": "L2",
       "id": "js_knowledge_kb",
-      "community": 3,
+      "community": 1,
       "norm_label": "kb"
     },
     {
@@ -367,7 +628,7 @@
       "source_file": "js/lang.js",
       "source_location": "L1",
       "id": "js_lang",
-      "community": 3,
+      "community": 1,
       "norm_label": "lang.js"
     },
     {
@@ -376,7 +637,7 @@
       "source_file": "js/lang.js",
       "source_location": "L2",
       "id": "js_lang_getlanguage",
-      "community": 5,
+      "community": 1,
       "norm_label": "getlanguage()"
     },
     {
@@ -385,7 +646,7 @@
       "source_file": "js/lang.js",
       "source_location": "L6",
       "id": "js_lang_setlanguage",
-      "community": 3,
+      "community": 1,
       "norm_label": "setlanguage()"
     },
     {
@@ -398,10 +659,19 @@
       "norm_label": "parsers.js"
     },
     {
+      "label": "escapeHtml()",
+      "file_type": "code",
+      "source_file": "js/parsers.js",
+      "source_location": "L2",
+      "id": "js_parsers_escapehtml",
+      "community": 1,
+      "norm_label": "escapehtml()"
+    },
+    {
       "label": "parseSPF()",
       "file_type": "code",
       "source_file": "js/parsers.js",
-      "source_location": "L1",
+      "source_location": "L9",
       "id": "js_parsers_parsespf",
       "community": 0,
       "norm_label": "parsespf()"
@@ -410,10 +680,28 @@
       "label": "parseDMARC()",
       "file_type": "code",
       "source_file": "js/parsers.js",
-      "source_location": "L43",
+      "source_location": "L51",
       "id": "js_parsers_parsedmarc",
       "community": 0,
       "norm_label": "parsedmarc()"
+    },
+    {
+      "label": "parseMTASTSPolicy()",
+      "file_type": "code",
+      "source_file": "js/parsers.js",
+      "source_location": "L65",
+      "id": "js_parsers_parsemtastspolicy",
+      "community": 2,
+      "norm_label": "parsemtastspolicy()"
+    },
+    {
+      "label": "validateMTASTSPolicy()",
+      "file_type": "code",
+      "source_file": "js/parsers.js",
+      "source_location": "L89",
+      "id": "js_parsers_validatemtastspolicy",
+      "community": 2,
+      "norm_label": "validatemtastspolicy()"
     },
     {
       "label": "ui.js",
@@ -428,7 +716,7 @@
       "label": "getCategoryLabel()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L6",
+      "source_location": "L7",
       "id": "js_ui_getcategorylabel",
       "community": 1,
       "norm_label": "getcategorylabel()"
@@ -437,7 +725,7 @@
       "label": "openKbModal()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L90",
+      "source_location": "L91",
       "id": "js_ui_openkbmodal",
       "community": 1,
       "norm_label": "openkbmodal()"
@@ -446,16 +734,16 @@
       "label": "closeKbModal()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L98",
+      "source_location": "L99",
       "id": "js_ui_closekbmodal",
-      "community": 3,
+      "community": 1,
       "norm_label": "closekbmodal()"
     },
     {
       "label": "getTooltipEl()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L107",
+      "source_location": "L108",
       "id": "js_ui_gettooltipel",
       "community": 1,
       "norm_label": "gettooltipel()"
@@ -464,16 +752,16 @@
       "label": "showSection()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L145",
+      "source_location": "L146",
       "id": "js_ui_showsection",
-      "community": 3,
+      "community": 1,
       "norm_label": "showsection()"
     },
     {
       "label": "setStep()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L152",
+      "source_location": "L153",
       "id": "js_ui_setstep",
       "community": 1,
       "norm_label": "setstep()"
@@ -482,7 +770,7 @@
       "label": "renderSPFTree()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L164",
+      "source_location": "L165",
       "id": "js_ui_renderspftree",
       "community": 1,
       "norm_label": "renderspftree()"
@@ -491,7 +779,7 @@
       "label": "translateProviderSource()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L197",
+      "source_location": "L198",
       "id": "js_ui_translateprovidersource",
       "community": 1,
       "norm_label": "translateprovidersource()"
@@ -500,7 +788,7 @@
       "label": "translateDOM()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L212",
+      "source_location": "L213",
       "id": "js_ui_translatedom",
       "community": 1,
       "norm_label": "translatedom()"
@@ -509,7 +797,7 @@
       "label": "renderResults()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L293",
+      "source_location": "L294",
       "id": "js_ui_renderresults",
       "community": 1,
       "norm_label": "renderresults()"
@@ -518,7 +806,7 @@
       "label": "renderReputation()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L678",
+      "source_location": "L688",
       "id": "js_ui_renderreputation",
       "community": 1,
       "norm_label": "renderreputation()"
@@ -527,10 +815,289 @@
       "label": "renderAdvancedDNS()",
       "file_type": "code",
       "source_file": "js/ui.js",
-      "source_location": "L726",
+      "source_location": "L736",
       "id": "js_ui_renderadvanceddns",
       "community": 1,
       "norm_label": "renderadvanceddns()"
+    },
+    {
+      "label": "renderAwarenessVendors()",
+      "file_type": "code",
+      "source_file": "js/ui.js",
+      "source_location": "L973",
+      "id": "js_ui_renderawarenessvendors",
+      "community": 1,
+      "norm_label": "renderawarenessvendors()"
+    },
+    {
+      "label": "package.json",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L1",
+      "id": "package",
+      "community": 5,
+      "norm_label": "package.json"
+    },
+    {
+      "label": "dependencies",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L2",
+      "id": "package_dependencies",
+      "community": 5,
+      "norm_label": "dependencies"
+    },
+    {
+      "label": "playwright",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L3",
+      "id": "package_dependencies_playwright",
+      "community": 5,
+      "norm_label": "playwright"
+    },
+    {
+      "label": "README.md",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L1",
+      "id": "readme",
+      "community": 3,
+      "norm_label": "readme.md"
+    },
+    {
+      "label": "\ud83d\udee1\ufe0f Email-Security-Checker",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L1",
+      "id": "readme_email_security_checker",
+      "community": 3,
+      "norm_label": "\ud83d\udee1\ufe0f email-security-checker"
+    },
+    {
+      "label": "\ud83d\udca1 Caracter\u00edsticas principales",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L10",
+      "id": "readme_caracter\u00edsticas_principales",
+      "community": 3,
+      "norm_label": "\ud83d\udca1 caracteristicas principales"
+    },
+    {
+      "label": "\ud83c\udfd7\ufe0f Arquitectura del Sistema",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L20",
+      "id": "readme_arquitectura_del_sistema",
+      "community": 3,
+      "norm_label": "\ud83c\udfd7\ufe0f arquitectura del sistema"
+    },
+    {
+      "label": "\ud83d\udee0\ufe0f Tecnolog\u00edas utilizadas",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L43",
+      "id": "readme_tecnolog\u00edas_utilizadas",
+      "community": 3,
+      "norm_label": "\ud83d\udee0\ufe0f tecnologias utilizadas"
+    },
+    {
+      "label": "\ud83d\udcbb Instalaci\u00f3n y Uso Local",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L52",
+      "id": "readme_instalaci\u00f3n_y_uso_local",
+      "community": 3,
+      "norm_label": "\ud83d\udcbb instalacion y uso local"
+    },
+    {
+      "label": "Ejecutar Tests Unitarios",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L75",
+      "id": "readme_ejecutar_tests_unitarios",
+      "community": 3,
+      "norm_label": "ejecutar tests unitarios"
+    },
+    {
+      "label": "\ud83d\udcc5 Historial de Cambios",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L86",
+      "id": "readme_historial_de_cambios",
+      "community": 3,
+      "norm_label": "\ud83d\udcc5 historial de cambios"
+    },
+    {
+      "label": "v2.0.0 \u2014 Detecci\u00f3n Avanzada de DNS (SRV/DANE), Postura de Seguridad y Mejoras en Awareness (Actual)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L88",
+      "id": "readme_v2_0_0_detecci\u00f3n_avanzada_de_dns_srv_dane_postura_de_seguridad_y_mejoras_en_awareness_actual",
+      "community": 3,
+      "norm_label": "v2.0.0 \u2014 deteccion avanzada de dns (srv/dane), postura de seguridad y mejoras en awareness (actual)"
+    },
+    {
+      "label": "v1.9.0 \u2014 Awareness-Vendor Detector: Detecci\u00f3n de Plataformas de Phishing Simulation",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L99",
+      "id": "readme_v1_9_0_awareness_vendor_detector_detecci\u00f3n_de_plataformas_de_phishing_simulation",
+      "community": 3,
+      "norm_label": "v1.9.0 \u2014 awareness-vendor detector: deteccion de plataformas de phishing simulation"
+    },
+    {
+      "label": "\ud83d\udd0d Pipeline de detecci\u00f3n (por dominio de entrada)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L103",
+      "id": "readme_pipeline_de_detecci\u00f3n_por_dominio_de_entrada",
+      "community": 3,
+      "norm_label": "\ud83d\udd0d pipeline de deteccion (por dominio de entrada)"
+    },
+    {
+      "label": "\ud83d\udcda Diccionario de fingerprints (v2026-06-05)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L112",
+      "id": "readme_diccionario_de_fingerprints_v2026_06_05",
+      "community": 3,
+      "norm_label": "\ud83d\udcda diccionario de fingerprints (v2026-06-05)"
+    },
+    {
+      "label": "Nuevos componentes",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L128",
+      "id": "readme_nuevos_componentes",
+      "community": 3,
+      "norm_label": "nuevos componentes"
+    },
+    {
+      "label": "v1.8.0 \u2014 Informes de Exportaci\u00f3n Enriquecidos y Detecci\u00f3n SEG Mejorada",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L138",
+      "id": "readme_v1_8_0_informes_de_exportaci\u00f3n_enriquecidos_y_detecci\u00f3n_seg_mejorada",
+      "community": 3,
+      "norm_label": "v1.8.0 \u2014 informes de exportacion enriquecidos y deteccion seg mejorada"
+    },
+    {
+      "label": "v1.7.4 \u2014 Validaciones de Seguridad Robustas para SPF y DMARC",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L147",
+      "id": "readme_v1_7_4_validaciones_de_seguridad_robustas_para_spf_y_dmarc",
+      "community": 3,
+      "norm_label": "v1.7.4 \u2014 validaciones de seguridad robustas para spf y dmarc"
+    },
+    {
+      "label": "v1.7.3 \u2014 Seguridad contra XSS, Bypass de CORS en MTA-STS y Cach\u00e9 DNS",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L153",
+      "id": "readme_v1_7_3_seguridad_contra_xss_bypass_de_cors_en_mta_sts_y_cach\u00e9_dns",
+      "community": 3,
+      "norm_label": "v1.7.3 \u2014 seguridad contra xss, bypass de cors en mta-sts y cache dns"
+    },
+    {
+      "label": "v1.7.2 \u2014 Correcci\u00f3n en Detecci\u00f3n de Hornetsecurity y Extracci\u00f3n de Dominio",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L158",
+      "id": "readme_v1_7_2_correcci\u00f3n_en_detecci\u00f3n_de_hornetsecurity_y_extracci\u00f3n_de_dominio",
+      "community": 3,
+      "norm_label": "v1.7.2 \u2014 correccion en deteccion de hornetsecurity y extraccion de dominio"
+    },
+    {
+      "label": "v1.7.1 \u2014 Explicaci\u00f3n de Bucles SPF en \u00c1rbol de Consultas",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L162",
+      "id": "readme_v1_7_1_explicaci\u00f3n_de_bucles_spf_en_\u00e1rbol_de_consultas",
+      "community": 3,
+      "norm_label": "v1.7.1 \u2014 explicacion de bucles spf en arbol de consultas"
+    },
+    {
+      "label": "v1.7.0 \u2014 Detecci\u00f3n Avanzada de ICES y Consultas DNS Paralelas",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L165",
+      "id": "readme_v1_7_0_detecci\u00f3n_avanzada_de_ices_y_consultas_dns_paralelas",
+      "community": 3,
+      "norm_label": "v1.7.0 \u2014 deteccion avanzada de ices y consultas dns paralelas"
+    },
+    {
+      "label": "v1.6.1 \u2014 Mejoras en Exportaci\u00f3n a Google Docs",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L170",
+      "id": "readme_v1_6_1_mejoras_en_exportaci\u00f3n_a_google_docs",
+      "community": 3,
+      "norm_label": "v1.6.1 \u2014 mejoras en exportacion a google docs"
+    },
+    {
+      "label": "v1.6.0 \u2014 Tooltips Did\u00e1cticos, Auto-descubrimiento DKIM y Reputaci\u00f3n RBL",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L173",
+      "id": "readme_v1_6_0_tooltips_did\u00e1cticos_auto_descubrimiento_dkim_y_reputaci\u00f3n_rbl",
+      "community": 3,
+      "norm_label": "v1.6.0 \u2014 tooltips didacticos, auto-descubrimiento dkim y reputacion rbl"
+    },
+    {
+      "label": "v1.5.0 \u2014 Tarjeta de Puntuaci\u00f3n de Seguridad Interactiva",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L178",
+      "id": "readme_v1_5_0_tarjeta_de_puntuaci\u00f3n_de_seguridad_interactiva",
+      "community": 3,
+      "norm_label": "v1.5.0 \u2014 tarjeta de puntuacion de seguridad interactiva"
+    },
+    {
+      "label": "v1.4.0 \u2014 Soporte Multiling\u00fce e Informes PDF Optimizados",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L183",
+      "id": "readme_v1_4_0_soporte_multiling\u00fce_e_informes_pdf_optimizados",
+      "community": 3,
+      "norm_label": "v1.4.0 \u2014 soporte multilingue e informes pdf optimizados"
+    },
+    {
+      "label": "v1.3.0 \u2014 Refactorizaci\u00f3n Arquitect\u00f3nica y Experiencia DKIM",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L188",
+      "id": "readme_v1_3_0_refactorizaci\u00f3n_arquitect\u00f3nica_y_experiencia_dkim",
+      "community": 3,
+      "norm_label": "v1.3.0 \u2014 refactorizacion arquitectonica y experiencia dkim"
+    },
+    {
+      "label": "v1.2.0 \u2014 Auditor\u00edas Avanzadas y Visualizaci\u00f3n SPF",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L193",
+      "id": "readme_v1_2_0_auditor\u00edas_avanzadas_y_visualizaci\u00f3n_spf",
+      "community": 3,
+      "norm_label": "v1.2.0 \u2014 auditorias avanzadas y visualizacion spf"
+    },
+    {
+      "label": "v1.1.0 \u2014 Clasificaci\u00f3n de Servicios y Aprendizaje Din\u00e1mico",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L198",
+      "id": "readme_v1_1_0_clasificaci\u00f3n_de_servicios_y_aprendizaje_din\u00e1mico",
+      "community": 3,
+      "norm_label": "v1.1.0 \u2014 clasificacion de servicios y aprendizaje dinamico"
+    },
+    {
+      "label": "v1.0.0 \u2014 Lanzamiento Inicial",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L202",
+      "id": "readme_v1_0_0_lanzamiento_inicial",
+      "community": 3,
+      "norm_label": "v1.0.0 \u2014 lanzamiento inicial"
     },
     {
       "label": "README.md",
@@ -541,9 +1108,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "readme_md",
       "community": 7,
-      "norm_label": "readme.md"
+      "norm_label": "readme.md",
+      "id": "readme_md"
     },
     {
       "label": "index.html",
@@ -554,9 +1121,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "index_html",
-      "community": 3,
-      "norm_label": "index.html"
+      "community": 1,
+      "norm_label": "index.html",
+      "id": "index_html"
     },
     {
       "label": "Pure Frontend Architecture",
@@ -567,9 +1134,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_architecture_pure_frontend",
       "community": 7,
-      "norm_label": "pure frontend architecture"
+      "norm_label": "pure frontend architecture",
+      "id": "concept_architecture_pure_frontend"
     },
     {
       "label": "DNS-over-HTTPS (DoH)",
@@ -580,9 +1147,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_dns_over_https",
       "community": 7,
-      "norm_label": "dns-over-https (doh)"
+      "norm_label": "dns-over-https (doh)",
+      "id": "concept_dns_over_https"
     },
     {
       "label": "Security Score Card",
@@ -593,9 +1160,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_security_score_card",
       "community": 0,
-      "norm_label": "security score card"
+      "norm_label": "security score card",
+      "id": "concept_security_score_card"
     },
     {
       "label": "RBL Blacklist Reputation Lookup",
@@ -606,9 +1173,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_rbl_lookup",
-      "community": 8,
-      "norm_label": "rbl blacklist reputation lookup"
+      "community": 2,
+      "norm_label": "rbl blacklist reputation lookup",
+      "id": "concept_rbl_lookup"
     }
   ],
   "links": [
@@ -618,9 +1185,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L116",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_analyze",
-      "confidence_score": 1.0
+      "target": "js_analyzer_analyze"
     },
     {
       "relation": "contains",
@@ -628,9 +1195,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L99",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_analyzetlsrpt",
-      "confidence_score": 1.0
+      "target": "js_analyzer_analyzetlsrpt"
     },
     {
       "relation": "contains",
@@ -638,9 +1205,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L223",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_calculatescoreandfindings",
-      "confidence_score": 1.0
+      "target": "js_analyzer_calculatescoreandfindings"
     },
     {
       "relation": "contains",
@@ -648,9 +1215,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L19",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_extractrootdomain",
-      "confidence_score": 1.0
+      "target": "js_analyzer_extractrootdomain"
     },
     {
       "relation": "contains",
@@ -658,9 +1225,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L52",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_identifydmarcreporter",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifydmarcreporter"
     },
     {
       "relation": "contains",
@@ -668,9 +1235,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_identifymx",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifymx"
     },
     {
       "relation": "contains",
@@ -678,9 +1245,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L85",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_identifynsprovider",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifynsprovider"
     },
     {
       "relation": "contains",
@@ -688,9 +1255,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L31",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_identifyspfservice",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifyspfservice"
     },
     {
       "relation": "contains",
@@ -698,9 +1265,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L61",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_analyzer_identifytxtverifications",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifytxtverifications"
     },
     {
       "relation": "imports_from",
@@ -709,9 +1276,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_knowledge",
-      "confidence_score": 1.0
+      "target": "js_knowledge"
     },
     {
       "relation": "imports",
@@ -720,9 +1287,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_knowledge_kb",
-      "confidence_score": 1.0
+      "target": "js_knowledge_kb"
     },
     {
       "relation": "imports_from",
@@ -731,9 +1298,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_parsers",
-      "confidence_score": 1.0
+      "target": "js_parsers"
     },
     {
       "relation": "imports",
@@ -742,9 +1309,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_parsers_parsedmarc",
-      "confidence_score": 1.0
+      "target": "js_parsers_parsedmarc"
     },
     {
       "relation": "imports",
@@ -753,9 +1320,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer",
-      "target": "js_parsers_parsespf",
-      "confidence_score": 1.0
+      "target": "js_parsers_parsespf"
     },
     {
       "relation": "imports_from",
@@ -764,9 +1331,9 @@
       "source_file": "js/app.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_analyzer",
-      "confidence_score": 1.0
+      "target": "js_analyzer"
     },
     {
       "relation": "imports_from",
@@ -775,9 +1342,9 @@
       "source_file": "js/export.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_analyzer",
-      "confidence_score": 1.0
+      "target": "js_analyzer"
     },
     {
       "relation": "imports_from",
@@ -786,9 +1353,9 @@
       "source_file": "js/ui.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_analyzer",
-      "confidence_score": 1.0
+      "target": "js_analyzer"
     },
     {
       "relation": "calls",
@@ -797,9 +1364,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L127",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer_analyze",
-      "target": "js_analyzer_identifymx",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifymx"
     },
     {
       "relation": "calls",
@@ -808,9 +1375,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L10",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer_identifymx",
-      "target": "js_analyzer_extractrootdomain",
-      "confidence_score": 1.0
+      "target": "js_analyzer_extractrootdomain"
     },
     {
       "relation": "imports",
@@ -819,9 +1386,9 @@
       "source_file": "js/ui.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_analyzer_identifymx",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifymx"
     },
     {
       "relation": "calls",
@@ -830,9 +1397,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L40",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer_identifyspfservice",
-      "target": "js_analyzer_extractrootdomain",
-      "confidence_score": 1.0
+      "target": "js_analyzer_extractrootdomain"
     },
     {
       "relation": "calls",
@@ -841,9 +1408,9 @@
       "source_file": "js/analyzer.js",
       "source_location": "L146",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_analyzer_analyze",
-      "target": "js_analyzer_identifyspfservice",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifyspfservice"
     },
     {
       "relation": "imports",
@@ -852,9 +1419,9 @@
       "source_file": "js/export.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_analyzer_identifyspfservice",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifyspfservice"
     },
     {
       "relation": "imports",
@@ -863,9 +1430,9 @@
       "source_file": "js/ui.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_analyzer_identifyspfservice",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifyspfservice"
     },
     {
       "relation": "calls",
@@ -882,12 +1449,23 @@
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
+      "source_file": "js/export.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "js_export",
+      "target": "js_analyzer_identifydmarcreporter",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
       "source_file": "js/ui.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_analyzer_identifydmarcreporter",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifydmarcreporter"
     },
     {
       "relation": "calls",
@@ -907,9 +1485,9 @@
       "source_file": "js/app.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_analyzer_identifytxtverifications",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifytxtverifications"
     },
     {
       "relation": "calls",
@@ -918,9 +1496,9 @@
       "source_file": "js/app.js",
       "source_location": "L71",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_analyzer_identifytxtverifications",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifytxtverifications"
     },
     {
       "relation": "imports",
@@ -929,9 +1507,9 @@
       "source_file": "js/app.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_analyzer_identifynsprovider",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifynsprovider"
     },
     {
       "relation": "calls",
@@ -940,9 +1518,9 @@
       "source_file": "js/app.js",
       "source_location": "L72",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_analyzer_identifynsprovider",
-      "confidence_score": 1.0
+      "target": "js_analyzer_identifynsprovider"
     },
     {
       "relation": "imports",
@@ -951,9 +1529,9 @@
       "source_file": "js/app.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_analyzer_analyzetlsrpt",
-      "confidence_score": 1.0
+      "target": "js_analyzer_analyzetlsrpt"
     },
     {
       "relation": "calls",
@@ -962,9 +1540,9 @@
       "source_file": "js/app.js",
       "source_location": "L73",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_analyzer_analyzetlsrpt",
-      "confidence_score": 1.0
+      "target": "js_analyzer_analyzetlsrpt"
     },
     {
       "relation": "calls",
@@ -995,9 +1573,9 @@
       "source_file": "js/app.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_analyzer_analyze",
-      "confidence_score": 1.0
+      "target": "js_analyzer_analyze"
     },
     {
       "relation": "calls",
@@ -1006,9 +1584,9 @@
       "source_file": "js/app.js",
       "source_location": "L91",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_analyzer_analyze",
-      "confidence_score": 1.0
+      "target": "js_analyzer_analyze"
     },
     {
       "relation": "implements",
@@ -1027,9 +1605,9 @@
       "source_file": "js/app.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_analyzer_calculatescoreandfindings",
-      "confidence_score": 1.0
+      "target": "js_analyzer_calculatescoreandfindings"
     },
     {
       "relation": "calls",
@@ -1038,9 +1616,9 @@
       "source_file": "js/app.js",
       "source_location": "L107",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_analyzer_calculatescoreandfindings",
-      "confidence_score": 1.0
+      "target": "js_analyzer_calculatescoreandfindings"
     },
     {
       "relation": "contains",
@@ -1048,8 +1626,18 @@
       "source_file": "js/api.js",
       "source_location": "L223",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_checkrbl",
+      "target": "js_api_checkrbl"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_api_cleardnscache",
       "confidence_score": 1.0
     },
     {
@@ -1058,9 +1646,9 @@
       "source_file": "js/api.js",
       "source_location": "L71",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_common_dkim_selectors",
-      "confidence_score": 1.0
+      "target": "js_api_common_dkim_selectors"
     },
     {
       "relation": "contains",
@@ -1068,8 +1656,28 @@
       "source_file": "js/api.js",
       "source_location": "L73",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_discoverdkimselectors",
+      "target": "js_api_discoverdkimselectors"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_api_dnscache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L315",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_api_fetchmtastspolicyfile",
       "confidence_score": 1.0
     },
     {
@@ -1078,9 +1686,9 @@
       "source_file": "js/api.js",
       "source_location": "L239",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getalltxt",
-      "confidence_score": 1.0
+      "target": "js_api_getalltxt"
     },
     {
       "relation": "contains",
@@ -1088,8 +1696,28 @@
       "source_file": "js/api.js",
       "source_location": "L141",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getbimi",
+      "target": "js_api_getbimi"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L11",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_api_getcached",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L495",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_api_getdane",
       "confidence_score": 1.0
     },
     {
@@ -1098,9 +1726,9 @@
       "source_file": "js/api.js",
       "source_location": "L112",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getdkim",
-      "confidence_score": 1.0
+      "target": "js_api_getdkim"
     },
     {
       "relation": "contains",
@@ -1108,9 +1736,9 @@
       "source_file": "js/api.js",
       "source_location": "L51",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getdmarc",
-      "confidence_score": 1.0
+      "target": "js_api_getdmarc"
     },
     {
       "relation": "contains",
@@ -1118,9 +1746,9 @@
       "source_file": "js/api.js",
       "source_location": "L210",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getipaddress",
-      "confidence_score": 1.0
+      "target": "js_api_getipaddress"
     },
     {
       "relation": "contains",
@@ -1128,9 +1756,9 @@
       "source_file": "js/api.js",
       "source_location": "L252",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getmtasts",
-      "confidence_score": 1.0
+      "target": "js_api_getmtasts"
     },
     {
       "relation": "contains",
@@ -1138,9 +1766,9 @@
       "source_file": "js/api.js",
       "source_location": "L20",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getmx",
-      "confidence_score": 1.0
+      "target": "js_api_getmx"
     },
     {
       "relation": "contains",
@@ -1148,9 +1776,9 @@
       "source_file": "js/api.js",
       "source_location": "L287",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getns",
-      "confidence_score": 1.0
+      "target": "js_api_getns"
     },
     {
       "relation": "contains",
@@ -1158,9 +1786,9 @@
       "source_file": "js/api.js",
       "source_location": "L32",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getspf",
-      "confidence_score": 1.0
+      "target": "js_api_getspf"
     },
     {
       "relation": "contains",
@@ -1168,8 +1796,18 @@
       "source_file": "js/api.js",
       "source_location": "L160",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_getspflookuptree",
+      "target": "js_api_getspflookuptree"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L463",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_api_getsrv",
       "confidence_score": 1.0
     },
     {
@@ -1178,9 +1816,9 @@
       "source_file": "js/api.js",
       "source_location": "L269",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_gettlsrpt",
-      "confidence_score": 1.0
+      "target": "js_api_gettlsrpt"
     },
     {
       "relation": "contains",
@@ -1188,8 +1826,51 @@
       "source_file": "js/api.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api",
-      "target": "js_api_querydns",
+      "target": "js_api_querydns"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_api_setcache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_parsers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_parsers_parsemtastspolicy",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "js_api",
+      "target": "js_parsers_validatemtastspolicy",
       "confidence_score": 1.0
     },
     {
@@ -1199,8 +1880,30 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api",
+      "target": "js_api"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L36",
+      "weight": 1.0,
+      "source": "js_api_querydns",
+      "target": "js_api_getcached",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L63",
+      "weight": 1.0,
+      "source": "js_api_querydns",
+      "target": "js_api_setcache",
       "confidence_score": 1.0
     },
     {
@@ -1210,9 +1913,9 @@
       "source_file": "js/api.js",
       "source_location": "L227",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_checkrbl",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1221,9 +1924,9 @@
       "source_file": "js/api.js",
       "source_location": "L241",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getalltxt",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1232,9 +1935,9 @@
       "source_file": "js/api.js",
       "source_location": "L143",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getbimi",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1243,9 +1946,9 @@
       "source_file": "js/api.js",
       "source_location": "L52",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getdmarc",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1254,9 +1957,9 @@
       "source_file": "js/api.js",
       "source_location": "L212",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getipaddress",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1265,9 +1968,9 @@
       "source_file": "js/api.js",
       "source_location": "L254",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getmtasts",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1276,9 +1979,9 @@
       "source_file": "js/api.js",
       "source_location": "L21",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getmx",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1287,9 +1990,9 @@
       "source_file": "js/api.js",
       "source_location": "L289",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getns",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1298,9 +2001,9 @@
       "source_file": "js/api.js",
       "source_location": "L33",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getspf",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "calls",
@@ -1309,9 +2012,9 @@
       "source_file": "js/api.js",
       "source_location": "L271",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_gettlsrpt",
-      "target": "js_api_querydns",
-      "confidence_score": 1.0
+      "target": "js_api_querydns"
     },
     {
       "relation": "implements",
@@ -1330,9 +2033,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getmx",
-      "confidence_score": 1.0
+      "target": "js_api_getmx"
     },
     {
       "relation": "calls",
@@ -1341,9 +2044,9 @@
       "source_file": "js/app.js",
       "source_location": "L37",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getmx",
-      "confidence_score": 1.0
+      "target": "js_api_getmx"
     },
     {
       "relation": "calls",
@@ -1352,9 +2055,9 @@
       "source_file": "js/api.js",
       "source_location": "L173",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getspflookuptree",
-      "target": "js_api_getspf",
-      "confidence_score": 1.0
+      "target": "js_api_getspf"
     },
     {
       "relation": "imports",
@@ -1363,9 +2066,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getspf",
-      "confidence_score": 1.0
+      "target": "js_api_getspf"
     },
     {
       "relation": "calls",
@@ -1374,9 +2077,9 @@
       "source_file": "js/app.js",
       "source_location": "L41",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getspf",
-      "confidence_score": 1.0
+      "target": "js_api_getspf"
     },
     {
       "relation": "imports",
@@ -1385,9 +2088,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getdmarc",
-      "confidence_score": 1.0
+      "target": "js_api_getdmarc"
     },
     {
       "relation": "calls",
@@ -1396,9 +2099,9 @@
       "source_file": "js/app.js",
       "source_location": "L48",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getdmarc",
-      "confidence_score": 1.0
+      "target": "js_api_getdmarc"
     },
     {
       "relation": "calls",
@@ -1407,9 +2110,9 @@
       "source_file": "js/api.js",
       "source_location": "L115",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_api_getdkim",
-      "target": "js_api_discoverdkimselectors",
-      "confidence_score": 1.0
+      "target": "js_api_discoverdkimselectors"
     },
     {
       "relation": "imports",
@@ -1418,9 +2121,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getdkim",
-      "confidence_score": 1.0
+      "target": "js_api_getdkim"
     },
     {
       "relation": "calls",
@@ -1429,9 +2132,9 @@
       "source_file": "js/app.js",
       "source_location": "L54",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getdkim",
-      "confidence_score": 1.0
+      "target": "js_api_getdkim"
     },
     {
       "relation": "imports",
@@ -1440,9 +2143,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getbimi",
-      "confidence_score": 1.0
+      "target": "js_api_getbimi"
     },
     {
       "relation": "calls",
@@ -1451,9 +2154,9 @@
       "source_file": "js/app.js",
       "source_location": "L58",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getbimi",
-      "confidence_score": 1.0
+      "target": "js_api_getbimi"
     },
     {
       "relation": "imports",
@@ -1462,9 +2165,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getspflookuptree",
-      "confidence_score": 1.0
+      "target": "js_api_getspflookuptree"
     },
     {
       "relation": "calls",
@@ -1473,9 +2176,9 @@
       "source_file": "js/app.js",
       "source_location": "L43",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getspflookuptree",
-      "confidence_score": 1.0
+      "target": "js_api_getspflookuptree"
     },
     {
       "relation": "imports",
@@ -1484,9 +2187,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getipaddress",
-      "confidence_score": 1.0
+      "target": "js_api_getipaddress"
     },
     {
       "relation": "calls",
@@ -1495,9 +2198,9 @@
       "source_file": "js/app.js",
       "source_location": "L83",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getipaddress",
-      "confidence_score": 1.0
+      "target": "js_api_getipaddress"
     },
     {
       "relation": "implements",
@@ -1516,9 +2219,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_checkrbl",
-      "confidence_score": 1.0
+      "target": "js_api_checkrbl"
     },
     {
       "relation": "calls",
@@ -1527,9 +2230,9 @@
       "source_file": "js/app.js",
       "source_location": "L85",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_checkrbl",
-      "confidence_score": 1.0
+      "target": "js_api_checkrbl"
     },
     {
       "relation": "imports",
@@ -1538,9 +2241,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getalltxt",
-      "confidence_score": 1.0
+      "target": "js_api_getalltxt"
     },
     {
       "relation": "calls",
@@ -1549,8 +2252,41 @@
       "source_file": "js/app.js",
       "source_location": "L64",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getalltxt",
+      "target": "js_api_getalltxt"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "js/api.js",
+      "source_location": "L371",
+      "weight": 1.0,
+      "source": "js_api_fetchmtastspolicyfile",
+      "target": "js_parsers_parsemtastspolicy"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "js/api.js",
+      "source_location": "L382",
+      "weight": 1.0,
+      "source": "js_api_fetchmtastspolicyfile",
+      "target": "js_parsers_validatemtastspolicy"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/api.js",
+      "source_location": "L416",
+      "weight": 1.0,
+      "source": "js_api_getmtasts",
+      "target": "js_api_fetchmtastspolicyfile",
       "confidence_score": 1.0
     },
     {
@@ -1560,9 +2296,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_getmtasts",
-      "confidence_score": 1.0
+      "target": "js_api_getmtasts"
     },
     {
       "relation": "calls",
@@ -1571,9 +2307,9 @@
       "source_file": "js/app.js",
       "source_location": "L65",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getmtasts",
-      "confidence_score": 1.0
+      "target": "js_api_getmtasts"
     },
     {
       "relation": "imports",
@@ -1582,9 +2318,9 @@
       "source_file": "js/app.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_api_gettlsrpt",
-      "confidence_score": 1.0
+      "target": "js_api_gettlsrpt"
     },
     {
       "relation": "calls",
@@ -1593,8 +2329,52 @@
       "source_file": "js/app.js",
       "source_location": "L66",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_gettlsrpt",
+      "target": "js_api_gettlsrpt"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "js_app",
+      "target": "js_api_getns"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L67",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "js_app_runanalysis",
+      "target": "js_api_getns"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "js_app",
+      "target": "js_api_getsrv",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L69",
+      "weight": 1.0,
+      "source": "js_app_runanalysis",
+      "target": "js_api_getsrv",
       "confidence_score": 1.0
     },
     {
@@ -1605,7 +2385,7 @@
       "source_location": "L1",
       "weight": 1.0,
       "source": "js_app",
-      "target": "js_api_getns",
+      "target": "js_api_getdane",
       "confidence_score": 1.0
     },
     {
@@ -1613,10 +2393,10 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "js/app.js",
-      "source_location": "L67",
+      "source_location": "L83",
       "weight": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_api_getns",
+      "target": "js_api_getdane",
       "confidence_score": 1.0
     },
     {
@@ -1635,9 +2415,9 @@
       "source_file": "js/app.js",
       "source_location": "L14",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_app_runanalysis",
-      "confidence_score": 1.0
+      "target": "js_app_runanalysis"
     },
     {
       "relation": "contains",
@@ -1645,8 +2425,30 @@
       "source_file": "js/app.js",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_app_state",
+      "target": "js_app_state"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "js_app",
+      "target": "js_awarenessdetector",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "js_app",
+      "target": "js_awarenessdetector_detectawarenessvendors",
       "confidence_score": 1.0
     },
     {
@@ -1656,9 +2458,9 @@
       "source_file": "js/app.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_export",
-      "confidence_score": 1.0
+      "target": "js_export"
     },
     {
       "relation": "imports",
@@ -1667,9 +2469,9 @@
       "source_file": "js/app.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_export_exporttofile",
-      "confidence_score": 1.0
+      "target": "js_export_exporttofile"
     },
     {
       "relation": "imports",
@@ -1678,9 +2480,9 @@
       "source_file": "js/app.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_export_exporttogoogle",
-      "confidence_score": 1.0
+      "target": "js_export_exporttogoogle"
     },
     {
       "relation": "imports",
@@ -1689,9 +2491,9 @@
       "source_file": "js/app.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_export_exporttopdf",
-      "confidence_score": 1.0
+      "target": "js_export_exporttopdf"
     },
     {
       "relation": "imports_from",
@@ -1700,9 +2502,9 @@
       "source_file": "js/app.js",
       "source_location": "L7",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_i18n",
-      "confidence_score": 1.0
+      "target": "js_i18n"
     },
     {
       "relation": "imports",
@@ -1711,9 +2513,9 @@
       "source_file": "js/app.js",
       "source_location": "L7",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_i18n_translations",
-      "confidence_score": 1.0
+      "target": "js_i18n_translations"
     },
     {
       "relation": "imports_from",
@@ -1722,9 +2524,9 @@
       "source_file": "js/app.js",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_knowledge",
-      "confidence_score": 1.0
+      "target": "js_knowledge"
     },
     {
       "relation": "imports",
@@ -1733,9 +2535,9 @@
       "source_file": "js/app.js",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_knowledge_kb",
-      "confidence_score": 1.0
+      "target": "js_knowledge_kb"
     },
     {
       "relation": "imports_from",
@@ -1744,9 +2546,9 @@
       "source_file": "js/app.js",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_lang",
-      "confidence_score": 1.0
+      "target": "js_lang"
     },
     {
       "relation": "imports",
@@ -1755,9 +2557,9 @@
       "source_file": "js/app.js",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_lang_getlanguage",
-      "confidence_score": 1.0
+      "target": "js_lang_getlanguage"
     },
     {
       "relation": "imports",
@@ -1766,9 +2568,9 @@
       "source_file": "js/app.js",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_lang_setlanguage",
-      "confidence_score": 1.0
+      "target": "js_lang_setlanguage"
     },
     {
       "relation": "imports_from",
@@ -1777,9 +2579,20 @@
       "source_file": "js/app.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_ui",
-      "confidence_score": 1.0
+      "target": "js_ui"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L3",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "js_app",
+      "target": "js_ui_closekbmodal"
     },
     {
       "relation": "imports",
@@ -1789,7 +2602,7 @@
       "source_location": "L3",
       "weight": 1.0,
       "source": "js_app",
-      "target": "js_ui_closekbmodal",
+      "target": "js_ui_renderawarenessvendors",
       "confidence_score": 1.0
     },
     {
@@ -1799,9 +2612,9 @@
       "source_file": "js/app.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_ui_renderresults",
-      "confidence_score": 1.0
+      "target": "js_ui_renderresults"
     },
     {
       "relation": "imports",
@@ -1810,9 +2623,9 @@
       "source_file": "js/app.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_ui_setstep",
-      "confidence_score": 1.0
+      "target": "js_ui_setstep"
     },
     {
       "relation": "imports",
@@ -1821,9 +2634,9 @@
       "source_file": "js/app.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_ui_showsection",
-      "confidence_score": 1.0
+      "target": "js_ui_showsection"
     },
     {
       "relation": "imports",
@@ -1832,9 +2645,9 @@
       "source_file": "js/app.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app",
-      "target": "js_ui_translatedom",
-      "confidence_score": 1.0
+      "target": "js_ui_translatedom"
     },
     {
       "relation": "imports",
@@ -1843,8 +2656,19 @@
       "source_file": "js/export.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_app_state",
+      "target": "js_app_state"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/app.js",
+      "source_location": "L125",
+      "weight": 1.0,
+      "source": "js_app_runanalysis",
+      "target": "js_awarenessdetector_detectawarenessvendors",
       "confidence_score": 1.0
     },
     {
@@ -1854,9 +2678,9 @@
       "source_file": "js/app.js",
       "source_location": "L32",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_lang_getlanguage",
-      "confidence_score": 1.0
+      "target": "js_lang_getlanguage"
     },
     {
       "relation": "calls",
@@ -1865,9 +2689,9 @@
       "source_file": "js/app.js",
       "source_location": "L114",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_ui_renderresults",
-      "confidence_score": 1.0
+      "target": "js_ui_renderresults"
     },
     {
       "relation": "calls",
@@ -1876,9 +2700,9 @@
       "source_file": "js/app.js",
       "source_location": "L30",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_ui_setstep",
-      "confidence_score": 1.0
+      "target": "js_ui_setstep"
     },
     {
       "relation": "calls",
@@ -1887,8 +2711,384 @@
       "source_file": "js/app.js",
       "source_location": "L28",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_app_runanalysis",
-      "target": "js_ui_showsection",
+      "target": "js_ui_showsection"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L22",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_awareness_fingerprints",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L623",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_cache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L626",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_cached",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L781",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_crtcache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L843",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_detectawarenessvendors",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L649",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_doh",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L644",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_doh_endpoints",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L759",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_domainmatches",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L715",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_flattenspf",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L703",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_getcname",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L691",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_getmxraw",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L680",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_gettxt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L769",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_ipv4incidr",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L765",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_ipv4toint",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L1099",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_mergefingerprints",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L784",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_querycrt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L632",
+      "weight": 1.0,
+      "source": "js_awarenessdetector",
+      "target": "js_awarenessdetector_store",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector_awareness_fingerprints",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L651",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_doh",
+      "target": "js_awarenessdetector_cached",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L676",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_doh",
+      "target": "js_awarenessdetector_store",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L705",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_getcname",
+      "target": "js_awarenessdetector_doh",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L693",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_getmxraw",
+      "target": "js_awarenessdetector_doh",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L682",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_gettxt",
+      "target": "js_awarenessdetector_doh",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L849",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_detectawarenessvendors",
+      "target": "js_awarenessdetector_gettxt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L720",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_flattenspf",
+      "target": "js_awarenessdetector_gettxt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L848",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_detectawarenessvendors",
+      "target": "js_awarenessdetector_getmxraw",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L847",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_detectawarenessvendors",
+      "target": "js_awarenessdetector_flattenspf",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector_flattenspf",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L775",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_ipv4incidr",
+      "target": "js_awarenessdetector_ipv4toint",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.js",
+      "source_location": "L862",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_detectawarenessvendors",
+      "target": "js_awarenessdetector_querycrt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector_detectawarenessvendors",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector_mergefingerprints",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L131",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector_test_buildfetchmock",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L23",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector_test_dns_fixtures",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/awarenessDetector.test.js",
+      "source_location": "L115",
+      "weight": 1.0,
+      "source": "js_awarenessdetector_test",
+      "target": "js_awarenessdetector_test_makedohresponse",
       "confidence_score": 1.0
     },
     {
@@ -1897,9 +3097,9 @@
       "source_file": "js/export.js",
       "source_location": "L421",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_export_exporttofile",
-      "confidence_score": 1.0
+      "target": "js_export_exporttofile"
     },
     {
       "relation": "contains",
@@ -1907,9 +3107,9 @@
       "source_file": "js/export.js",
       "source_location": "L391",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_export_exporttogoogle",
-      "confidence_score": 1.0
+      "target": "js_export_exporttogoogle"
     },
     {
       "relation": "contains",
@@ -1917,9 +3117,9 @@
       "source_file": "js/export.js",
       "source_location": "L441",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_export_exporttopdf",
-      "confidence_score": 1.0
+      "target": "js_export_exporttopdf"
     },
     {
       "relation": "contains",
@@ -1927,9 +3127,9 @@
       "source_file": "js/export.js",
       "source_location": "L7",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_export_generatereporthtml",
-      "confidence_score": 1.0
+      "target": "js_export_generatereporthtml"
     },
     {
       "relation": "imports_from",
@@ -1938,9 +3138,9 @@
       "source_file": "js/export.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_i18n",
-      "confidence_score": 1.0
+      "target": "js_i18n"
     },
     {
       "relation": "imports",
@@ -1949,9 +3149,9 @@
       "source_file": "js/export.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_i18n_translations",
-      "confidence_score": 1.0
+      "target": "js_i18n_translations"
     },
     {
       "relation": "imports_from",
@@ -1960,9 +3160,9 @@
       "source_file": "js/export.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_lang",
-      "confidence_score": 1.0
+      "target": "js_lang"
     },
     {
       "relation": "imports",
@@ -1971,8 +3171,30 @@
       "source_file": "js/export.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_lang_getlanguage",
+      "target": "js_lang_getlanguage"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/export.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "js_export",
+      "target": "js_parsers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/export.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "js_export",
+      "target": "js_parsers_escapehtml",
       "confidence_score": 1.0
     },
     {
@@ -1982,9 +3204,20 @@
       "source_file": "js/export.js",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export",
-      "target": "js_ui",
-      "confidence_score": 1.0
+      "target": "js_ui"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/export.js",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "js_export",
+      "target": "js_ui_getcategorylabel"
     },
     {
       "relation": "imports",
@@ -1994,7 +3227,7 @@
       "source_location": "L5",
       "weight": 1.0,
       "source": "js_export",
-      "target": "js_ui_getcategorylabel",
+      "target": "js_ui_translateprovidersource",
       "confidence_score": 1.0
     },
     {
@@ -2004,9 +3237,9 @@
       "source_file": "js/export.js",
       "source_location": "L423",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export_exporttofile",
-      "target": "js_export_generatereporthtml",
-      "confidence_score": 1.0
+      "target": "js_export_generatereporthtml"
     },
     {
       "relation": "calls",
@@ -2015,9 +3248,9 @@
       "source_file": "js/export.js",
       "source_location": "L393",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_export_exporttogoogle",
-      "target": "js_export_generatereporthtml",
-      "confidence_score": 1.0
+      "target": "js_export_generatereporthtml"
     },
     {
       "relation": "calls",
@@ -2040,6 +3273,17 @@
       "weight": 1.0,
       "source": "js_export_generatereporthtml",
       "target": "js_ui_getcategorylabel"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "js/export.js",
+      "source_location": "L388",
+      "weight": 1.0,
+      "source": "js_export_generatereporthtml",
+      "target": "js_ui_translateprovidersource"
     },
     {
       "relation": "semantically_similar_to",
@@ -2100,9 +3344,9 @@
       "source_file": "js/i18n.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_i18n",
-      "target": "js_i18n_translations",
-      "confidence_score": 1.0
+      "target": "js_i18n_translations"
     },
     {
       "relation": "imports_from",
@@ -2111,9 +3355,9 @@
       "source_file": "js/ui.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_i18n",
-      "confidence_score": 1.0
+      "target": "js_i18n"
     },
     {
       "relation": "conceptually_related_to",
@@ -2132,9 +3376,9 @@
       "source_file": "js/ui.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_i18n_translations",
-      "confidence_score": 1.0
+      "target": "js_i18n_translations"
     },
     {
       "relation": "contains",
@@ -2142,9 +3386,9 @@
       "source_file": "js/knowledge.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_knowledge",
-      "target": "js_knowledge_kb",
-      "confidence_score": 1.0
+      "target": "js_knowledge_kb"
     },
     {
       "relation": "imports_from",
@@ -2153,9 +3397,9 @@
       "source_file": "js/ui.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_knowledge",
-      "confidence_score": 1.0
+      "target": "js_knowledge"
     },
     {
       "relation": "imports",
@@ -2164,9 +3408,9 @@
       "source_file": "js/ui.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_knowledge_kb",
-      "confidence_score": 1.0
+      "target": "js_knowledge_kb"
     },
     {
       "relation": "contains",
@@ -2174,9 +3418,9 @@
       "source_file": "js/lang.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_lang",
-      "target": "js_lang_getlanguage",
-      "confidence_score": 1.0
+      "target": "js_lang_getlanguage"
     },
     {
       "relation": "contains",
@@ -2184,9 +3428,9 @@
       "source_file": "js/lang.js",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_lang",
-      "target": "js_lang_setlanguage",
-      "confidence_score": 1.0
+      "target": "js_lang_setlanguage"
     },
     {
       "relation": "imports_from",
@@ -2195,9 +3439,9 @@
       "source_file": "js/ui.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_lang",
-      "confidence_score": 1.0
+      "target": "js_lang"
     },
     {
       "relation": "imports",
@@ -2206,9 +3450,9 @@
       "source_file": "js/ui.js",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_lang_getlanguage",
-      "confidence_score": 1.0
+      "target": "js_lang_getlanguage"
     },
     {
       "relation": "calls",
@@ -2247,10 +3491,30 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "js/parsers.js",
-      "source_location": "L43",
+      "source_location": "L2",
       "weight": 1.0,
       "source": "js_parsers",
-      "target": "js_parsers_parsedmarc",
+      "target": "js_parsers_escapehtml",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/parsers.js",
+      "source_location": "L43",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "js_parsers",
+      "target": "js_parsers_parsedmarc"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/parsers.js",
+      "source_location": "L65",
+      "weight": 1.0,
+      "source": "js_parsers",
+      "target": "js_parsers_parsemtastspolicy",
       "confidence_score": 1.0
     },
     {
@@ -2259,9 +3523,85 @@
       "source_file": "js/parsers.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_parsers",
-      "target": "js_parsers_parsespf",
+      "target": "js_parsers_parsespf"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/parsers.js",
+      "source_location": "L89",
+      "weight": 1.0,
+      "source": "js_parsers",
+      "target": "js_parsers_validatemtastspolicy",
       "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/ui.js",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "js_ui",
+      "target": "js_parsers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "js/ui.js",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "js_ui",
+      "target": "js_parsers_escapehtml",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "js/ui.js",
+      "source_location": "L760",
+      "weight": 1.0,
+      "source": "js_ui_renderadvanceddns",
+      "target": "js_parsers_escapehtml"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "js/ui.js",
+      "source_location": "L1030",
+      "weight": 1.0,
+      "source": "js_ui_renderawarenessvendors",
+      "target": "js_parsers_escapehtml"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "js/ui.js",
+      "source_location": "L709",
+      "weight": 1.0,
+      "source": "js_ui_renderreputation",
+      "target": "js_parsers_escapehtml"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "js/ui.js",
+      "source_location": "L509",
+      "weight": 1.0,
+      "source": "js_ui_renderresults",
+      "target": "js_parsers_escapehtml"
     },
     {
       "relation": "semantically_similar_to",
@@ -2279,9 +3619,9 @@
       "source_file": "js/ui.js",
       "source_location": "L98",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_closekbmodal",
-      "confidence_score": 1.0
+      "target": "js_ui_closekbmodal"
     },
     {
       "relation": "contains",
@@ -2289,9 +3629,9 @@
       "source_file": "js/ui.js",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_getcategorylabel",
-      "confidence_score": 1.0
+      "target": "js_ui_getcategorylabel"
     },
     {
       "relation": "contains",
@@ -2299,9 +3639,9 @@
       "source_file": "js/ui.js",
       "source_location": "L107",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_gettooltipel",
-      "confidence_score": 1.0
+      "target": "js_ui_gettooltipel"
     },
     {
       "relation": "contains",
@@ -2309,9 +3649,9 @@
       "source_file": "js/ui.js",
       "source_location": "L90",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_openkbmodal",
-      "confidence_score": 1.0
+      "target": "js_ui_openkbmodal"
     },
     {
       "relation": "contains",
@@ -2319,8 +3659,18 @@
       "source_file": "js/ui.js",
       "source_location": "L726",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_renderadvanceddns",
+      "target": "js_ui_renderadvanceddns"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "js/ui.js",
+      "source_location": "L973",
+      "weight": 1.0,
+      "source": "js_ui",
+      "target": "js_ui_renderawarenessvendors",
       "confidence_score": 1.0
     },
     {
@@ -2329,9 +3679,9 @@
       "source_file": "js/ui.js",
       "source_location": "L678",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_renderreputation",
-      "confidence_score": 1.0
+      "target": "js_ui_renderreputation"
     },
     {
       "relation": "contains",
@@ -2339,9 +3689,9 @@
       "source_file": "js/ui.js",
       "source_location": "L293",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_renderresults",
-      "confidence_score": 1.0
+      "target": "js_ui_renderresults"
     },
     {
       "relation": "contains",
@@ -2349,9 +3699,9 @@
       "source_file": "js/ui.js",
       "source_location": "L164",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_renderspftree",
-      "confidence_score": 1.0
+      "target": "js_ui_renderspftree"
     },
     {
       "relation": "contains",
@@ -2359,9 +3709,9 @@
       "source_file": "js/ui.js",
       "source_location": "L152",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_setstep",
-      "confidence_score": 1.0
+      "target": "js_ui_setstep"
     },
     {
       "relation": "contains",
@@ -2369,9 +3719,9 @@
       "source_file": "js/ui.js",
       "source_location": "L145",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_showsection",
-      "confidence_score": 1.0
+      "target": "js_ui_showsection"
     },
     {
       "relation": "contains",
@@ -2379,9 +3729,9 @@
       "source_file": "js/ui.js",
       "source_location": "L212",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_translatedom",
-      "confidence_score": 1.0
+      "target": "js_ui_translatedom"
     },
     {
       "relation": "contains",
@@ -2389,9 +3739,9 @@
       "source_file": "js/ui.js",
       "source_location": "L197",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui",
-      "target": "js_ui_translateprovidersource",
-      "confidence_score": 1.0
+      "target": "js_ui_translateprovidersource"
     },
     {
       "relation": "calls",
@@ -2400,9 +3750,9 @@
       "source_file": "js/ui.js",
       "source_location": "L490",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui_renderresults",
-      "target": "js_ui_getcategorylabel",
-      "confidence_score": 1.0
+      "target": "js_ui_getcategorylabel"
     },
     {
       "relation": "calls",
@@ -2411,9 +3761,9 @@
       "source_file": "js/ui.js",
       "source_location": "L528",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui_renderresults",
-      "target": "js_ui_renderspftree",
-      "confidence_score": 1.0
+      "target": "js_ui_renderspftree"
     },
     {
       "relation": "calls",
@@ -2422,9 +3772,9 @@
       "source_file": "js/ui.js",
       "source_location": "L422",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui_renderresults",
-      "target": "js_ui_translateprovidersource",
-      "confidence_score": 1.0
+      "target": "js_ui_translateprovidersource"
     },
     {
       "relation": "calls",
@@ -2433,8 +3783,19 @@
       "source_file": "js/ui.js",
       "source_location": "L675",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui_renderresults",
-      "target": "js_ui_renderadvanceddns",
+      "target": "js_ui_renderadvanceddns"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "js/ui.js",
+      "source_location": "L685",
+      "weight": 1.0,
+      "source": "js_ui_renderresults",
+      "target": "js_ui_renderawarenessvendors",
       "confidence_score": 1.0
     },
     {
@@ -2444,8 +3805,288 @@
       "source_file": "js/ui.js",
       "source_location": "L672",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "js_ui_renderresults",
-      "target": "js_ui_renderreputation",
+      "target": "js_ui_renderreputation"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "package",
+      "target": "package_dependencies",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "package_dependencies",
+      "target": "package_dependencies_playwright",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "readme",
+      "target": "readme_email_security_checker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L20",
+      "weight": 1.0,
+      "source": "readme_email_security_checker",
+      "target": "readme_arquitectura_del_sistema",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "readme_email_security_checker",
+      "target": "readme_caracter\u00edsticas_principales",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L86",
+      "weight": 1.0,
+      "source": "readme_email_security_checker",
+      "target": "readme_historial_de_cambios",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L52",
+      "weight": 1.0,
+      "source": "readme_email_security_checker",
+      "target": "readme_instalaci\u00f3n_y_uso_local",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L43",
+      "weight": 1.0,
+      "source": "readme_email_security_checker",
+      "target": "readme_tecnolog\u00edas_utilizadas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L75",
+      "weight": 1.0,
+      "source": "readme_instalaci\u00f3n_y_uso_local",
+      "target": "readme_ejecutar_tests_unitarios",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L202",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_0_0_lanzamiento_inicial",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L198",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_1_0_clasificaci\u00f3n_de_servicios_y_aprendizaje_din\u00e1mico",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L193",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_2_0_auditor\u00edas_avanzadas_y_visualizaci\u00f3n_spf",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L188",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_3_0_refactorizaci\u00f3n_arquitect\u00f3nica_y_experiencia_dkim",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L183",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_4_0_soporte_multiling\u00fce_e_informes_pdf_optimizados",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L178",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_5_0_tarjeta_de_puntuaci\u00f3n_de_seguridad_interactiva",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L173",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_6_0_tooltips_did\u00e1cticos_auto_descubrimiento_dkim_y_reputaci\u00f3n_rbl",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L170",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_6_1_mejoras_en_exportaci\u00f3n_a_google_docs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L165",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_7_0_detecci\u00f3n_avanzada_de_ices_y_consultas_dns_paralelas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L162",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_7_1_explicaci\u00f3n_de_bucles_spf_en_\u00e1rbol_de_consultas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L158",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_7_2_correcci\u00f3n_en_detecci\u00f3n_de_hornetsecurity_y_extracci\u00f3n_de_dominio",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L153",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_7_3_seguridad_contra_xss_bypass_de_cors_en_mta_sts_y_cach\u00e9_dns",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L147",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_7_4_validaciones_de_seguridad_robustas_para_spf_y_dmarc",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L138",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_8_0_informes_de_exportaci\u00f3n_enriquecidos_y_detecci\u00f3n_seg_mejorada",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L99",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v1_9_0_awareness_vendor_detector_detecci\u00f3n_de_plataformas_de_phishing_simulation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L88",
+      "weight": 1.0,
+      "source": "readme_historial_de_cambios",
+      "target": "readme_v2_0_0_detecci\u00f3n_avanzada_de_dns_srv_dane_postura_de_seguridad_y_mejoras_en_awareness_actual",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L112",
+      "weight": 1.0,
+      "source": "readme_v1_9_0_awareness_vendor_detector_detecci\u00f3n_de_plataformas_de_phishing_simulation",
+      "target": "readme_diccionario_de_fingerprints_v2026_06_05",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L128",
+      "weight": 1.0,
+      "source": "readme_v1_9_0_awareness_vendor_detector_detecci\u00f3n_de_plataformas_de_phishing_simulation",
+      "target": "readme_nuevos_componentes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L103",
+      "weight": 1.0,
+      "source": "readme_v1_9_0_awareness_vendor_detector_detecci\u00f3n_de_plataformas_de_phishing_simulation",
+      "target": "readme_pipeline_de_detecci\u00f3n_por_dominio_de_entrada",
       "confidence_score": 1.0
     },
     {
@@ -2484,5 +4125,5 @@
       "source_file": "js/api.js"
     }
   ],
-  "built_at_commit": "8bf8dbfde57af4efa5a8c0c92244c27f507819b4"
+  "built_at_commit": "1138b5b1d49a8be007e3469a3a5b911f6fee8303"
 }
