@@ -85,7 +85,18 @@ npx vitest run js/awarenessDetector.test.js
 
 ## 📅 Historial de Cambios
 
-### v1.9.0 — Awareness-Vendor Detector: Detección de Plataformas de Phishing Simulation (Actual)
+### v2.0.0 — Detección Avanzada de DNS (SRV/DANE), Postura de Seguridad y Mejoras en Awareness (Actual)
+
+* **Protocolo DANE (TLSA) y Registros SRV**: Añadido soporte para consultas DNS en paralelo de registros de autenticación DANE/TLSA (`_25._tcp`) para verificar la seguridad del cifrado en los servidores MX, además de sondeos de autodescubrimiento SRV (`_autodiscover`, `_imaps`, `_submission`).
+* **Indicador de Postura de Seguridad**: Cálculo automático y visualización de la postura general del dominio (`Fuerte` 🟢, `Moderada` 🟡, `Débil` 🔴) en la tarjeta de puntuación, evaluando SPF, DMARC, DKIM, SEG/ICES y MTA-STS.
+* **Mejoras de Detección de Awareness**:
+  - *Sondeo CNAME*: Búsqueda de subdominios populares de landings/tracking (`click`, `track`, `phish`, etc.) delegados a infraestructuras de proveedores.
+  - *Sondeo DKIM Genérico*: Prueba automática de selectores estándar (`s1`, `s2`, `k1`, etc.) para verificar firmas criptográficas de vendors.
+  - *Detección Cruzada*: Impulso por correlación de seguridad perimetral (SEG) para proveedores co-localizados (Proofpoint, Barracuda, Mimecast, Sophos).
+  - *Tokens TXT*: Detección de tokens de verificación específicos en el dominio raíz.
+* **Ampliación de Base de Conocimiento**: Añadidas firmas de SEG/ICES para *Egress Defend*, *Libraesva*, *VIPRE*, *Graphus* y *Armorblox*.
+
+### v1.9.0 — Awareness-Vendor Detector: Detección de Plataformas de Phishing Simulation
 
 El módulo más ambicioso hasta la fecha: detecta automáticamente si una empresa usa una plataforma de **Security Awareness Training / Phishing Simulation** a partir de su huella DNS, sin necesidad de acceso privilegiado.
 

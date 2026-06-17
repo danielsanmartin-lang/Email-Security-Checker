@@ -112,16 +112,18 @@ const DNS_FIXTURES = {
 // ---------------------------------------------------------------------------
 // MOCK global fetch para interceptar DoH y crt.sh
 // ---------------------------------------------------------------------------
-function makeDohResponse(records) {
+function makeDohResponse(records, type = 'TXT') {
     if (!records || records.length === 0) return { Status: 3, Answer: [] }; // NXDOMAIN
     return {
         Status: 0,
         Answer: records.map(r => {
-            const isMx = r.includes(' ') && /^\d+\s/.test(r);
-            return {
-                type: isMx ? 15 : 16,
-                data: isMx ? r : `"${r}"`,
-            };
+            if (type === 'MX') {
+                return { type: 15, data: r };
+            }
+            if (type === 'CNAME') {
+                return { type: 5, data: r };
+            }
+            return { type: 16, data: `"${r}"` };
         }),
     };
 }
@@ -148,9 +150,10 @@ function buildFetchMock(fixtures) {
         if (fixture) {
             if (type === 'TXT') records = fixture.TXT || [];
             if (type === 'MX')  records = fixture.MX  || [];
+            if (type === 'CNAME') records = fixture.CNAME || [];
         }
 
-        const body = makeDohResponse(records);
+        const body = makeDohResponse(records, type);
         return {
             ok: true,
             status: 200,
@@ -168,8 +171,8 @@ describe('AWARENESS_FINGERPRINTS dictionary', () => {
         expect(detectable.length).toBeGreaterThan(0);
     });
 
-    it('Microsoft Attack Simulation debe estar marcado como no detectable', () => {
-        expect(AWARENESS_FINGERPRINTS.msAttackSimulation.detectableViaDns).toBe(false);
+    it('Microsoft Attack Simulation debe estar marcado como detectable (heurístico)', () => {
+        expect(AWARENESS_FINGERPRINTS.msAttackSimulation.detectableViaDns).toBe(true);
         expect(AWARENESS_FINGERPRINTS.msAttackSimulation.notes).toBeTruthy();
     });
 
@@ -279,7 +282,7 @@ describe('detectAwarenessVendors — Mimecast Awareness', () => {
         const result = await detectAwarenessVendors('mimecastdomain.com');
         const mm = result.detectedVendors.find(v => v.vendor === 'mimecastAwareness');
         expect(mm).toBeDefined();
-        expect(mm.evidence.some(e => e.signal === 'mx_hint')).toBe(true);
+        expect(mm.evidence.some(e => e.signal.startsWith('mx_hint'))).toBe(true);
     });
 });
 
@@ -299,9 +302,10 @@ describe('detectAwarenessVendors — dominio limpio', () => {
     beforeEach(() => { global.fetch = buildFetchMock(DNS_FIXTURES); });
     afterEach(() => { vi.restoreAllMocks(); });
 
-    it('no debe detectar vendors en un dominio sin evidencia', async () => {
+    it('no debe detectar vendors en un dominio sin evidencia (excluyendo la heurística de Microsoft AST)', async () => {
         const result = await detectAwarenessVendors('cleandomain.com');
-        expect(result.detectedVendors).toHaveLength(0);
+        const standardVendors = result.detectedVendors.filter(v => v.vendor !== 'msAttackSimulation');
+        expect(standardVendors).toHaveLength(0);
     });
 
     it('debe incluir la nota del punto ciego de Microsoft en notes', async () => {
@@ -389,5 +393,68 @@ describe('CIDR matching — helper ipv4InCidr', () => {
         const kb4 = result.detectedVendors.find(v => v.vendor === 'knowbe4');
         expect(kb4).toBeDefined();
         expect(kb4.evidence.some(e => e.signal === 'spf_ip')).toBe(true);
+    });
+});
+
+describe('Nuevas lógicas de detección en awarenessDetector.js', () => {
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('debe detectar KnowBe4 mediante sondeo de CNAME', async () => {
+        global.fetch = buildFetchMock({
+            'cnametest.com': { TXT: [], MX: [] },
+            '_dmarc.cnametest.com': { TXT: [] },
+            'click.cnametest.com': { CNAME: ['track.knowbe4.com'] },
+        });
+
+        const result = await detectAwarenessVendors('cnametest.com');
+        const kb4 = result.detectedVendors.find(v => v.vendor === 'knowbe4');
+        expect(kb4).toBeDefined();
+        expect(kb4.evidence.some(e => e.signal === 'cname_probe')).toBe(true);
+        expect(kb4.score).toBeGreaterThanOrEqual(0.95);
+    });
+
+    it('debe detectar Hoxhunt mediante DKIM selectors genéricos', async () => {
+        global.fetch = buildFetchMock({
+            'dkimtest.com': { TXT: [], MX: [] },
+            '_dmarc.dkimtest.com': { TXT: [] },
+            's1._domainkey.dkimtest.com': { TXT: ['v=DKIM1; p=MIIB...; d=hoxhunt.com'] },
+        });
+
+        const result = await detectAwarenessVendors('dkimtest.com');
+        const hox = result.detectedVendors.find(v => v.vendor === 'hoxhunt');
+        expect(hox).toBeDefined();
+        expect(hox.evidence.some(e => e.signal === 'generic_dkim_probe')).toBe(true);
+        expect(hox.score).toBeGreaterThanOrEqual(0.8);
+    });
+
+    it('debe aplicar un boost por correlación SEG para Proofpoint', async () => {
+        global.fetch = buildFetchMock({
+            'corrtest.com': {
+                TXT: ['v=spf1 include:spf.proofpoint.com ~all'],
+                MX: ['10 mx-pphosted.corrtest.com.pphosted.com'],
+            },
+            '_dmarc.corrtest.com': { TXT: [] },
+        });
+
+        const result = await detectAwarenessVendors('corrtest.com');
+        const pp = result.detectedVendors.find(v => v.vendor === 'proofpointSat');
+        expect(pp).toBeDefined();
+        expect(pp.evidence.some(e => e.signal === 'correlated_seg')).toBe(true);
+    });
+
+    it('debe detectar Hoxhunt mediante tokens de verificación TXT', async () => {
+        global.fetch = buildFetchMock({
+            'txttest.com': {
+                TXT: ['v=spf1 -all', 'hoxhunt-domain-verification=12345'],
+                MX: [],
+            },
+            '_dmarc.txttest.com': { TXT: [] },
+        });
+
+        const result = await detectAwarenessVendors('txttest.com');
+        const hox = result.detectedVendors.find(v => v.vendor === 'hoxhunt');
+        expect(hox).toBeDefined();
+        expect(hox.evidence.some(e => e.signal === 'txt_verify')).toBe(true);
+        expect(hox.score).toBeGreaterThanOrEqual(0.85);
     });
 });

@@ -460,3 +460,53 @@ export async function getNS(domain) {
     }
 }
 
+export async function getSRV(domain) {
+    const srvRecords = {};
+    const checks = [
+        { key: 'autodiscover', record: `_autodiscover._tcp.${domain}` },
+        { key: 'imaps', record: `_imaps._tcp.${domain}` },
+        { key: 'submission', record: `_submission._tcp.${domain}` }
+    ];
+    
+    await Promise.all(checks.map(async check => {
+        try {
+            const data = await queryDNS(check.record, 'SRV');
+            if (data.Answer && data.Answer.length > 0) {
+                srvRecords[check.key] = data.Answer
+                    .filter(a => a.type === 33)
+                    .map(a => {
+                        const parts = a.data.split(' ');
+                        return {
+                            priority: parts[0],
+                            weight: parts[1],
+                            port: parts[2],
+                            target: parts[3] ? parts[3].replace(/\.$/, '') : ''
+                        };
+                    });
+            }
+        } catch (e) {
+            console.warn(`Failed to query SRV for ${check.record}`, e);
+        }
+    }));
+    
+    return srvRecords;
+}
+
+export async function getDANE(mxHosts) {
+    const daneRecords = {};
+    if (!mxHosts || mxHosts.length === 0) return daneRecords;
+    await Promise.all(mxHosts.map(async mx => {
+        try {
+            const data = await queryDNS(`_25._tcp.${mx}`, 'TLSA');
+            if (data.Answer && data.Answer.length > 0) {
+                daneRecords[mx] = data.Answer
+                    .filter(a => a.type === 52 || a.type === 32768) // 52 is TLSA type
+                    .map(a => a.data);
+            }
+        } catch (e) {
+            console.warn(`Failed to query DANE for _25._tcp.${mx}`, e);
+        }
+    }));
+    return daneRecords;
+}
+

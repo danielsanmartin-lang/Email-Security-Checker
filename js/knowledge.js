@@ -40,11 +40,16 @@ export const KB = {
         { pattern: 'mailchannels.net', name: 'MailChannels', type: 'seg' },
         { pattern: 'zixmail.net', name: 'Zix (OpenText)', type: 'seg' },
         { pattern: 'zixmessagecenter.com', name: 'Zix (OpenText)', type: 'seg' },
+        { pattern: 'libraesva.com', name: 'Libraesva', type: 'seg' },
+        { pattern: 'cellopoint.com', name: 'Cellopoint', type: 'seg' },
+        { pattern: 'spamhero.com', name: 'SpamHero', type: 'seg' },
+        { pattern: 'cleandns.com', name: 'Cleandns (N-able)', type: 'seg' },
         // ICES inline MX patterns
         { pattern: 'perception-point.io', name: 'Perception Point', type: 'ices' },
         { pattern: 'xorlab.com', name: 'xorlab', type: 'ices' },
         { pattern: 'mailprotection.checkpoint.com', name: 'Avanan (Check Point)', type: 'ices' },
         { pattern: 'material.security', name: 'Material Security', type: 'ices' },
+        { pattern: 'defend.egress.com', name: 'Egress Defend', type: 'ices' },
         // Providers
         { pattern: 'zoho.com', name: 'Zoho Mail', type: 'provider' },
         { pattern: 'yahoodns.net', name: 'Yahoo Mail', type: 'provider' },
@@ -123,6 +128,8 @@ export const KB = {
         { pattern: 'zixmail.net', name: 'Zix (OpenText)', category: 'seg', cat_label: 'SEG' },
         { pattern: 'zixmessagecenter.com', name: 'Zix (OpenText)', category: 'seg', cat_label: 'SEG' },
         { pattern: 'mailroute.net', name: 'MailRoute', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'libraesva.com', name: 'Libraesva', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'vipre.com', name: 'VIPRE Email Security', category: 'seg', cat_label: 'SEG' },
         { pattern: 'avanan.net', name: 'Avanan (Check Point)', category: 'ices', cat_label: 'ICES' },
         { pattern: 'abnormalsecurity.com', name: 'Abnormal Security', category: 'ices', cat_label: 'ICES' },
         { pattern: 'ironscales.com', name: 'Ironscales', category: 'ices', cat_label: 'ICES' },
@@ -140,6 +147,9 @@ export const KB = {
         { pattern: 'sublime.security', name: 'Sublime Security', category: 'ices', cat_label: 'ICES' },
         { pattern: 'valimail.com', name: 'Valimail', category: 'ices', cat_label: 'ICES' },
         { pattern: 'guardiandigital.com', name: 'Guardian Digital', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'graphus.ai', name: 'Graphus (Kaseya)', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'armorblox.com', name: 'Armorblox (Cisco)', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'spf.us1.defend.egress.com', name: 'Egress Defend', category: 'ices', cat_label: 'ICES' },
         // Existing non-ICES
         { pattern: 'knowbe4.com', name: 'KnowBe4', category: 'other', cat_label: 'Concienciación' },
         { pattern: 'docusign.com', name: 'DocuSign', category: 'other', cat_label: 'Firmas Digitales' },
@@ -158,6 +168,12 @@ export const KB = {
         { pattern: 'ironscales-domain-verification', name: 'Ironscales', category: 'ices' },
         { pattern: 'abnormal-security', name: 'Abnormal Security', category: 'ices' },
         { pattern: 'knowbe4-site-verification', name: 'KnowBe4', category: 'other' },
+        { pattern: 'knowbe4-domain-verification', name: 'KnowBe4', category: 'other' },
+        { pattern: 'wombat-verification', name: 'Proofpoint Security Awareness', category: 'other' },
+        { pattern: 'cofense-domain-verification', name: 'Cofense PhishMe', category: 'other' },
+        { pattern: 'hoxhunt-domain-verification', name: 'Hoxhunt', category: 'other' },
+        { pattern: 'phishline-verification', name: 'Barracuda Security Awareness', category: 'other' },
+        { pattern: 'barracuda-phishline', name: 'Barracuda Security Awareness', category: 'other' },
         { pattern: 'atlassian-domain-verification', name: 'Atlassian', category: 'other' },
         { pattern: 'facebook-domain-verification', name: 'Meta (Facebook)', category: 'other' },
         { pattern: 'apple-domain-verification', name: 'Apple', category: 'other' },
@@ -207,6 +223,10 @@ export const KB = {
         'selector1', 'selector2',      // Microsoft 365
         'google', '20161025',          // Google Workspace
         'smg1', 'smg2',               // Symantec Messaging Gateway
+        'cofense',                    // Cofense
+        'hoxhunt',                    // Hoxhunt
+        'phishline',                  // Barracuda Phishline
+        'kb4', 'ksat', 'psm', 'psm2', // KnowBe4
     ],
     // TLS-RPT reporter identification
     tlsrpt_reporters: [

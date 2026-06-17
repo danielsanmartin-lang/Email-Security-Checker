@@ -1,4 +1,4 @@
-import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS } from './api.js';
+import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE } from './api.js';
 import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
 import { renderResults, showSection, setStep, closeKbModal, translateDOM, renderAwarenessVendors } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
@@ -61,11 +61,12 @@ async function runAnalysis(domain, dkimSelector = null) {
 
         // NEW: Advanced DNS checks (parallel)
         setStep('step-advanced', 'active');
-        const [allTxtRecords, mtaSts, tlsRpt, nsRecords] = await Promise.all([
+        const [allTxtRecords, mtaSts, tlsRpt, nsRecords, srvRecords] = await Promise.all([
             getAllTXT(domain),
             getMTASTS(domain),
             getTLSRPT(domain),
-            getNS(domain)
+            getNS(domain),
+            getSRV(domain)
         ]);
 
         // Process advanced data
@@ -76,6 +77,10 @@ async function runAnalysis(domain, dkimSelector = null) {
 
         setStep('step-analysis', 'active');
         await new Promise(r => setTimeout(r, 400));
+
+        // Query DANE/TLSA records for MX hosts
+        const mxHosts = mxRecords.map(r => r.host);
+        const daneRecords = await getDANE(mxHosts);
 
         // Resolve MX IPs and check RBL lists in parallel
         const RBL_LISTS = ['bl.spamcop.net', 'dnsbl.sorbs.net', 'dnsbl.dronebl.org'];
@@ -98,7 +103,9 @@ async function runAnalysis(domain, dkimSelector = null) {
             tlsRpt,
             tlsrptReporters,
             spfData,
-            dmarcData
+            dmarcData,
+            srvRecords,
+            daneRecords
         });
         result.spfLookups = spfLookups;
         result.spfTree = spfTree;

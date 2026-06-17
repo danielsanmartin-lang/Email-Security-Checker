@@ -287,7 +287,9 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         nsRecords: advancedData.nsRecords || [],
         mtaSts: advancedData.mtaSts || null,
         tlsRpt: advancedData.tlsRpt || null,
-        tlsrptReporters
+        tlsrptReporters,
+        srvRecords: advancedData.srvRecords || null,
+        daneRecords: advancedData.daneRecords || null
     };
 }
 
@@ -520,6 +522,65 @@ export function calculateScoreAndFindings(result) {
         });
     }
 
+    // 7. DANE/TLSA Check (bonus)
+    let hasDane = false;
+    if (result.daneRecords) {
+        for (const mx in result.daneRecords) {
+            if (result.daneRecords[mx] && result.daneRecords[mx].length > 0) {
+                hasDane = true;
+                break;
+            }
+        }
+    }
+    if (hasDane) {
+        score += 5;
+        findings.push({
+            status: 'success',
+            key: 'finding_dane_ok'
+        });
+    } else {
+        findings.push({
+            status: 'info',
+            key: 'finding_dane_err'
+        });
+    }
+
+    // 8. SRV checks (Info only)
+    if (result.srvRecords) {
+        if (result.srvRecords.autodiscover && result.srvRecords.autodiscover.length > 0) {
+            findings.push({
+                status: 'info',
+                key: 'finding_srv_autodiscover_ok',
+                replacements: { '{target}': result.srvRecords.autodiscover[0].target }
+            });
+        }
+    }
+
+    // Determine Posture
+    const hasSpf = !!result.spfRaw;
+    const hasDmarc = !!result.dmarcRaw;
+    const dmarcPolicy = result.dmarcPolicy || 'none';
+    const hasSegOrIces = (result.segList && result.segList.length > 0) || (result.icesList && result.icesList.length > 0);
+    
+    let allQualifier = '';
+    if (result.spfEntries) {
+        const allEntry = result.spfEntries.find(e => e.type === 'all');
+        if (allEntry) {
+            allQualifier = allEntry.qualifier || '';
+        }
+    }
+    
+    const dkimCount = (result.dkimRecords && result.dkimRecords.records) ? result.dkimRecords.records.length : 0;
+    const hasDkim = dkimCount > 0;
+    const hasMtaSts = result.mtaSts && result.mtaSts.policy?.valid;
+    
+    let posture = { grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' };
+    if (hasSpf && allQualifier === '-' && hasDmarc && dmarcPolicy === 'reject' && hasSegOrIces && hasDkim && hasMtaSts) {
+        posture = { grade: 'Fuerte', color: 'green', class: 'safe', label: 'Fuerte' };
+    } else if (!hasSpf || allQualifier === '+' || allQualifier === '?' || !hasDmarc || dmarcPolicy === 'none' || !hasSegOrIces) {
+        posture = { grade: 'Débil', color: 'red', class: 'danger', label: 'Débil' };
+    }
+
     // Determine Grade
     let grade = 'F';
     let cardClass = 'danger';
@@ -530,7 +591,7 @@ export function calculateScoreAndFindings(result) {
     else if (score >= 50) { grade = 'D'; cardClass = 'warning'; }
     else { grade = 'F'; cardClass = 'danger'; }
 
-    return { score, grade, cardClass, findings };
+    return { score, grade, cardClass, findings, posture };
 }
 
 

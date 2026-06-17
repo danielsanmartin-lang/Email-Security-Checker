@@ -26,13 +26,15 @@ export const AWARENESS_FINGERPRINTS = {
         spfIncludes: ['_spf.psm.knowbe4.com'],                     // verificado
         spfIps: ['23.21.109.197', '23.21.109.212', '147.160.167.0/26'], // verificado
         dkimSigningDomains: ['training.knowbe4.com', 'eu.knowbe4.com'], // verificado US/EU
-        dkimSelectors: [],        // selector custom por cliente; añadir si se conoce
+        dkimSelectors: ['psm', 'psm2', 'kb4', 'ksat'],             // selectores comunes de safelisting KnowBe4
         infraDomains: ['knowbe4.com'],                              // verificado
         assetDomains: [],
         relatedGatewaySpf: ['spf.us1.defend.egress.com'],          // KnowBe4 Defend (ex-Egress)
         mxHint: null,
         dmarcRuaHint: null,
         crtPatterns: ['knowbe4.com'],
+        txtPatterns: ['knowbe4-site-verification', 'knowbe4-domain-verification'],
+        cnameSubdomains: ['click', 'track', 'training', 'phishtest'],
         weights: {
             spfInclude: 0.9,
             spfIp: 0.85,
@@ -40,6 +42,8 @@ export const AWARENESS_FINGERPRINTS = {
             infraDomain: 0.5,
             gateway: 0.3,
             crt: 0.4,
+            txtVerify: 0.85,
+            cname: 0.95,
         },
         notes: 'Los dominios de phishing simulado rotan; no hay lista pública fija.',
     },
@@ -49,19 +53,24 @@ export const AWARENESS_FINGERPRINTS = {
         detectableViaDns: true,
         spfIncludes: [],           // No publica include universal; usa safelisting de IPs
         spfIps: [],                // verificar_runtime: IPs en su guía de safelisting
-        dkimSigningDomains: [],
-        dkimSelectors: [],
+        dkimSigningDomains: ['securityeducation.com'],
+        dkimSelectors: ['pp1', 'pphosted', 'proofpoint'],          // selectores Proofpoint comunes
         infraDomains: ['securityeducation.com', 'ws01-securityeducation.com', 'proofpoint.com'],
         assetDomains: ['tslp.s3.amazonaws.com'],                   // verificado (imágenes de phish)
         relatedGatewaySpf: [],
         mxHint: 'pphosted',       // MX *.pphosted.com / *.ppe-hosted.com
         dmarcRuaHint: null,
         crtPatterns: ['securityeducation.com'],
+        txtPatterns: ['proofpoint-verification', 'wombat-verification'],
+        cnameSubdomains: ['click', 'track', 'simulate'],
         weights: {
             infraDomain: 0.7,
             assetDomain: 0.6,
             mxHint: 0.3,
+            dkim: 0.8,
             crt: 0.5,
+            txtVerify: 0.85,
+            cname: 0.95,
         },
         notes: 'Detección principal por dominios de landing/assets + MX, no por SPF.',
     },
@@ -71,17 +80,22 @@ export const AWARENESS_FINGERPRINTS = {
         detectableViaDns: true,
         spfIncludes: [],           // SPF/DKIM se entregan POR CLIENTE vía soporte → no universal
         spfIps: [],
-        dkimSigningDomains: [],
-        dkimSelectors: [],
+        dkimSigningDomains: ['cofense.com'],
+        dkimSelectors: ['cofense'],                                // selector Cofense estándar
         infraDomains: ['cofense.com'],                             // verificado
         assetDomains: [],
         relatedGatewaySpf: [],
         mxHint: null,
         dmarcRuaHint: null,
         crtPatterns: ['cofense.com'],
+        txtPatterns: ['cofense-domain-verification'],
+        cnameSubdomains: ['phish', 'phishtest', 'report'],
         weights: {
             infraDomain: 0.6,
+            dkim: 0.8,
             crt: 0.4,
+            txtVerify: 0.85,
+            cname: 0.95,
         },
         notes: 'Señal NO-DNS más fiable: botón "Cofense Reporter" + landings del cliente.',
     },
@@ -91,18 +105,23 @@ export const AWARENESS_FINGERPRINTS = {
         detectableViaDns: true,
         spfIncludes: [],           // verificar_runtime
         spfIps: [],
-        dkimSigningDomains: [],
-        dkimSelectors: [],
+        dkimSigningDomains: ['mimecast.com'],
+        dkimSelectors: ['mimecast20190707', 'mimecast20210101', 'mimecast20230101', 'mimecast-key1'],
         infraDomains: [],
         assetDomains: [],
         relatedGatewaySpf: [],
         mxHint: 'mimecast',       // MX *.mimecast.com → gateway que bundlea awareness
         dmarcRuaHint: null,
         crtPatterns: ['mimecast.com'],
+        txtPatterns: ['mimecast'],
+        cnameSubdomains: ['training', 'awareness'],
         weights: {
             mxHint: 0.3,
             infraDomain: 0.6,
+            dkim: 0.75,
             crt: 0.3,
+            txtVerify: 0.8,
+            cname: 0.9,
         },
         notes: 'Awareness viene bundleado con el gateway de correo Mimecast.',
     },
@@ -112,18 +131,23 @@ export const AWARENESS_FINGERPRINTS = {
         detectableViaDns: true,
         spfIncludes: [],
         spfIps: [],
-        dkimSigningDomains: [],
-        dkimSelectors: [],
+        dkimSigningDomains: ['sophosmail.com'],
+        dkimSelectors: ['sophos', 'sophosmail'],                   // selectores Sophos comunes
         infraDomains: ['phish.sophos.com', 'sophosmail.com'],      // verificar_runtime
         assetDomains: [],
         relatedGatewaySpf: [],
         mxHint: 'sophos.com',
         dmarcRuaHint: null,
         crtPatterns: ['phish.sophos.com'],
+        txtPatterns: ['sophos-domain-verification'],
+        cnameSubdomains: ['phish', 'training'],
         weights: {
             infraDomain: 0.6,
             mxHint: 0.25,
+            dkim: 0.8,
             crt: 0.4,
+            txtVerify: 0.85,
+            cname: 0.95,
         },
         notes: 'verificar_runtime: confirmar dominios de envío en doc de safelisting Sophos.',
     },
@@ -141,11 +165,15 @@ export const AWARENESS_FINGERPRINTS = {
         mxHint: null,
         dmarcRuaHint: null,
         crtPatterns: ['hoxhunt.com'],
+        txtPatterns: ['hoxhunt-domain-verification'],
+        cnameSubdomains: ['click', 'track'],
         weights: {
             spfInclude: 0.85,
             dkim: 0.85,
             infraDomain: 0.6,
             crt: 0.4,
+            txtVerify: 0.85,
+            cname: 0.95,
         },
         notes: 'verificar_runtime: confirmar selector DKIM y SPF include en doc oficial.',
     },
@@ -163,9 +191,12 @@ export const AWARENESS_FINGERPRINTS = {
         mxHint: null,
         dmarcRuaHint: null,
         crtPatterns: ['infoseciq.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['training'],
         weights: {
             infraDomain: 0.6,
             crt: 0.4,
+            cname: 0.9,
         },
         notes: 'verificar_runtime: completar con la doc de allowlisting de Infosec IQ.',
     },
@@ -176,19 +207,23 @@ export const AWARENESS_FINGERPRINTS = {
         spfIncludes: ['_spf.phishline.com'],                       // verificar_runtime
         spfIps: [],
         dkimSigningDomains: ['phishline.com'],
-        dkimSelectors: ['phishline'],
+        dkimSelectors: ['phishline', 'barracuda'],
         infraDomains: ['phishline.com', 'barracudanetworks.com'],
         assetDomains: [],
         relatedGatewaySpf: [],
         mxHint: 'barracudanetworks.com',
         dmarcRuaHint: null,
         crtPatterns: ['phishline.com'],
+        txtPatterns: ['barracuda-phishline', 'phishline-verification'],
+        cnameSubdomains: ['phish', 'training'],
         weights: {
             spfInclude: 0.85,
             dkim: 0.8,
             infraDomain: 0.6,
             mxHint: 0.25,
             crt: 0.4,
+            txtVerify: 0.85,
+            cname: 0.95,
         },
         notes: 'verificar_runtime: confirmar include SPF y selectores DKIM en safelisting Barracuda.',
     },
@@ -206,24 +241,379 @@ export const AWARENESS_FINGERPRINTS = {
         mxHint: null,
         dmarcRuaHint: null,
         crtPatterns: ['threatsim.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['simulate', 'phish'],
         weights: {
             infraDomain: 0.7,
             crt: 0.5,
+            cname: 0.95,
         },
         notes: 'ThreatSim usa dominios rotativos; el dominio base es la señal más estable.',
     },
 
     // -----------------------------------------------------------------------
-    // PUNTO CIEGO DOCUMENTADO — NO se intenta matchear, solo se informa.
+    // NUEVOS VENDORS DE AWARENESS
+    // -----------------------------------------------------------------------
+
+    terranovaFortra: {
+        displayName: 'Terranova Security (Fortra)',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['terranovasecurity.com'],
+        dkimSelectors: [],
+        infraDomains: ['terranovasecurity.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['terranovasecurity.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['training', 'phish'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Adquirida por Fortra; dominios de phish sim rotan.',
+    },
+
+    ninjio: {
+        displayName: 'NINJIO',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['ninjio.com'],
+        dkimSelectors: [],
+        infraDomains: ['ninjio.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['ninjio.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['training'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Awareness basado en vídeos; señal DNS limitada.',
+    },
+
+    curricula: {
+        displayName: 'Curricula',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['curricula.com'],
+        dkimSelectors: [],
+        infraDomains: ['curricula.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['curricula.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['phish', 'training'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Plataforma de awareness gamificada.',
+    },
+
+    keepnetLabs: {
+        displayName: 'Keepnet Labs',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['keepnetlabs.com'],
+        dkimSelectors: [],
+        infraDomains: ['keepnetlabs.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['keepnetlabs.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['phish', 'simulate'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Plataforma de phishing simulation multi-vector.',
+    },
+
+    cybeready: {
+        displayName: 'CybeReady',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['cybeready.com'],
+        dkimSelectors: [],
+        infraDomains: ['cybeready.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['cybeready.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['click', 'training'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Awareness autónomo basado en ML.',
+    },
+
+    lucyThrivedx: {
+        displayName: 'Lucy Security (ThriveDX)',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: [],
+        dkimSelectors: [],
+        infraDomains: ['lucysecurity.com', 'thrivedx.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['lucysecurity.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['phish', 'training'],
+        weights: {
+            infraDomain: 0.6,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Self-hosted o cloud; señal DNS variable.',
+    },
+
+    phishedIo: {
+        displayName: 'Phished.io',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['phished.io'],
+        dkimSelectors: [],
+        infraDomains: ['phished.io'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['phished.io'],
+        txtPatterns: [],
+        cnameSubdomains: ['click', 'track'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Plataforma europea de phish sim con AI.',
+    },
+
+    sosafe: {
+        displayName: 'SoSafe',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['sosafe-awareness.com'],
+        dkimSelectors: [],
+        infraDomains: ['sosafe-awareness.com', 'sosafe.de'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['sosafe-awareness.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['click', 'track', 'training'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Líder europeo en awareness con fuerte presencia DACH.',
+    },
+
+    metacompliance: {
+        displayName: 'MetaCompliance',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['metacompliance.com'],
+        dkimSelectors: [],
+        infraDomains: ['metacompliance.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['metacompliance.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['phish', 'training'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Plataforma de awareness y compliance; presencia UK/EU.',
+    },
+
+    usecure: {
+        displayName: 'usecure',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: ['usecure.io'],
+        dkimSelectors: [],
+        infraDomains: ['usecure.io'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['usecure.io'],
+        txtPatterns: [],
+        cnameSubdomains: ['phish', 'training'],
+        weights: {
+            infraDomain: 0.6,
+            dkim: 0.8,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'MSP-focused awareness platform.',
+    },
+
+    riotMantra: {
+        displayName: 'Riot / Mantra',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: [],
+        dkimSelectors: [],
+        infraDomains: ['tryriot.com', 'yourmantra.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['tryriot.com', 'yourmantra.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['click', 'phish'],
+        weights: {
+            infraDomain: 0.6,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Awareness basado en Slack/Teams + phishing sim.',
+    },
+
+    arcticWolfAwareness: {
+        displayName: 'Arctic Wolf Managed Security Awareness',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: [],
+        dkimSelectors: [],
+        infraDomains: ['arcticwolf.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['arcticwolf.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['training', 'phish'],
+        weights: {
+            infraDomain: 0.6,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Parte de la plataforma MDR de Arctic Wolf.',
+    },
+
+    webrootAwareness: {
+        displayName: 'Webroot Security Awareness Training',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: [],
+        dkimSelectors: [],
+        infraDomains: ['webroot.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['webroot.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['training', 'phish'],
+        weights: {
+            infraDomain: 0.6,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Ahora parte de OpenText; detección DNS limitada.',
+    },
+
+    proofpointZenguide: {
+        displayName: 'Proofpoint ZenGuide (ex-Living Security)',
+        detectableViaDns: true,
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: [],
+        dkimSelectors: [],
+        infraDomains: ['livingsecurity.com'],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: null,
+        dmarcRuaHint: null,
+        crtPatterns: ['livingsecurity.com'],
+        txtPatterns: [],
+        cnameSubdomains: ['training', 'click'],
+        weights: {
+            infraDomain: 0.6,
+            crt: 0.4,
+            cname: 0.9,
+        },
+        notes: 'Adquirida por Proofpoint; renombrada a ZenGuide.',
+    },
+
+    // -----------------------------------------------------------------------
+    // MICROSOFT AST — detección heurística de baja confianza.
+    // El tráfico es interno al tenant M365 pero hay señales indirectas.
     // -----------------------------------------------------------------------
     msAttackSimulation: {
         displayName: 'Microsoft Attack Simulation Training (Defender for O365)',
-        detectableViaDns: false,
+        detectableViaDns: true,                                    // heurístico de baja confianza
+        spfIncludes: [],
+        spfIps: [],
+        dkimSigningDomains: [],
+        dkimSelectors: [],
+        infraDomains: [],
+        assetDomains: [],
+        relatedGatewaySpf: [],
+        mxHint: 'protection.outlook.com',                          // señal indirecta: usa M365
+        dmarcRuaHint: 'dmarc.microsoft.com',                       // señal indirecta: reporting nativo
+        crtPatterns: [],
+        txtPatterns: [],
+        cnameSubdomains: [],
+        weights: {
+            mxHint: 0.15,          // solo indica que PODRÍAN usar AST
+            dmarc: 0.1,            // reporting nativo → más engagement con M365 security
+        },
         notes:
-            'Todo el tráfico es interno al tenant M365 (envíos vía deliver@simulator.office.com ' +
-            'o dominios *.phishingsimulations.microsoft.com). Los allowlists se configuran en ' +
-            '"Advanced Delivery" (Exchange Online Protection) a nivel de tenant, sin dejar ' +
-            'rastro en DNS externo. Punto ciego de este módulo.',
+            'Detección ESPECULATIVA. El tráfico AST es interno al tenant M365 (envíos vía ' +
+            'deliver@simulator.office.com o *.phishingsimulations.microsoft.com). ' +
+            'Las señales indirectas solo indican que el dominio usa M365 y podría ' +
+            'estar usando AST. Confianza baja por diseño.',
     },
 };
 
@@ -307,6 +697,15 @@ async function _getMxRaw(domain) {
                 const parts = a.data.trim().split(/\s+/);
                 return parts[parts.length - 1].replace(/\.$/, '').toLowerCase();
             });
+    } catch { return []; }
+}
+
+async function _getCname(domain) {
+    try {
+        const d = await _doh(domain, 'CNAME');
+        return (d.Answer || [])
+            .filter(a => a.type === 5)
+            .map(a => a.data.trim().replace(/\.$/, '').toLowerCase());
     } catch { return []; }
 }
 
@@ -447,6 +846,7 @@ export async function detectAwarenessVendors(domain) {
     // --- DNS ---
     const spf = await flattenSpf(domain);
     const mxHosts = await _getMxRaw(domain);
+    const rootTxts = await _getTxt(domain);
 
     // DMARC: extraer rua/ruf por si apuntan a infra de vendor
     const dmarcTxts = await _getTxt(`_dmarc.${domain}`);
@@ -460,6 +860,30 @@ export async function detectAwarenessVendors(domain) {
     // --- crt.sh ---
     let crtNames = [];
     try { crtNames = await _queryCrt(domain); } catch { /* silencio */ }
+
+    // --- CNAME Probing ---
+    const AWARENESS_SUBDOMAINS = [
+        'click', 'track', 'phish', 'phishtest', 'training', 'awareness',
+        'security-training', 'learn', 'simulate', 'campaign',
+        'mail-test', 'phishing-test', 'sat', 'cb', 'knowbe4'
+    ];
+    const cnameResults = {};
+    await Promise.all(AWARENESS_SUBDOMAINS.map(async sub => {
+        const targets = await _getCname(`${sub}.${domain}`);
+        if (targets.length > 0) {
+            cnameResults[sub] = targets;
+        }
+    }));
+
+    // --- Generic DKIM selectors probing ---
+    const GENERIC_AWARENESS_SELECTORS = ['s1', 's2', 'k1', 'k2', 'mail', 'default', 'phish', 'sim', 'training'];
+    const genericDkimResults = {};
+    await Promise.all(GENERIC_AWARENESS_SELECTORS.map(async sel => {
+        const txts = await _getTxt(`${sel}._domainkey.${domain}`);
+        if (txts.length > 0) {
+            genericDkimResults[sel] = txts;
+        }
+    }));
 
     // --- SCORING ---
     const detected = [];
@@ -506,10 +930,23 @@ export async function detectAwarenessVendors(domain) {
             }
         }
 
-        // 7e. MX hint (substring match para *.pphosted.com, *.mimecast.com, etc.)
+        // 7e. MX hint (exact suffix match vs substring match)
         if (fp.mxHint) {
-            if (mxHosts.some(m => m.includes(fp.mxHint))) {
-                evidence.push({ signal: 'mx_hint', value: fp.mxHint, weight: w.mxHint ?? 0.3 });
+            let mxMatched = false;
+            for (const m of mxHosts) {
+                if (m === fp.mxHint || m.endsWith('.' + fp.mxHint)) {
+                    evidence.push({ signal: 'mx_hint_exact', value: m, weight: w.mxExact ?? 0.7 });
+                    mxMatched = true;
+                    break;
+                }
+            }
+            if (!mxMatched) {
+                for (const m of mxHosts) {
+                    if (m.includes(fp.mxHint)) {
+                        evidence.push({ signal: 'mx_hint_substring', value: m, weight: w.mxSubstring ?? 0.3 });
+                        break;
+                    }
+                }
             }
         }
 
@@ -544,6 +981,72 @@ export async function detectAwarenessVendors(domain) {
                 if (!alreadyStrong) {
                     evidence.push({ signal: 'cert_transparency', value: pat, weight: w.crt ?? 0.35 });
                 }
+            }
+        }
+
+        // 7i. CNAME Probe
+        for (const sub of (fp.cnameSubdomains || [])) {
+            const targets = cnameResults[sub];
+            if (targets) {
+                for (const target of targets) {
+                    const matchesInfra = (fp.infraDomains || []).some(id => target.includes(id));
+                    const matchesDkimSig = (fp.dkimSigningDomains || []).some(dsd => target.includes(dsd));
+                    if (matchesInfra || matchesDkimSig) {
+                        evidence.push({
+                            signal: 'cname_probe',
+                            value: `${sub} -> ${target}`,
+                            weight: w.cname ?? 0.95
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 7j. Generic DKIM Selectors Probe
+        const GENERIC_AWARENESS_SELECTORS = ['s1', 's2', 'k1', 'k2', 'mail', 'default', 'phish', 'sim', 'training'];
+        for (const sel of GENERIC_AWARENESS_SELECTORS) {
+            const txts = genericDkimResults[sel];
+            if (txts) {
+                for (const txt of txts) {
+                    const matchesDkimSig = (fp.dkimSigningDomains || []).some(dsd => txt.toLowerCase().includes(dsd.toLowerCase()));
+                    const matchesInfra = (fp.infraDomains || []).some(id => txt.toLowerCase().includes(id.toLowerCase()));
+                    if (matchesDkimSig || matchesInfra) {
+                        evidence.push({
+                            signal: 'generic_dkim_probe',
+                            value: `${sel}._domainkey -> ${txt}`,
+                            weight: w.dkimGeneric ?? 0.8
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 7k. Cross-correlation with SEG/ICES
+        let correlatedSeg = false;
+        if (key === 'proofpointSat') {
+            correlatedSeg = mxHosts.some(m => m.includes('pphosted.com')) || spf.includes.some(s => s.includes('proofpoint.com'));
+        } else if (key === 'barracudaAwareness') {
+            correlatedSeg = mxHosts.some(m => m.includes('barracuda')) || spf.includes.some(s => s.includes('barracuda'));
+        } else if (key === 'mimecastAwareness') {
+            correlatedSeg = mxHosts.some(m => m.includes('mimecast')) || spf.includes.some(s => s.includes('mimecast'));
+        } else if (key === 'sophosPhishThreat') {
+            correlatedSeg = mxHosts.some(m => m.includes('sophos')) || spf.includes.some(s => s.includes('sophos'));
+        }
+
+        if (correlatedSeg) {
+            evidence.push({
+                signal: 'correlated_seg',
+                value: `Co-located with ${fp.displayName} SEG/ICES infrastructure`,
+                weight: w.correlatedSeg ?? 0.3
+            });
+        }
+
+        // 7l. TXT Verification Tokens
+        for (const pat of (fp.txtPatterns || [])) {
+            if (rootTxts.some(t => t.toLowerCase().includes(pat.toLowerCase()))) {
+                evidence.push({ signal: 'txt_verify', value: pat, weight: w.txtVerify ?? 0.85 });
             }
         }
 

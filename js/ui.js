@@ -296,13 +296,19 @@ export function renderResults(domain, result) {
     const t = translations[lang];
 
     // Retrieve Security Score from result.scoreCard
-    const { score, grade, cardClass, findings } = result.scoreCard || { score: 0, grade: 'F', cardClass: 'danger', findings: [] };
+    const { score, grade, cardClass, findings, posture } = result.scoreCard || { score: 0, grade: 'F', cardClass: 'danger', findings: [], posture: { grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' } };
 
     // Render Score UI
     const scoreCard = document.getElementById('score-card');
     if (scoreCard) {
         scoreCard.className = `score-card ${cardClass}`;
         
+        const titleEl = scoreCard.querySelector('.score-card__title');
+        if (titleEl) {
+            const postureLabel = lang === 'es' ? 'Postura' : 'Posture';
+            titleEl.innerHTML = `${t.score_title_panel} <span class="tag tag--${posture.class === 'safe' ? 'provider' : posture.class}" style="margin-left: 12px; vertical-align: middle; padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 600;">${postureLabel}: ${posture.grade}</span>`;
+        }
+
         const scoreNumberEl = document.getElementById('score-number');
         const scoreGradeEl = document.getElementById('score-grade');
         const ringFillEl = document.getElementById('score-ring-fill');
@@ -849,6 +855,70 @@ export function renderAdvancedDNS(result, lang, t) {
         </div>`;
     } else {
         html += `<div class="advanced-dns-section__body"><p class="no-data">—</p></div>`;
+    }
+    html += '</div>';
+
+    // === SRV Records ===
+    html += '<div class="advanced-dns-section">';
+    html += `<div class="advanced-dns-section__header">
+        <h4 class="advanced-dns-section__title">Registros SRV</h4>
+    </div>`;
+    if (result.srvRecords && Object.keys(result.srvRecords).length > 0) {
+        let srvBody = '<div style="display:flex;flex-direction:column;gap:8px;">';
+        let foundSrv = false;
+        for (const [key, records] of Object.entries(result.srvRecords)) {
+            if (records && records.length > 0) {
+                foundSrv = true;
+                srvBody += `<div class="info-block" style="margin-top:6px;">
+                    <div class="info-block__label" style="text-transform: capitalize;">${escapeHtml(key)}</div>
+                    <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">
+                        ${records.map(r => `${escapeHtml(r.target)}:${r.port} (prio:${r.priority}, weight:${r.weight})`).join('<br>')}
+                    </div>
+                </div>`;
+            }
+        }
+        srvBody += '</div>';
+        if (foundSrv) {
+            html += `<div class="advanced-dns-section__body">${srvBody}</div>`;
+        } else {
+            html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">No se detectaron registros SRV de correo comunes.</p></div>`;
+        }
+    } else {
+        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">No se detectaron registros SRV de correo comunes.</p></div>`;
+    }
+    html += '</div>';
+
+    // === DANE / TLSA ===
+    let hasDane = false;
+    if (result.daneRecords) {
+        for (const mx in result.daneRecords) {
+            if (result.daneRecords[mx] && result.daneRecords[mx].length > 0) {
+                hasDane = true;
+                break;
+            }
+        }
+    }
+    html += '<div class="advanced-dns-section">';
+    html += `<div class="advanced-dns-section__header">
+        <h4 class="advanced-dns-section__title">DANE (TLSA)</h4>
+        <span class="advanced-dns-section__badge ${hasDane ? 'badge--success' : 'badge--neutral'}">${hasDane ? 'Configurado' : 'No configurado'}</span>
+    </div>`;
+    if (hasDane) {
+        let daneBody = '<div style="display:flex;flex-direction:column;gap:8px;">';
+        for (const mx in result.daneRecords) {
+            if (result.daneRecords[mx] && result.daneRecords[mx].length > 0) {
+                daneBody += `<div class="info-block" style="margin-top:6px;">
+                    <div class="info-block__label">${escapeHtml(mx)}</div>
+                    <div class="panel__raw-record" style="font-size:11px;font-family:'JetBrains Mono',monospace;word-break:break-all;margin-top:4px;">
+                        ${result.daneRecords[mx].map(r => escapeHtml(r)).join('<br>')}
+                    </div>
+                </div>`;
+            }
+        }
+        daneBody += '</div>';
+        html += `<div class="advanced-dns-section__body">${daneBody}</div>`;
+    } else {
+        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">No se encontraron registros TLSA (_25._tcp) para los servidores MX.</p></div>`;
     }
     html += '</div>';
 

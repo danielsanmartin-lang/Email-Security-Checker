@@ -84,6 +84,9 @@ export const translations = {
         finding_spf_all_hardfail: "El calificador del mecanismo 'all' está configurado como HARDFAIL (-all), la política más estricta para rechazar remitentes no autorizados.",
         finding_dmarc_policy_invalid: "La política de DMARC (p=...) no contiene un valor válido (debe ser 'none', 'quarantine' o 'reject').",
         finding_dmarc_version_invalid: "El tag de versión DMARC (v=...) debe ser exactamente 'DMARC1' en mayúsculas.",
+        finding_dane_ok: "Protocolo DANE (TLSA) detectado y configurado en los servidores MX.",
+        finding_dane_err: "Protocolo DANE (TLSA) no configurado (sin cifrado oportunista verificado por DNSSEC).",
+        finding_srv_autodiscover_ok: "Registro de autodescubrimiento SRV configurado, apunta a {target}.",
 
         spf_header_prefix: "Prefijo",
         spf_header_type: "Tipo",
@@ -363,6 +366,9 @@ export const translations = {
         finding_spf_all_hardfail: "SPF 'all' mechanism is set to HARDFAIL (-all), the strictest policy to reject unauthorized senders.",
         finding_dmarc_policy_invalid: "DMARC policy (p=...) does not contain a valid value (must be 'none', 'quarantine', or 'reject').",
         finding_dmarc_version_invalid: "DMARC version tag (v=...) must be exactly 'DMARC1' in uppercase.",
+        finding_dane_ok: "DANE (TLSA) protocol detected and configured on MX servers.",
+        finding_dane_err: "DANE (TLSA) protocol not configured (no opportunistic encryption verified via DNSSEC).",
+        finding_srv_autodiscover_ok: "SRV autodiscover record configured, pointing to {target}.",
 
         spf_header_prefix: "Prefix",
         spf_header_type: "Type",
