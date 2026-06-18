@@ -1,11 +1,12 @@
-import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddress, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE } from './api.js';
+import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE } from './api.js';
 import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
-import { renderResults, showSection, setStep, closeKbModal, translateDOM, renderAwarenessVendors } from './ui.js';
+import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
 import { getLanguage, setLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { detectAwarenessVendors } from './awarenessDetector.js';
+import { normalizeDomain } from './utils.js';
 
 export const state = {
     currentDomain: '',
@@ -13,11 +14,7 @@ export const state = {
 };
 
 async function runAnalysis(domain, dkimSelector = null) {
-    domain = domain.trim().toLowerCase();
-    if (domain.includes('@')) {
-        domain = domain.substring(domain.indexOf('@') + 1);
-    }
-    domain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+    domain = normalizeDomain(domain);
 
     const input = document.getElementById('domain-input');
     if (input) {
@@ -34,66 +31,72 @@ async function runAnalysis(domain, dkimSelector = null) {
     const t = translations[lang];
     
     try {
-        setStep('step-mx', 'active');
-        const mxRecords = await getMX(domain);
-        setStep('step-mx', 'done');
+        // ===== Fase 1: consultas DNS independientes en paralelo =====
+        // Cada consulta marca su propio paso como 'done' al resolverse, conservando
+        // el feedback por pasos pero ejecutándose concurrentemente.
+        ['step-mx', 'step-spf', 'step-dmarc', 'step-bimi', 'step-advanced'].forEach(s => setStep(s, 'active'));
 
-        setStep('step-spf', 'active');
-        const spfData = await getSPF(domain);
-        const spfRaw = spfData.record;
-        const spfTree = spfRaw ? await getSPFLookupTree(domain) : null;
-        const spfLookups = spfTree ? spfTree.lookups : 0;
-        setStep('step-spf', 'done');
-
-        setStep('step-dmarc', 'active');
-        const dmarcData = await getDMARC(domain);
-        const dmarcRaw = dmarcData.record;
-        setStep('step-dmarc', 'done');
-
-        setStep('step-dkim', 'active');
-        const icesSelectors = KB.ices_dkim_selectors || [];
-        const dkimRecords = await getDKIM(domain, dkimSelector, spfRaw, icesSelectors);
-        setStep('step-dkim', 'done');
-
-        setStep('step-bimi', 'active');
-        const bimiRecord = await getBIMI(domain);
-        setStep('step-bimi', 'done');
-
-        // NEW: Advanced DNS checks (parallel)
-        setStep('step-advanced', 'active');
-        const [allTxtRecords, mtaSts, tlsRpt, nsRecords, srvRecords] = await Promise.all([
+        const mxP = getMX(domain).then(r => { setStep('step-mx', 'done'); return r; });
+        const spfP = getSPF(domain);
+        const dmarcP = getDMARC(domain).then(r => { setStep('step-dmarc', 'done'); return r; });
+        const bimiP = getBIMI(domain).then(r => { setStep('step-bimi', 'done'); return r; });
+        const advancedP = Promise.all([
             getAllTXT(domain),
             getMTASTS(domain),
             getTLSRPT(domain),
             getNS(domain),
             getSRV(domain)
+        ]).then(r => { setStep('step-advanced', 'done'); return r; });
+
+        // SPF tree, lookups y DKIM dependen del registro SPF
+        const spfDerivedP = spfP.then(async (spfData) => {
+            const spfRaw = spfData.record;
+            const icesSelectors = KB.ices_dkim_selectors || [];
+            const [spfTree, dkimRecords] = await Promise.all([
+                spfRaw ? getSPFLookupTree(domain) : Promise.resolve(null),
+                (setStep('step-dkim', 'active'), getDKIM(domain, dkimSelector, spfRaw, icesSelectors))
+            ]);
+            setStep('step-spf', 'done');
+            setStep('step-dkim', 'done');
+            return { spfData, spfRaw, spfTree, dkimRecords };
+        });
+
+        const [mxRecords, { spfData, spfRaw, spfTree, dkimRecords }, dmarcData, bimiRecord, advanced] = await Promise.all([
+            mxP, spfDerivedP, dmarcP, bimiP, advancedP
         ]);
+        const spfLookups = spfTree ? spfTree.lookups : 0;
+        const dmarcRaw = dmarcData.record;
+        const [allTxtRecords, mtaSts, tlsRpt, nsRecords, srvRecords] = advanced;
 
         // Process advanced data
         const txtVerifications = identifyTXTVerifications(allTxtRecords);
         const nsProvider = identifyNSProvider(nsRecords);
         const tlsrptReporters = analyzeTLSRPT(tlsRpt);
-        setStep('step-advanced', 'done');
 
         setStep('step-analysis', 'active');
-        await new Promise(r => setTimeout(r, 400));
 
-        // Query DANE/TLSA records for MX hosts
+        // ===== Fase 2: DANE y reputación RBL (dependen de los MX) en paralelo =====
         const mxHosts = mxRecords.map(r => r.host);
-        const daneRecords = await getDANE(mxHosts);
+        const RBL_LISTS = KB.rbl_lists || ['bl.spamcop.net', 'dnsbl.dronebl.org'];
+        const [daneRecords, rblResults] = await Promise.all([
+            getDANE(mxHosts),
+            Promise.all(
+                mxRecords.slice(0, 3).map(async (mx) => {
+                    const ips = await getIPAddresses(mx.host);
+                    const ip = ips[0] || null;
+                    // Una comprobación por lista RBL: marcada como listada si CUALQUIER
+                    // IP del host (IPv4 o IPv6) aparece en esa lista.
+                    const checks = await Promise.all(RBL_LISTS.map(async (rbl) => {
+                        if (!ips.length) return { listed: false, rbl };
+                        const perIp = await Promise.all(ips.map(addr => checkRBL(addr, rbl)));
+                        const hit = perIp.find(c => c.listed);
+                        return hit || { listed: false, rbl };
+                    }));
+                    return { host: mx.host, ip, ips, checks };
+                })
+            )
+        ]);
 
-        // Resolve MX IPs and check RBL lists in parallel
-        const RBL_LISTS = ['bl.spamcop.net', 'dnsbl.sorbs.net', 'dnsbl.dronebl.org'];
-        const rblResults = await Promise.all(
-            mxRecords.slice(0, 3).map(async (mx) => {
-                const ip = await getIPAddress(mx.host);
-                const checks = ip
-                    ? await Promise.all(RBL_LISTS.map(rbl => checkRBL(ip, rbl)))
-                    : RBL_LISTS.map(rbl => ({ listed: false, rbl }));
-                return { host: mx.host, ip, checks };
-            })
-        );
-        
         const result = analyze(mxRecords, spfRaw, dmarcRaw, {
             domain,
             txtVerifications,
@@ -105,7 +108,9 @@ async function runAnalysis(domain, dkimSelector = null) {
             spfData,
             dmarcData,
             srvRecords,
-            daneRecords
+            daneRecords,
+            spfTree,
+            dkimSelectors: (dkimRecords.records || []).map(r => r.selector)
         });
         result.spfLookups = spfLookups;
         result.spfTree = spfTree;
@@ -226,11 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     form.addEventListener('submit', e => {
         e.preventDefault();
-        let domain = input.value.trim().toLowerCase();
-        if (domain.includes('@')) {
-            domain = domain.substring(domain.indexOf('@') + 1);
-        }
-        domain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+        const domain = normalizeDomain(input.value);
         input.value = domain;
         let dkimSelector = null;
         if (dkimInput) {

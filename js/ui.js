@@ -1,92 +1,17 @@
 import { KB } from './knowledge.js';
 import { identifyMX, identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { escapeHtml } from './parsers.js';
+import { html, raw } from './utils.js';
 import { translations } from './i18n.js';
 import { getLanguage } from './lang.js';
-
-export function getCategoryLabel(svc, lang) {
-    if (!svc) return '';
-    const labelTranslations = {
-        es: {
-            'Proveedor Email': 'Proveedor Email',
-            'Proveedor Email / Transaccional': 'Proveedor Email / Transaccional',
-            'Transaccional': 'Transaccional',
-            'Firmas Email': 'Firmas Email',
-            'CRM': 'CRM',
-            'CRM/Marketing': 'CRM/Marketing',
-            'Marketing': 'Marketing',
-            'Soporte': 'Soporte',
-            'SEG': 'SEG',
-            'ICES': 'ICES',
-            'Concienciación': 'Concienciación',
-            'Firmas Digitales': 'Firmas Digitales',
-            'ERP/CRM': 'ERP/CRM',
-            'RRHH': 'RRHH',
-            'ITSM': 'ITSM',
-            'Turismo/CRM': 'Turismo/CRM',
-            'Soporte/ITSM': 'Soporte/ITSM',
-            'Desconocido': 'Desconocido',
-            'Otro / Varios': 'Otro / Varios'
-        },
-        en: {
-            'Proveedor Email': 'Email Provider',
-            'Proveedor Email / Transaccional': 'Email Provider / Transactional',
-            'Transaccional': 'Transactional',
-            'Firmas Email': 'Email Signatures',
-            'CRM': 'CRM',
-            'CRM/Marketing': 'CRM/Marketing',
-            'Marketing': 'Marketing',
-            'Soporte': 'Support',
-            'SEG': 'SEG',
-            'ICES': 'ICES',
-            'Concienciación': 'Awareness Training',
-            'Firmas Digitales': 'Digital Signatures',
-            'ERP/CRM': 'ERP/CRM',
-            'RRHH': 'HR',
-            'ITSM': 'ITSM',
-            'Turismo/CRM': 'Tourism/CRM',
-            'Soporte/ITSM': 'Support/ITSM',
-            'Desconocido': 'Unknown',
-            'Otro / Varios': 'Other / Misc'
-        }
-    };
-    
-    const cat = svc.category;
-    const catLabel = svc.cat_label || svc.catLabel || '';
-    
-    if (labelTranslations[lang] && labelTranslations[lang][catLabel]) {
-        return labelTranslations[lang][catLabel];
-    }
-    
-    const categoryDefaults = {
-        es: {
-            email: 'Proveedor Email',
-            seg: 'SEG',
-            ices: 'ICES',
-            marketing: 'Marketing',
-            transactional: 'Transaccional',
-            crm: 'CRM',
-            signatures: 'Firmas Email',
-            support: 'Soporte',
-            other: 'Otro',
-            unknown: 'Desconocido'
-        },
-        en: {
-            email: 'Email Provider',
-            seg: 'SEG',
-            ices: 'ICES',
-            marketing: 'Marketing',
-            transactional: 'Transactional',
-            crm: 'CRM',
-            signatures: 'Email Signatures',
-            support: 'Support',
-            other: 'Other',
-            unknown: 'Unknown'
-        }
-    };
-    
-    return (categoryDefaults[lang] && categoryDefaults[lang][cat]) || catLabel || (lang === 'es' ? 'Desconocido' : 'Unknown');
-}
+import {
+    getCategoryLabel,
+    displayProvider,
+    formatProviderSource,
+    resolveFindingText,
+    displayDmarcPolicy,
+    postureText
+} from './viewmodel.js';
 
 export function openKbModal(domain) {
     document.getElementById('kb-domain').value = domain;
@@ -162,52 +87,31 @@ export function setStep(stepId, state) {
     }
 }
 
+// Migrada al helper html`` (auto-escapa interpolaciones; XSS-safe por defecto).
 export function renderSPFTree(tree) {
     if (!tree) return '';
     const lang = getLanguage();
     const t = translations[lang] || translations.es;
-    
-    let errorSpan = '';
+
+    let errorSpan = raw('');
     if (tree.error) {
-        if (tree.error === 'Loop detectado') {
-            const errLabel = lang === 'es' ? 'Loop detectado' : 'Loop detected';
+        if (tree.error === 'loop') {
             const tooltipText = t.spf_loop_error_tooltip || '';
-            errorSpan = `<span class="tooltip-trigger" data-tooltip="${tooltipText}" style="color:#ef4444; margin-left: 8px; cursor: help; text-decoration: underline dotted;">[Error: ${errLabel}]</span>`;
+            errorSpan = html`<span class="tooltip-trigger" data-tooltip="${tooltipText}" style="color:#ef4444; margin-left: 8px; cursor: help; text-decoration: underline dotted;">[Error: ${t.spf_error_loop}]</span>`;
         } else {
-            errorSpan = `<span style="color:#ef4444; margin-left: 8px;">[Error: ${tree.error}]</span>`;
+            const errMap = { depth_exceeded: t.spf_error_depth, query_failed: t.spf_error_query };
+            const errLabel = errMap[tree.error] || tree.errorDetail || tree.error;
+            errorSpan = html`<span style="color:#ef4444; margin-left: 8px;">[Error: ${errLabel}]</span>`;
         }
     }
 
-    let html = `<ul class="spf-tree">`;
-    html += `<li><strong>${tree.domain}</strong> <span style="color:var(--text-muted)">(${tree.lookups} lookups)</span> ${errorSpan}`;
-    if (tree.children && tree.children.length > 0) {
-        html += `<ul>`;
-        for (const child of tree.children) {
-            if (child.tree) {
-                html += `<li><span class="spf-tree-type tag tag--unknown">${child.type}</span>: ${renderSPFTree(child.tree)}</li>`;
-            } else {
-                html += `<li><span class="spf-tree-type tag tag--unknown">${child.type}</span>: ${child.target}</li>`;
-            }
-        }
-        html += `</ul>`;
-    }
-    html += `</li></ul>`;
-    return html;
-}
+    const children = (tree.children && tree.children.length > 0)
+        ? html`<ul>${tree.children.map(child => child.tree
+            ? html`<li><span class="spf-tree-type tag tag--unknown">${child.type}</span>: ${renderSPFTree(child.tree)}</li>`
+            : html`<li><span class="spf-tree-type tag tag--unknown">${child.type}</span>: ${child.target}</li>`)}</ul>`
+        : raw('');
 
-export function translateProviderSource(source, lang) {
-    if (!source) return '';
-    const t = translations[lang];
-    if (source.includes('MX apunta a')) {
-        return source.replace('MX apunta a', t.evidence_mx);
-    }
-    if (source.includes('SPF include:')) {
-        return source.replace('SPF include:', t.evidence_spf);
-    }
-    if (source.includes('No se encontraron indicadores claros en MX ni SPF')) {
-        return t.unidentified_provider_detail;
-    }
-    return source;
+    return html`<ul class="spf-tree"><li><strong>${tree.domain}</strong> <span style="color:var(--text-muted)">(${tree.lookups} lookups)</span> ${errorSpan}${children}</li></ul>`;
 }
 
 export function translateDOM() {
@@ -305,8 +209,9 @@ export function renderResults(domain, result) {
         
         const titleEl = scoreCard.querySelector('.score-card__title');
         if (titleEl) {
-            const postureLabel = lang === 'es' ? 'Postura' : 'Posture';
-            titleEl.innerHTML = `${t.score_title_panel} <span class="tag tag--${posture.class === 'safe' ? 'provider' : posture.class}" style="margin-left: 12px; vertical-align: middle; padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 600;">${postureLabel}: ${posture.grade}</span>`;
+            const postureLabel = t.posture_label;
+            const postureGrade = postureText(t, posture);
+            titleEl.innerHTML = html`${raw(t.score_title_panel)} <span class="tag tag--${raw(posture.class === 'safe' ? 'provider' : posture.class)}" style="margin-left: 12px; vertical-align: middle; padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 600;">${postureLabel}: ${postureGrade}</span>`;
         }
 
         const scoreNumberEl = document.getElementById('score-number');
@@ -324,7 +229,7 @@ export function renderResults(domain, result) {
         }
 
         if (findingsEl) {
-            findingsEl.innerHTML = findings.map(f => {
+            findingsEl.innerHTML = html`${findings.map(f => {
                 let iconColor = 'currentColor';
                 let svgIcon = '';
                 if (f.status === 'success') {
@@ -354,28 +259,20 @@ export function renderResults(domain, result) {
                     </svg>`;
                 }
                 
-                let text = t[f.key] || f.message || '';
-                if (f.replacements) {
-                    for (const [placeholder, val] of Object.entries(f.replacements)) {
-                        text = text.replace(placeholder, val);
-                    }
-                }
+                const text = resolveFindingText(t, f);
 
-                return `<div class="finding-item">
-                    <div class="finding-item__icon">${svgIcon}</div>
+                return html`<div class="finding-item">
+                    <div class="finding-item__icon">${raw(svgIcon)}</div>
                     <span class="finding-item__text">${text}</span>
                 </div>`;
-            }).join('');
+            })}`;
         }
     }
 
     document.getElementById('result-domain').textContent = domain;
     document.getElementById('result-timestamp').textContent = new Date().toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
 
-    let providerDisplay = result.provider;
-    if (providerDisplay === 'No identificado') {
-        providerDisplay = t.unidentified_provider;
-    }
+    const providerDisplay = displayProvider(result, t);
     document.getElementById('summary-provider-value').textContent = providerDisplay;
     
     const secValue = document.getElementById('summary-security-value');
@@ -388,12 +285,8 @@ export function renderResults(domain, result) {
     }
 
     const dmarcVal = document.getElementById('summary-dmarc-value');
-    let dmarcPolicyText = result.dmarcPolicy;
-    if (dmarcPolicyText === 'reject') dmarcPolicyText = lang === 'es' ? 'Reject (Rechazar)' : 'Reject';
-    else if (dmarcPolicyText === 'quarantine') dmarcPolicyText = lang === 'es' ? 'Quarantine (Cuarentena)' : 'Quarantine';
-    else if (dmarcPolicyText === 'none') dmarcPolicyText = lang === 'es' ? 'None (Ninguna)' : 'None';
-    else if (dmarcPolicyText === 'No configurado') dmarcPolicyText = t.no_dmarc_record;
-    
+    const dmarcPolicyText = displayDmarcPolicy(t, result.dmarcPolicy);
+
     dmarcVal.textContent = dmarcPolicyText;
     dmarcVal.className = 'summary-card__value';
     if (result.dmarcPolicyClass === 'reject') dmarcVal.classList.add('dmarc-policy--reject');
@@ -414,9 +307,9 @@ export function renderResults(domain, result) {
             const id = identifyMX(mx.host, domain);
             const tagClass = id.type === 'provider' ? 'tag--provider' : id.type === 'seg' ? 'tag--seg' : id.type === 'ices' ? 'tag--ices' : 'tag--unknown';
             return `<div class="mx-record">
-                <span class="mx-record__priority">${mx.priority}</span>
-                <span class="mx-record__host">${mx.host}</span>
-                <span class="mx-record__tag ${tagClass}">${id.name}</span>
+                <span class="mx-record__priority">${escapeHtml(String(mx.priority))}</span>
+                <span class="mx-record__host">${escapeHtml(mx.host)}</span>
+                <span class="mx-record__tag ${tagClass}">${escapeHtml(id.name)}</span>
             </div>`;
         }).join('');
     }
@@ -425,33 +318,38 @@ export function renderResults(domain, result) {
     provBody.innerHTML = `
         <div class="info-block">
             <div class="info-block__label">${t.provider_identified}</div>
-            <div class="info-block__value">${providerDisplay}</div>
-            <div class="info-block__detail">${translateProviderSource(result.providerSource, lang)}</div>
+            <div class="info-block__value">${escapeHtml(providerDisplay)}</div>
+            <div class="info-block__detail">${escapeHtml(formatProviderSource(result.providerSource, t))}</div>
         </div>`;
 
     const secBody = document.getElementById('security-body');
+    const renderLayer = (entry, labelText) => {
+        const levelLabel = t[`awareness_level_${entry.level}`] || entry.level || '';
+        const pct = typeof entry.score === 'number' ? `${Math.round(entry.score * 100)}%` : '';
+        const evidence = Array.isArray(entry.evidence) ? entry.evidence : [];
+        const badge = entry.level
+            ? html`<span class="seg-confidence seg-confidence--${raw(entry.level)}" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:rgba(99,102,241,0.12);color:var(--accent-violet);">${levelLabel}${pct ? raw(` · ${escapeHtml(pct)}`) : ''}</span>`
+            : raw('');
+        const evidenceHtml = evidence.length
+            ? html`<div class="info-block__detail">${t.evidence}: ${evidence.map((e, i) => html`${raw(i ? ' · ' : '')}${t[`seg_signal_${e.signal}`] || e.signal}: ${e.value}`)}</div>`
+            : html`<div class="info-block__detail">${t.evidence}: ${entry.source}</div>`;
+        return html`<div class="info-block">
+            <div class="info-block__label">${raw(labelText)}</div>
+            <div class="info-block__value">${entry.name}${badge}</div>
+            ${evidenceHtml}
+        </div>`;
+    };
+
     if (result.segList.length > 0 || result.icesList.length > 0) {
-        let html = '';
-        for (const seg of result.segList) {
-            html += `<div class="info-block">
-                <div class="info-block__label">${t.seg_detected}</div>
-                <div class="info-block__value">${seg.name}</div>
-                <div class="info-block__detail">${t.evidence}: ${seg.source}</div>
-            </div>`;
-        }
-        for (const ices of result.icesList) {
-            html += `<div class="info-block">
-                <div class="info-block__label">${t.ices_detected}</div>
-                <div class="info-block__value">${ices.name}</div>
-                <div class="info-block__detail">${t.evidence}: ${ices.source}</div>
-            </div>`;
-        }
-        secBody.innerHTML = html;
+        secBody.innerHTML = html`${result.segList.map(seg => renderLayer(seg, t.seg_detected))}${result.icesList.map(ices => renderLayer(ices, t.ices_detected))}`;
     } else {
-        secBody.innerHTML = `<div class="info-block">
-            <div class="info-block__label">${t.no_evidence_dns}</div>
-            <div class="info-block__value">${t.no_seg_ices_detected}</div>
-            <div class="info-block__detail">${t.no_seg_ices_detail}</div>
+        secBody.innerHTML = html`<div class="info-block">
+            <div class="info-block__label">${raw(t.no_evidence_dns)}</div>
+            <div class="info-block__value">${raw(t.no_seg_ices_detected)}</div>
+            <div class="info-block__detail">${raw(t.no_seg_ices_detail)}</div>
+        </div>
+        <div class="info-block" style="margin-top:8px;">
+            <div class="info-block__detail" style="color:var(--text-muted);font-style:italic;">${raw(t.ices_api_blindspot)}</div>
         </div>`;
     }
 
@@ -484,7 +382,7 @@ export function renderResults(domain, result) {
         if (entry.type === 'all' && entry.qualifier === '-') { resultText = 'Fail'; prefixClass = 'spf-prefix--fail'; }
         if (entry.type === 'all' && entry.qualifier === '~') { resultText = 'SoftFail'; prefixClass = 'spf-prefix--softfail'; }
 
-        let resultClass = resultText === 'Pass' ? 'spf-result--pass' : resultText === 'Fail' ? 'spf-result--fail' : 'spf-result--softfail';
+        const resultClass = resultText === 'Pass' ? 'spf-result--pass' : resultText === 'Fail' ? 'spf-result--fail' : 'spf-result--softfail';
 
         // Tooltip for qualifier
         const qualifierTooltip = t[`spf_qualifier_${entry.qualifier || '+'}`] || '';
@@ -496,9 +394,10 @@ export function renderResults(domain, result) {
             const catClass = `cat--${svc.category}`;
             const localizedCatLabel = getCategoryLabel(svc, lang);
             if (svc.is_unknown) {
-                svcHTML = `<span class="spf-service">${svc.name}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="${t.add_to_db_tooltip}" onclick="openKbModal('${svc.search_query}')">${t.add_to_db}</button>`;
+                const safeQuery = encodeURIComponent(svc.search_query || '');
+                svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="${escapeHtml(t.add_to_db_tooltip)}" onclick="openKbModal(decodeURIComponent('${safeQuery}'))">${t.add_to_db}</button>`;
             } else {
-                svcHTML = `<span class="spf-service">${svc.name}</span><span class="spf-service__category ${catClass}">${localizedCatLabel}</span>`;
+                svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><span class="spf-service__category ${catClass}">${escapeHtml(localizedCatLabel)}</span>`;
             }
         }
         if (entry.type === 'v') svcHTML = `<span style="color:var(--text-muted)">${t.spf_version}</span>`;
@@ -604,17 +503,17 @@ export function renderResults(domain, result) {
         for (const rua of result.dmarcRua) {
             const reporter = identifyDMARCReporter(rua);
             html += `<div class="reporting-item">
-                <div class="reporting-item__type">RUA (${lang === 'es' ? 'Agregados' : 'Aggregate'})</div>
+                <div class="reporting-item__type">RUA (${t.dmarc_aggregate})</div>
                 <div class="reporting-item__value">${escapeHtml(rua)}</div>
-                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${escapeHtml(reporter)}</div>` : ''}
+                ${reporter ? `<div class="reporting-item__service">${t.tool_label}: ${escapeHtml(reporter)}</div>` : ''}
             </div>`;
         }
         for (const ruf of result.dmarcRuf) {
             const reporter = identifyDMARCReporter(ruf);
             html += `<div class="reporting-item">
-                <div class="reporting-item__type">RUF (${lang === 'es' ? 'Forenses' : 'Forensic'})</div>
+                <div class="reporting-item__type">RUF (${t.dmarc_forensic})</div>
                 <div class="reporting-item__value">${escapeHtml(ruf)}</div>
-                ${reporter ? `<div class="reporting-item__service">${lang === 'es' ? 'Herramienta' : 'Tool'}: ${escapeHtml(reporter)}</div>` : ''}
+                ${reporter ? `<div class="reporting-item__service">${t.tool_label}: ${escapeHtml(reporter)}</div>` : ''}
             </div>`;
         }
         repBody.innerHTML = html;
@@ -861,7 +760,7 @@ export function renderAdvancedDNS(result, lang, t) {
     // === SRV Records ===
     html += '<div class="advanced-dns-section">';
     html += `<div class="advanced-dns-section__header">
-        <h4 class="advanced-dns-section__title">Registros SRV</h4>
+        <h4 class="advanced-dns-section__title">${t.adv_srv_title}</h4>
     </div>`;
     if (result.srvRecords && Object.keys(result.srvRecords).length > 0) {
         let srvBody = '<div style="display:flex;flex-direction:column;gap:8px;">';
@@ -881,10 +780,10 @@ export function renderAdvancedDNS(result, lang, t) {
         if (foundSrv) {
             html += `<div class="advanced-dns-section__body">${srvBody}</div>`;
         } else {
-            html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">No se detectaron registros SRV de correo comunes.</p></div>`;
+            html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_srv_none}</p></div>`;
         }
     } else {
-        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">No se detectaron registros SRV de correo comunes.</p></div>`;
+        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_srv_none}</p></div>`;
     }
     html += '</div>';
 
@@ -900,8 +799,8 @@ export function renderAdvancedDNS(result, lang, t) {
     }
     html += '<div class="advanced-dns-section">';
     html += `<div class="advanced-dns-section__header">
-        <h4 class="advanced-dns-section__title">DANE (TLSA)</h4>
-        <span class="advanced-dns-section__badge ${hasDane ? 'badge--success' : 'badge--neutral'}">${hasDane ? 'Configurado' : 'No configurado'}</span>
+        <h4 class="advanced-dns-section__title">${t.adv_dane_title}</h4>
+        <span class="advanced-dns-section__badge ${hasDane ? 'badge--success' : 'badge--neutral'}">${hasDane ? t.adv_dane_configured : t.adv_dane_not_configured}</span>
     </div>`;
     if (hasDane) {
         let daneBody = '<div style="display:flex;flex-direction:column;gap:8px;">';
@@ -918,7 +817,7 @@ export function renderAdvancedDNS(result, lang, t) {
         daneBody += '</div>';
         html += `<div class="advanced-dns-section__body">${daneBody}</div>`;
     } else {
-        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">No se encontraron registros TLSA (_25._tcp) para los servidores MX.</p></div>`;
+        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_dane_none}</p></div>`;
     }
     html += '</div>';
 

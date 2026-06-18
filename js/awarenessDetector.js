@@ -11,8 +11,10 @@
  * Exporta:
  *   detectAwarenessVendors(domain: string) → Promise<AwarenessResult>
  *   AWARENESS_FINGERPRINTS  (el diccionario, recargable)
- *   flattenSpf(domain)      (util, reutiliza api.js implícitamente vía DoH interno)
+ *   flattenSpf(domain)      (util; usa la capa DNS unificada de api.js)
  */
+
+import { queryDNS } from './api.js';
 
 // ---------------------------------------------------------------------------
 // 1. DICCIONARIO DE FINGERPRINTS
@@ -618,63 +620,16 @@ export const AWARENESS_FINGERPRINTS = {
 };
 
 // ---------------------------------------------------------------------------
-// 2. CACHÉ SIMPLE (TTL 5 min) — independiente de api.js para encapsulamiento
+// 2-3. DoH QUERIES — reutiliza la capa DNS unificada de api.js
+//      (caché TTL compartida + fallback Google→Cloudflare). Evita duplicar el
+//      cliente DoH y aprovecha consultas ya cacheadas por el análisis principal.
 // ---------------------------------------------------------------------------
-const _cache = new Map();
-const CACHE_TTL = 5 * 60 * 1000;
-
-function _cached(key) {
-    const e = _cache.get(key);
-    if (e && Date.now() - e.ts < CACHE_TTL) return e.data;
-    if (e) _cache.delete(key);
-    return null;
-}
-function _store(key, data) {
-    _cache.set(key, { data, ts: Date.now() });
-    if (_cache.size > 300) {
-        const now = Date.now();
-        for (const [k, v] of _cache) if (now - v.ts > CACHE_TTL) _cache.delete(k);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 3. DoH QUERIES — con timeout, reintentos y fallback Cloudflare
-// ---------------------------------------------------------------------------
-const DOH_TIMEOUT = 8000;
-const DOH_ENDPOINTS = [
-    'https://dns.google/resolve',
-    'https://cloudflare-dns.com/dns-query',
-];
-
-async function _doh(name, type, endpointIdx = 0) {
-    const key = `awareness:${name}:${type}`;
-    const cached = _cached(key);
-    if (cached !== null) return cached;
-
-    const endpoint = DOH_ENDPOINTS[endpointIdx % DOH_ENDPOINTS.length];
-    const url = `${endpoint}?name=${encodeURIComponent(name)}&type=${type}`;
-
-    let data;
+async function _doh(name, type) {
     try {
-        const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), DOH_TIMEOUT);
-        const res = await fetch(url, {
-            headers: { Accept: 'application/dns-json' },
-            signal: ctrl.signal,
-        });
-        clearTimeout(tid);
-        if (!res.ok) throw new Error(`DoH HTTP ${res.status}`);
-        data = await res.json();
-    } catch (err) {
-        if (endpointIdx === 0) {
-            // un reintento con Cloudflare
-            return _doh(name, type, 1);
-        }
+        return await queryDNS(name, type);
+    } catch {
         return { Answer: [] };
     }
-
-    _store(key, data);
-    return data;
 }
 
 async function _getTxt(domain) {
@@ -775,11 +730,49 @@ function _ipv4InCidr(observed, cidr) {
     return (_ipv4ToInt(obsIp) & mask) === (_ipv4ToInt(base) & mask);
 }
 
+// Expande una IPv6 (con "::") a un BigInt de 128 bits.
+function _ipv6ToBigInt(ip) {
+    const [head, tail] = ip.split('::');
+    const h = head ? head.split(':').filter(Boolean) : [];
+    const t = tail !== undefined ? (tail ? tail.split(':').filter(Boolean) : []) : [];
+    if (tail === undefined && h.length !== 8) return null; // sin "::" debe tener 8 grupos
+    const missing = 8 - (h.length + t.length);
+    if (missing < 0) return null;
+    const groups = [...h, ...Array(ip.includes('::') ? missing : 0).fill('0'), ...t];
+    if (groups.length !== 8) return null;
+    let acc = 0n;
+    for (const g of groups) {
+        const n = parseInt(g, 16);
+        if (Number.isNaN(n)) return null;
+        acc = (acc << 16n) + BigInt(n);
+    }
+    return acc;
+}
+
+function _ipv6InCidr(observed, cidr) {
+    const obsIp = observed.split('/')[0];
+    if (!obsIp.includes(':')) return false;
+    const [base, bitsStr] = cidr.split('/');
+    if (!base || !base.includes(':')) return observed === cidr;
+    const bits = bitsStr ? parseInt(bitsStr, 10) : 128;
+    const obs = _ipv6ToBigInt(obsIp);
+    const baseInt = _ipv6ToBigInt(base);
+    if (obs === null || baseInt === null) return false;
+    if (bits <= 0) return true;
+    const mask = (~0n << BigInt(128 - bits)) & ((1n << 128n) - 1n);
+    return (obs & mask) === (baseInt & mask);
+}
+
+export function _ipInCidr(observed, cidr) {
+    if (observed === cidr) return true;
+    return observed.includes(':') ? _ipv6InCidr(observed, cidr) : _ipv4InCidr(observed, cidr);
+}
+
 // ---------------------------------------------------------------------------
 // 6. crt.sh — Certificate Transparency enrichment (con caché y rate-limit)
 // ---------------------------------------------------------------------------
 const _crtCache = new Map();
-const CRT_CACHE_TTL = 15 * 60 * 1000; // 15 min
+const CRT_CACHE_TTL = 60 * 60 * 1000; // 60 min (crt.sh es frágil/rate-limited)
 
 async function _queryCrt(domain) {
     const key = `crt:${domain}`;
@@ -902,9 +895,9 @@ export async function detectAwarenessVendors(domain) {
             }
         }
 
-        // 7b. SPF IPs / CIDRs
+        // 7b. SPF IPs / CIDRs (IPv4 e IPv6)
         for (const vip of (fp.spfIps || [])) {
-            if (spf.ips.some(obs => _ipv4InCidr(obs, vip) || obs === vip)) {
+            if (spf.ips.some(obs => _ipInCidr(obs, vip))) {
                 evidence.push({ signal: 'spf_ip', value: vip, weight: w.spfIp ?? 0.85 });
             }
         }
@@ -1050,7 +1043,10 @@ export async function detectAwarenessVendors(domain) {
             }
         }
 
-        if (evidence.length > 0) {
+        // crt.sh nunca debe ser señal ÚNICA (alto riesgo de falso positivo):
+        // requiere al menos una evidencia que no provenga de Certificate Transparency.
+        const nonCrtEvidence = evidence.filter(e => e.signal !== 'cert_transparency');
+        if (evidence.length > 0 && nonCrtEvidence.length > 0) {
             // Score combinado: 1 - Π(1 - peso_i)  → nunca pasa de 1
             const score = 1 - evidence.reduce((acc, e) => acc * (1 - e.weight), 1);
             const rounded = Math.round(score * 100) / 100;

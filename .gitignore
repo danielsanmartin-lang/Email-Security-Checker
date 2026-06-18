@@ -1,2 +1,8 @@
 .DS_Store
 node_modules/
+
+# Salida generada por la herramienta de grafo de conocimiento
+graphify-out/
+
+# Cobertura de tests
+coverage/

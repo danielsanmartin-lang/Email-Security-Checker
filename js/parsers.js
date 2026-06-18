@@ -1,9 +1,28 @@
-// Sanitize untrusted strings before inserting via innerHTML to prevent XSS
+// Sanitize untrusted strings before inserting via innerHTML to prevent XSS.
+// Implementación sin DOM: funciona en navegador y en Node (tests), y escapa también
+// comillas (seguro para contextos de atributo como data-tooltip/title).
+const _HTML_ESCAPES = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+};
 export function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, ch => _HTML_ESCAPES[ch]);
+}
+
+/**
+ * Extrae el valor de un registro TXT de la respuesta DoH.
+ * El campo `data` puede venir como varias cadenas entrecomilladas concatenadas
+ * (p. ej. `"v=spf1 ..." "..."`) o con comillas simples. Concatena todas las partes.
+ */
+export function extractTxtValue(data) {
+    if (!data) return '';
+    const matches = [...data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
+    if (matches.length > 0) return matches.map(m => m[1]).join('');
+    return data.replace(/"/g, '');
 }
 
 export function parseSPF(raw) {

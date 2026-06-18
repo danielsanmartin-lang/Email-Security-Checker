@@ -1,4 +1,4 @@
-import { parseMTASTSPolicy, validateMTASTSPolicy } from './parsers.js';
+import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './parsers.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -82,15 +82,7 @@ export async function getSPF(domain) {
     const records = [];
     for (const a of data.Answer) {
         if (a.data) {
-            // A TXT record data field in Google/Cloudflare DoH may be enclosed in multiple quotes, e.g. "v=spf1 ..." "..."
-            // Or simple quotes. We split by spaces outside quotes or match all quoted parts, but matching all parts inside double quotes is safest:
-            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
-            let txt = '';
-            if (matches.length > 0) {
-                txt = matches.map(m => m[1]).join('');
-            } else {
-                txt = a.data.replace(/"/g, '');
-            }
+            const txt = extractTxtValue(a.data);
             if (txt.startsWith('v=spf1')) {
                 records.push(txt);
             }
@@ -110,13 +102,7 @@ export async function getDMARC(domain) {
     const records = [];
     for (const a of data.Answer) {
         if (a.data) {
-            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
-            let txt = '';
-            if (matches.length > 0) {
-                txt = matches.map(m => m[1]).join('');
-            } else {
-                txt = a.data.replace(/"/g, '');
-            }
+            const txt = extractTxtValue(a.data);
             if (txt.startsWith('v=DMARC1')) {
                 records.push(txt);
             }
@@ -221,13 +207,15 @@ export async function getBIMI(domain) {
 }
 
 export async function getSPFLookupTree(domain, cache = new Set(), depth = 0) {
-    const node = { domain, lookups: 0, children: [], error: null, record: null };
+    // node.error es un CÓDIGO neutral de idioma ('depth_exceeded' | 'loop' | 'query_failed').
+    // node.errorDetail contiene el mensaje técnico original (si aplica).
+    const node = { domain, lookups: 0, children: [], error: null, errorDetail: null, record: null };
     if (depth > 10) {
-        node.error = 'Límite de profundidad excedido (>10)';
+        node.error = 'depth_exceeded';
         return node;
     }
     if (cache.has(domain)) {
-        node.error = 'Loop detectado';
+        node.error = 'loop';
         return node;
     }
     cache.add(domain);
@@ -264,29 +252,70 @@ export async function getSPFLookupTree(domain, cache = new Set(), depth = 0) {
             }
         }
     } catch (e) {
-        node.error = e.message;
+        node.error = 'query_failed';
+        node.errorDetail = e.message;
     }
 
     return node;
 }
 
-export async function getIPAddress(host) {
+// Resuelve todas las IPs (IPv4 e IPv6) de un host.
+export async function getIPAddresses(host) {
+    const ips = [];
     try {
-        const data = await queryDNS(host, 'A');
-        if (data && data.Answer) {
-            const aRecord = data.Answer.find(a => a.type === 1);
-            if (aRecord) return aRecord.data;
+        const [aData, aaaaData] = await Promise.all([
+            queryDNS(host, 'A').catch(() => null),
+            queryDNS(host, 'AAAA').catch(() => null)
+        ]);
+        if (aData && aData.Answer) {
+            for (const a of aData.Answer) {
+                if (a.type === 1 && a.data) ips.push(a.data);
+            }
+        }
+        if (aaaaData && aaaaData.Answer) {
+            for (const a of aaaaData.Answer) {
+                if (a.type === 28 && a.data) ips.push(a.data);
+            }
         }
     } catch (e) {
-        console.warn(`Failed to resolve IP for ${host}`, e);
+        console.warn(`Failed to resolve IPs for ${host}`, e);
     }
-    return null;
+    return [...new Set(ips)];
+}
+
+// Compat: devuelve la primera IP (preferentemente IPv4).
+export async function getIPAddress(host) {
+    const ips = await getIPAddresses(host);
+    return ips[0] || null;
+}
+
+// Expande una dirección IPv6 a sus 32 nibbles en orden inverso (formato de query RBL/PTR).
+function expandIPv6ForRbl(ip) {
+    // Manejar la abreviatura "::"
+    const [head, tail] = ip.split('::');
+    const headGroups = head ? head.split(':').filter(Boolean) : [];
+    const tailGroups = tail ? tail.split(':').filter(Boolean) : [];
+    const missing = 8 - (headGroups.length + tailGroups.length);
+    if (missing < 0) return null;
+    const groups = [...headGroups, ...Array(ip.includes('::') ? missing : 0).fill('0'), ...tailGroups];
+    if (groups.length !== 8) return null;
+    // Cada grupo a 4 hex chars
+    const fullHex = groups.map(g => g.padStart(4, '0')).join('');
+    if (fullHex.length !== 32) return null;
+    return fullHex.split('').reverse().join('.');
 }
 
 export async function checkRBL(ip, rblHost) {
     try {
-        const reversedIp = ip.split('.').reverse().join('.');
-        const queryName = `${reversedIp}.${rblHost}`;
+        let queryName;
+        if (ip.includes(':')) {
+            const reversed = expandIPv6ForRbl(ip);
+            if (!reversed) return { listed: false, rbl: rblHost };
+            queryName = `${reversed}.${rblHost}`;
+        } else {
+            const reversedIp = ip.split('.').reverse().join('.');
+            queryName = `${reversedIp}.${rblHost}`;
+        }
         const data = await queryDNS(queryName, 'A');
         if (data && data.Answer && data.Answer.length > 0) {
             return { listed: true, rbl: rblHost, details: data.Answer[0].data };
@@ -305,7 +334,7 @@ export async function getAllTXT(domain) {
         if (!data.Answer) return [];
         return data.Answer
             .filter(a => a.type === 16)
-            .map(a => a.data.replace(/"/g, ''));
+            .map(a => extractTxtValue(a.data));
     } catch (e) {
         console.warn(`Failed to get all TXT for ${domain}`, e);
         return [];
@@ -400,13 +429,7 @@ export async function getMTASTS(domain) {
         const data = await queryDNS(`_mta-sts.${domain}`, 'TXT');
         if (!data.Answer) return null;
         for (const a of data.Answer) {
-            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
-            let txt = '';
-            if (matches.length > 0) {
-                txt = matches.map(m => m[1]).join('');
-            } else {
-                txt = a.data.replace(/"/g, '');
-            }
+            const txt = extractTxtValue(a.data);
             if (txt.startsWith('v=STSv1')) {
                 const idMatch = txt.match(/id=([^;]+)/);
                 const result = {
@@ -428,13 +451,7 @@ export async function getTLSRPT(domain) {
         const data = await queryDNS(`_smtp._tls.${domain}`, 'TXT');
         if (!data.Answer) return null;
         for (const a of data.Answer) {
-            const matches = [...a.data.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
-            let txt = '';
-            if (matches.length > 0) {
-                txt = matches.map(m => m[1]).join('');
-            } else {
-                txt = a.data.replace(/"/g, '');
-            }
+            const txt = extractTxtValue(a.data);
             if (txt.startsWith('v=TLSRPTv1')) {
                 const ruaMatch = txt.match(/rua=([^;]+)/);
                 const rua = ruaMatch ? ruaMatch[1].trim().split(',').map(s => s.trim()) : [];

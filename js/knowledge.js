@@ -198,6 +198,18 @@ export const KB = {
         { pattern: 'spamtitan', name: 'SpamTitan (TitanHQ)', category: 'seg' },
         { pattern: 'perception-point-domain-verify', name: 'Perception Point', category: 'ices' },
         { pattern: 'abnormalsecurity-domain-verification', name: 'Abnormal Security', category: 'ices' },
+        // ICES basados en API (Microsoft Graph / Google API): NO tocan MX/SPF/DKIM,
+        // su único rastro DNS suele ser un token de verificación TXT. Patrones
+        // heurísticos — VALIDAR contra documentación oficial del vendor.
+        { pattern: 'material-domain-verification', name: 'Material Security', category: 'ices' },
+        { pattern: 'sublime-domain-verification', name: 'Sublime Security', category: 'ices' },
+        { pattern: 'avanan-domain-verification', name: 'Avanan (Check Point Harmony Email)', category: 'ices' },
+        { pattern: 'checkpoint-domain-verification', name: 'Check Point Harmony Email', category: 'ices' },
+        { pattern: 'tessian-verification', name: 'Tessian (Proofpoint)', category: 'ices' },
+        { pattern: 'egress-domain-verification', name: 'Egress Defend', category: 'ices' },
+        { pattern: 'vade-domain-verification', name: 'Vade', category: 'ices' },
+        { pattern: 'darktrace-domain-verification', name: 'Darktrace / Email', category: 'ices' },
+        { pattern: 'cyren-domain-verification', name: 'Cyren (Data443)', category: 'ices' },
     ],
     // NS patterns to identify DNS providers (some imply email security services)
     ns_providers: [
@@ -228,6 +240,40 @@ export const KB = {
         'phishline',                  // Barracuda Phishline
         'kb4', 'ksat', 'psm', 'psm2', // KnowBe4
     ],
+    // Mapa selector DKIM -> vendor de seguridad (SEG/ICES). Permite detectar la capa
+    // de seguridad por la firma DKIM incluso cuando el MX es el del proveedor
+    // (Microsoft/Google) y el gateway opera en modo API o re-firmando saliente.
+    // NOTA: selectores genéricos (selector1, google, s1...) se excluyen a propósito
+    // para evitar falsos positivos; solo selectores razonablemente específicos.
+    // Revisar contra documentación oficial del vendor (pueden cambiar).
+    dkim_security_selectors: [
+        { selector: 'pphosted', name: 'Proofpoint', category: 'seg' },
+        { selector: 'pps', name: 'Proofpoint', category: 'seg' },
+        { selector: 'pp1', name: 'Proofpoint', category: 'seg' },
+        { selector: 'mimecast', name: 'Mimecast', category: 'seg' },
+        { selector: 'mimecast20190707', name: 'Mimecast', category: 'seg' },
+        { selector: 'mimecast20210101', name: 'Mimecast', category: 'seg' },
+        { selector: 'mimecast20230101', name: 'Mimecast', category: 'seg' },
+        { selector: 'barracuda', name: 'Barracuda', category: 'seg' },
+        { selector: 'fortimail', name: 'FortiMail (Fortinet)', category: 'seg' },
+        { selector: 'ironport', name: 'Cisco Email Security (IronPort)', category: 'seg' },
+        { selector: 'hornetsecurity', name: 'Hornetsecurity', category: 'seg' },
+        { selector: 'avanan', name: 'Avanan (Check Point Harmony Email)', category: 'ices' },
+        { selector: 'checkpoint', name: 'Check Point Harmony Email', category: 'ices' },
+        { selector: 'abnormal', name: 'Abnormal Security', category: 'ices' },
+        { selector: 'sublime', name: 'Sublime Security', category: 'ices' },
+        { selector: 'material', name: 'Material Security', category: 'ices' },
+    ],
+    // Pesos por tipo de señal para la detección ponderada de capas de seguridad.
+    // Score combinado por vendor = 1 - Π(1 - peso_i) (noisy-OR).
+    seg_signal_weights: {
+        mx: 0.9,          // el correo entrante pasa por el gateway: señal fuerte
+        mta_sts: 0.8,     // hostname listado en la política MTA-STS
+        txt: 0.7,         // token de verificación TXT del vendor
+        spf: 0.6,         // include de primer nivel en SPF
+        spf_nested: 0.5,  // include anidado en la cadena SPF
+        dkim: 0.6         // selector DKIM del vendor presente
+    },
     // TLS-RPT reporter identification
     tlsrpt_reporters: [
         { pattern: 'google.com', name: 'Google' },
@@ -258,18 +304,28 @@ export const KB = {
         marketing: '#f59e0b', transactional: '#06b6d4', crm: '#10b981',
         signatures: '#f43f5e', support: '#fb923c', other: '#64748b',
         unknown: '#9ca3af'
-    }
+    },
+    // Listas RBL/DNSBL consultadas vía DoH. Revisar vigencia periódicamente.
+    // NOTA: dnsbl.sorbs.net se retiró (SORBS cerró en 2024).
+    rbl_lists: [
+        'bl.spamcop.net',
+        'dnsbl.dronebl.org',
+        'b.barracudacentral.org'
+    ]
 };
 
 // Cargar entradas personalizadas guardadas por el usuario
-try {
-    const customKB = localStorage.getItem('custom_kb_spf');
-    if (customKB) {
-        const entries = JSON.parse(customKB);
-        if (Array.isArray(entries)) {
-            KB.spf.push(...entries);
+// (localStorage no existe fuera del navegador, p. ej. en tests con Node)
+if (typeof localStorage !== 'undefined') {
+    try {
+        const customKB = localStorage.getItem('custom_kb_spf');
+        if (customKB) {
+            const entries = JSON.parse(customKB);
+            if (Array.isArray(entries)) {
+                KB.spf.push(...entries);
+            }
         }
+    } catch (e) {
+        console.error('Error loading custom KB from localStorage', e);
     }
-} catch (e) {
-    console.error('Error loading custom KB from localStorage', e);
 }

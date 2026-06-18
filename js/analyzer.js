@@ -184,63 +184,175 @@ export function analyzeTLSRPT(tlsrpt) {
     return reporters;
 }
 
+// Recorre el árbol SPF (getSPFLookupTree) y devuelve TODOS los dominios objetivo
+// de include/redirect en cualquier profundidad (cadena SPF aplanada).
+export function collectSpfDomains(tree, acc = []) {
+    if (!tree || !tree.children) return acc;
+    for (const child of tree.children) {
+        if (child.target && child.target !== '(self)') {
+            acc.push(child.target.toLowerCase());
+        }
+        if (child.tree) collectSpfDomains(child.tree, acc);
+    }
+    return acc;
+}
+
+const DEFAULT_SEG_WEIGHTS = { mx: 0.9, mta_sts: 0.8, txt: 0.7, spf: 0.6, spf_nested: 0.5, dkim: 0.6 };
+
+function _segLevel(score) {
+    if (score >= 0.85) return 'alta';
+    if (score >= 0.55) return 'media';
+    return 'baja';
+}
+
+/**
+ * Detección ponderada multi-señal de capas de seguridad (SEG / ICES).
+ * Agrega evidencia de: MX, SPF (incluye top-level y anidado), tokens TXT, lista mx
+ * de la política MTA-STS y selectores DKIM del vendor. Combina con noisy-OR.
+ *
+ * @returns {{ segList: Array, icesList: Array }} cada entrada:
+ *   { name, category, source, score, level, evidence: [{signal, value, weight}] }
+ */
+export function detectSecurityLayers(signals = {}) {
+    const {
+        domain = '',
+        mxRecords = [],
+        spfEntries = [],
+        spfNestedDomains = [],
+        txtVerifications = [],
+        mtaStsMx = [],
+        dkimSelectors = []
+    } = signals;
+
+    const W = { ...DEFAULT_SEG_WEIGHTS, ...(KB.seg_signal_weights || {}) };
+    const map = new Map(); // key: `${category}:${name}` -> entry
+
+    const add = (name, category, signal, value, weight) => {
+        if (!name || (category !== 'seg' && category !== 'ices')) return;
+        const key = `${category}:${name}`;
+        let entry = map.get(key);
+        if (!entry) {
+            entry = { name, category, evidence: [] };
+            map.set(key, entry);
+        }
+        // Dedupe por signal+value
+        if (!entry.evidence.some(e => e.signal === signal && e.value === value)) {
+            entry.evidence.push({ signal, value, weight });
+        }
+    };
+
+    // 1. MX (correo entrante por el gateway)
+    for (const mx of mxRecords) {
+        const id = identifyMX(mx.host, domain);
+        if (id.type === 'seg' || id.type === 'ices') add(id.name, id.type, 'mx', mx.host, W.mx);
+    }
+
+    // 2. MTA-STS: hostnames MX autorizados en la política
+    for (const pattern of mtaStsMx) {
+        const id = identifyMX(String(pattern).toLowerCase(), domain);
+        if (id.type === 'seg' || id.type === 'ices') add(id.name, id.type, 'mta_sts', pattern, W.mta_sts);
+    }
+
+    // 3. SPF top-level (include / a / redirect)
+    const topValues = [];
+    for (const entry of spfEntries) {
+        if (entry.type === 'include' || entry.type === 'a' || entry.type === 'redirect') {
+            topValues.push((entry.value || '').toLowerCase());
+            const svc = identifySPFService(entry.value);
+            if (svc && (svc.category === 'seg' || svc.category === 'ices')) {
+                add(svc.name, svc.category, 'spf', entry.value, W.spf);
+            }
+        }
+    }
+
+    // 4. SPF anidado (includes profundos no presentes en top-level)
+    for (const d of spfNestedDomains) {
+        if (topValues.includes(d)) continue;
+        const svc = identifySPFService(d);
+        if (svc && (svc.category === 'seg' || svc.category === 'ices')) {
+            add(svc.name, svc.category, 'spf_nested', d, W.spf_nested);
+        }
+    }
+
+    // 5. Tokens de verificación TXT
+    for (const v of txtVerifications) {
+        if (v.category === 'seg' || v.category === 'ices') {
+            add(v.name, v.category, 'txt', v.record, W.txt);
+        }
+    }
+
+    // 6. Selectores DKIM del vendor
+    const dkimMap = KB.dkim_security_selectors || [];
+    for (const sel of dkimSelectors) {
+        const s = String(sel).toLowerCase();
+        const hit = dkimMap.find(d => d.selector.toLowerCase() === s);
+        if (hit) add(hit.name, hit.category, 'dkim', sel, W.dkim);
+    }
+
+    const segList = [];
+    const icesList = [];
+    for (const entry of map.values()) {
+        const score = Math.round((1 - entry.evidence.reduce((acc, e) => acc * (1 - e.weight), 1)) * 100) / 100;
+        const strongest = entry.evidence.reduce((a, b) => (b.weight > a.weight ? b : a), entry.evidence[0]);
+        const out = {
+            name: entry.name,
+            category: entry.category,
+            source: strongest ? strongest.value : '',
+            score,
+            level: _segLevel(score),
+            evidence: entry.evidence
+        };
+        (entry.category === 'seg' ? segList : icesList).push(out);
+    }
+    segList.sort((a, b) => b.score - a.score);
+    icesList.sort((a, b) => b.score - a.score);
+    return { segList, icesList };
+}
+
 export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     const domain = advancedData.domain || '';
     const spfEntries = parseSPF(spfRaw);
     const dmarcParsed = parseDMARC(dmarcRaw);
 
     let provider = null;
-    let providerSource = '';
-    const segList = [];
-    const icesList = [];
-    
+    // providerSource es una estructura neutral de idioma: { key, arg }. La capa de
+    // presentación (viewmodel) la traduce. Evita el patrón frágil de "sentinel" en español.
+    let providerSource = null;
+    // Detección de proveedor de correo (MX primero, luego SPF)
     for (const mx of mxRecords) {
         const id = identifyMX(mx.host, domain);
         if (id.type === 'provider' && !provider) {
             provider = id.name;
-            providerSource = `MX apunta a ${mx.host}`;
-        }
-        if (id.type === 'seg') {
-            segList.push({ name: id.name, source: `MX: ${mx.host}` });
-        }
-        if (id.type === 'ices') {
-            if (!icesList.find(i => i.name === id.name)) {
-                icesList.push({ name: id.name, source: `MX: ${mx.host}` });
-            }
+            providerSource = { key: 'evidence_mx', arg: mx.host };
         }
     }
 
     const spfServices = [];
-    
     for (const entry of spfEntries) {
         if (entry.type === 'include' || entry.type === 'a' || entry.type === 'redirect') {
             const svc = identifySPFService(entry.value);
             if (svc) {
                 if (!provider && svc.category === 'email') {
                     provider = svc.name;
-                    providerSource = `SPF include: ${entry.value}`;
-                }
-                if (svc.category === 'seg' && !segList.find(s => s.name === svc.name)) {
-                    segList.push({ name: svc.name, source: `SPF: ${entry.value}` });
-                }
-                if (svc.category === 'ices' && !icesList.find(i => i.name === svc.name)) {
-                    icesList.push({ name: svc.name, source: `SPF: ${entry.value}` });
+                    providerSource = { key: 'evidence_spf', arg: entry.value };
                 }
                 spfServices.push({ ...svc, raw: entry.value });
             }
         }
     }
 
-    // NEW: Process TXT verification tokens
     const txtVerifications = advancedData.txtVerifications || [];
-    for (const v of txtVerifications) {
-        if (v.category === 'seg' && !segList.find(s => s.name === v.name)) {
-            segList.push({ name: v.name, source: `TXT verification: ${v.record}` });
-        }
-        if (v.category === 'ices' && !icesList.find(i => i.name === v.name)) {
-            icesList.push({ name: v.name, source: `TXT verification: ${v.record}` });
-        }
-    }
+
+    // Detección ponderada multi-señal de capas de seguridad (SEG / ICES).
+    const { segList, icesList } = detectSecurityLayers({
+        domain,
+        mxRecords,
+        spfEntries,
+        spfNestedDomains: collectSpfDomains(advancedData.spfTree),
+        txtVerifications,
+        mtaStsMx: advancedData.mtaSts?.policy?.parsed?.mx || [],
+        dkimSelectors: advancedData.dkimSelectors || []
+    });
 
     // NEW: Process NS provider hints
     const nsProvider = advancedData.nsProvider || null;
@@ -248,9 +360,10 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     // NEW: Process TLS-RPT reporters
     const tlsrptReporters = advancedData.tlsrptReporters || [];
 
+    const providerIdentified = !!provider;
     if (!provider) {
-        provider = 'No identificado';
-        providerSource = 'No se encontraron indicadores claros en MX ni SPF';
+        provider = null;
+        providerSource = { key: 'provider_none' };
     }
 
     let dmarcPolicy = 'No configurado';
@@ -274,7 +387,7 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     }
 
     return {
-        provider, providerSource, segList, icesList,
+        provider, providerIdentified, providerSource, segList, icesList,
         spfRaw, spfEntries, spfServices,
         spfData: advancedData.spfData || { record: spfRaw, records: spfRaw ? [spfRaw] : [], multiple: false },
         dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass,
@@ -293,205 +406,158 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     };
 }
 
-export function calculateScoreAndFindings(result) {
-    let score = 0;
-    const findings = [];
+// ===== Scoring declarativo =====
+// Pesos centralizados (positivos = bonus, negativos = penalización).
+export const SCORE_WEIGHTS = {
+    spfPresent: 20,
+    spfMultiple: -10,
+    spfAllPass: -25,
+    spfAllNeutral: -15,
+    spfLookupsOk: 10,
+    dmarcPresent: 20,
+    dmarcMultiple: -10,
+    dmarcReject: 30,
+    dmarcQuarantine: 20,
+    dmarcNone: 5,
+    dmarcVersionInvalid: -10,
+    dmarcPolicyInvalid: -25,
+    dmarcReporting: 5,
+    dkim: 10,
+    bimi: 5,
+    mtaStsValid: 5,
+    mtaStsInvalid: -15,
+    dane: 5
+};
 
-    // 1. SPF Check
-    if (result.spfRaw) {
-        if (result.spfData && result.spfData.multiple) {
-            findings.push({
-                status: 'error',
-                key: 'finding_spf_multiple'
-            });
-            score -= 10;
-        } else {
-            score += 20;
-            findings.push({
-                status: 'success',
-                key: 'finding_spf_ok'
-            });
+// Suma teórica de los aportes positivos (máximo alcanzable antes de acotar).
+export const MAX_POSITIVE_SCORE = Object.values(SCORE_WEIGHTS)
+    .filter(w => w > 0)
+    .reduce((a, b) => a + b, 0);
+
+function dkimCountOf(result) {
+    return result.dkimRecords && result.dkimRecords.records ? result.dkimRecords.records.length : 0;
+}
+
+function hasDaneOf(result) {
+    if (!result.daneRecords) return false;
+    return Object.values(result.daneRecords).some(arr => arr && arr.length > 0);
+}
+
+// Cada evaluador devuelve { points, findings[] }. El orden del array define el
+// orden de presentación de los findings.
+const SCORE_CHECKS = [
+    function spf(result) {
+        const findings = [];
+        let points = 0;
+        if (!result.spfRaw) {
+            findings.push({ status: 'error', key: 'finding_spf_err' });
+            return { points, findings };
         }
-
-        // SPF Qualifier check
-        if (result.spfEntries) {
-            const allEntry = result.spfEntries.find(e => e.type === 'all');
-            if (allEntry) {
-                if (allEntry.qualifier === '+') {
-                    score -= 25;
-                    findings.push({
-                        status: 'error',
-                        key: 'finding_spf_all_pass'
-                    });
-                } else if (allEntry.qualifier === '?' || allEntry.qualifier === '') {
-                    score -= 15;
-                    findings.push({
-                        status: 'warning',
-                        key: 'finding_spf_all_neutral'
-                    });
-                } else if (allEntry.qualifier === '~') {
-                    findings.push({
-                        status: 'success',
-                        key: 'finding_spf_all_softfail'
-                    });
-                } else if (allEntry.qualifier === '-') {
-                    findings.push({
-                        status: 'success',
-                        key: 'finding_spf_all_hardfail'
-                    });
-                }
+        if (result.spfData && result.spfData.multiple) {
+            points += SCORE_WEIGHTS.spfMultiple;
+            findings.push({ status: 'error', key: 'finding_spf_multiple' });
+        } else {
+            points += SCORE_WEIGHTS.spfPresent;
+            findings.push({ status: 'success', key: 'finding_spf_ok' });
+        }
+        const allEntry = result.spfEntries && result.spfEntries.find(e => e.type === 'all');
+        if (allEntry) {
+            const q = allEntry.qualifier;
+            if (q === '+') {
+                points += SCORE_WEIGHTS.spfAllPass;
+                findings.push({ status: 'error', key: 'finding_spf_all_pass' });
+            } else if (q === '?' || q === '') {
+                points += SCORE_WEIGHTS.spfAllNeutral;
+                findings.push({ status: 'warning', key: 'finding_spf_all_neutral' });
+            } else if (q === '~') {
+                findings.push({ status: 'success', key: 'finding_spf_all_softfail' });
+            } else if (q === '-') {
+                findings.push({ status: 'success', key: 'finding_spf_all_hardfail' });
             }
         }
-        
         const spfLookups = result.spfLookups || 0;
         if (spfLookups <= 10) {
-            score += 10;
-            findings.push({
-                status: 'success',
-                key: 'finding_spf_lookups_ok',
-                replacements: { '{lookups}': spfLookups }
-            });
+            points += SCORE_WEIGHTS.spfLookupsOk;
+            findings.push({ status: 'success', key: 'finding_spf_lookups_ok', replacements: { '{lookups}': spfLookups } });
         } else {
-            findings.push({
-                status: 'error',
-                key: 'finding_spf_lookups_err',
-                replacements: { '{lookups}': spfLookups }
-            });
+            findings.push({ status: 'error', key: 'finding_spf_lookups_err', replacements: { '{lookups}': spfLookups } });
         }
-    } else {
-        findings.push({
-            status: 'error',
-            key: 'finding_spf_err'
-        });
-    }
+        return { points, findings };
+    },
 
-    // 2. DMARC Check
-    if (result.dmarcRaw) {
+    function dmarc(result) {
+        const findings = [];
+        let points = 0;
+        if (!result.dmarcRaw) {
+            findings.push({ status: 'error', key: 'finding_dmarc_err' });
+            return { points, findings };
+        }
         if (result.dmarcData && result.dmarcData.multiple) {
-            findings.push({
-                status: 'error',
-                key: 'finding_dmarc_multiple'
-            });
-            score -= 10;
+            points += SCORE_WEIGHTS.dmarcMultiple;
+            findings.push({ status: 'error', key: 'finding_dmarc_multiple' });
         } else {
-            score += 20;
+            points += SCORE_WEIGHTS.dmarcPresent;
             const policy = result.dmarcPolicy || 'none';
-            findings.push({
-                status: 'success',
-                key: 'finding_dmarc_ok',
-                replacements: { '{policy}': policy.toUpperCase() }
-            });
-
+            findings.push({ status: 'success', key: 'finding_dmarc_ok', replacements: { '{policy}': policy.toUpperCase() } });
             if (policy === 'reject') {
-                score += 30;
-                findings.push({
-                    status: 'success',
-                    key: 'finding_dmarc_policy_reject'
-                });
+                points += SCORE_WEIGHTS.dmarcReject;
+                findings.push({ status: 'success', key: 'finding_dmarc_policy_reject' });
             } else if (policy === 'quarantine') {
-                score += 20;
-                findings.push({
-                    status: 'warning',
-                    key: 'finding_dmarc_policy_quarantine'
-                });
+                points += SCORE_WEIGHTS.dmarcQuarantine;
+                findings.push({ status: 'warning', key: 'finding_dmarc_policy_quarantine' });
             } else if (policy === 'none') {
-                score += 5;
-                findings.push({
-                    status: 'warning',
-                    key: 'finding_dmarc_policy_none'
-                });
+                points += SCORE_WEIGHTS.dmarcNone;
+                findings.push({ status: 'warning', key: 'finding_dmarc_policy_none' });
             }
         }
-
-        // DMARC Syntax validation (new)
+        // Validación de sintaxis (se evalúa aunque haya múltiples registros)
         if (result.dmarcParsed) {
             const v = result.dmarcParsed.v;
             const p = result.dmarcParsed.p;
-
             if (v !== 'DMARC1') {
-                score -= 10;
-                findings.push({
-                    status: 'error',
-                    key: 'finding_dmarc_version_invalid'
-                });
+                points += SCORE_WEIGHTS.dmarcVersionInvalid;
+                findings.push({ status: 'error', key: 'finding_dmarc_version_invalid' });
             }
-
             if (!p || !['none', 'quarantine', 'reject'].includes(p.toLowerCase())) {
-                score -= 25;
-                findings.push({
-                    status: 'error',
-                    key: 'finding_dmarc_policy_invalid'
-                });
+                points += SCORE_WEIGHTS.dmarcPolicyInvalid;
+                findings.push({ status: 'error', key: 'finding_dmarc_policy_invalid' });
             }
         }
-
-        // DMARC Reporting (rua/ruf)
+        // Reporting (rua/ruf)
         const hasRua = result.dmarcRua && result.dmarcRua.length > 0;
         const hasRuf = result.dmarcRuf && result.dmarcRuf.length > 0;
         if (hasRua || hasRuf) {
-            score += 5;
-            findings.push({
-                status: 'success',
-                key: 'finding_dmarc_reporting_ok'
-            });
+            points += SCORE_WEIGHTS.dmarcReporting;
+            findings.push({ status: 'success', key: 'finding_dmarc_reporting_ok' });
         } else {
-            findings.push({
-                status: 'warning',
-                key: 'finding_dmarc_reporting_err'
-            });
+            findings.push({ status: 'warning', key: 'finding_dmarc_reporting_err' });
         }
-    } else {
-        findings.push({
-            status: 'error',
-            key: 'finding_dmarc_err'
-        });
-    }
+        return { points, findings };
+    },
 
-    // 3. DKIM Check
-    const dkimCount = (result.dkimRecords && result.dkimRecords.records) ? result.dkimRecords.records.length : 0;
-    if (dkimCount > 0) {
-        score += 10;
-        findings.push({
-            status: 'success',
-            key: 'finding_dkim_ok',
-            replacements: { '{count}': dkimCount }
-        });
-    } else {
-        findings.push({
-            status: 'warning',
-            key: 'finding_dkim_err'
-        });
-    }
+    function dkim(result) {
+        const count = dkimCountOf(result);
+        if (count > 0) {
+            return { points: SCORE_WEIGHTS.dkim, findings: [{ status: 'success', key: 'finding_dkim_ok', replacements: { '{count}': count } }] };
+        }
+        return { points: 0, findings: [{ status: 'warning', key: 'finding_dkim_err' }] };
+    },
 
-    // 4. BIMI Check
-    const hasBimi = result.bimiRecord && !result.bimiRecord.error && result.bimiRecord.record;
-    if (hasBimi) {
-        score += 5;
-        findings.push({
-            status: 'success',
-            key: 'finding_bimi_ok'
-        });
-    } else {
-        findings.push({
-            status: 'info',
-            key: 'finding_bimi_err'
-        });
-    }
+    function bimi(result) {
+        const hasBimi = result.bimiRecord && !result.bimiRecord.error && result.bimiRecord.record;
+        if (hasBimi) {
+            return { points: SCORE_WEIGHTS.bimi, findings: [{ status: 'success', key: 'finding_bimi_ok' }] };
+        }
+        return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_err' }] };
+    },
 
-    // 5. MTA-STS Check (DNS TXT + HTTPS policy file with mode: enforce)
-    if (!result.mtaSts) {
-        findings.push({
-            status: 'info',
-            key: 'finding_mta_sts_err'
-        });
-    } else if (result.mtaSts.policy?.valid) {
-        score += 5;
-        findings.push({
-            status: 'success',
-            key: 'finding_mta_sts_ok'
-        });
-    } else {
-        score -= 15;
+    function mtaSts(result) {
+        if (!result.mtaSts) {
+            return { points: 0, findings: [{ status: 'info', key: 'finding_mta_sts_err' }] };
+        }
+        if (result.mtaSts.policy?.valid) {
+            return { points: SCORE_WEIGHTS.mtaStsValid, findings: [{ status: 'success', key: 'finding_mta_sts_ok' }] };
+        }
         const policy = result.mtaSts.policy || {};
         const replacements = {};
         if (policy.httpStatus != null && policy.httpStatus !== 200) {
@@ -499,96 +565,85 @@ export function calculateScoreAndFindings(result) {
         } else if (policy.mode) {
             replacements['{mode}'] = policy.mode;
         }
-        findings.push({
-            status: 'error',
-            id: 'MTA_STS_POLICY_INVALID',
-            type: 'error',
-            key: 'finding_mta_sts_policy_invalid',
-            message: 'MTA-STS TXT record exists but the HTTPS policy file is missing, invalid, or not set to enforce.',
-            replacements: Object.keys(replacements).length ? replacements : undefined
-        });
-    }
+        return {
+            points: SCORE_WEIGHTS.mtaStsInvalid,
+            findings: [{
+                status: 'error',
+                id: 'MTA_STS_POLICY_INVALID',
+                type: 'error',
+                key: 'finding_mta_sts_policy_invalid',
+                message: 'MTA-STS TXT record exists but the HTTPS policy file is missing, invalid, or not set to enforce.',
+                replacements: Object.keys(replacements).length ? replacements : undefined
+            }]
+        };
+    },
 
-    // 6. TLS-RPT Check (bonus)
-    if (result.tlsRpt) {
-        findings.push({
-            status: 'success',
-            key: 'finding_tls_rpt_ok'
-        });
-    } else {
-        findings.push({
-            status: 'info',
-            key: 'finding_tls_rpt_err'
-        });
-    }
-
-    // 7. DANE/TLSA Check (bonus)
-    let hasDane = false;
-    if (result.daneRecords) {
-        for (const mx in result.daneRecords) {
-            if (result.daneRecords[mx] && result.daneRecords[mx].length > 0) {
-                hasDane = true;
-                break;
-            }
+    function tlsRpt(result) {
+        if (result.tlsRpt) {
+            return { points: 0, findings: [{ status: 'success', key: 'finding_tls_rpt_ok' }] };
         }
-    }
-    if (hasDane) {
-        score += 5;
-        findings.push({
-            status: 'success',
-            key: 'finding_dane_ok'
-        });
-    } else {
-        findings.push({
-            status: 'info',
-            key: 'finding_dane_err'
-        });
-    }
+        return { points: 0, findings: [{ status: 'info', key: 'finding_tls_rpt_err' }] };
+    },
 
-    // 8. SRV checks (Info only)
-    if (result.srvRecords) {
-        if (result.srvRecords.autodiscover && result.srvRecords.autodiscover.length > 0) {
-            findings.push({
-                status: 'info',
-                key: 'finding_srv_autodiscover_ok',
-                replacements: { '{target}': result.srvRecords.autodiscover[0].target }
-            });
+    function dane(result) {
+        if (hasDaneOf(result)) {
+            return { points: SCORE_WEIGHTS.dane, findings: [{ status: 'success', key: 'finding_dane_ok' }] };
         }
-    }
+        return { points: 0, findings: [{ status: 'info', key: 'finding_dane_err' }] };
+    },
 
-    // Determine Posture
+    function srv(result) {
+        const findings = [];
+        if (result.srvRecords && result.srvRecords.autodiscover && result.srvRecords.autodiscover.length > 0) {
+            findings.push({ status: 'info', key: 'finding_srv_autodiscover_ok', replacements: { '{target}': result.srvRecords.autodiscover[0].target } });
+        }
+        return { points: 0, findings };
+    }
+];
+
+function determinePosture(result) {
     const hasSpf = !!result.spfRaw;
     const hasDmarc = !!result.dmarcRaw;
     const dmarcPolicy = result.dmarcPolicy || 'none';
     const hasSegOrIces = (result.segList && result.segList.length > 0) || (result.icesList && result.icesList.length > 0);
-    
-    let allQualifier = '';
-    if (result.spfEntries) {
-        const allEntry = result.spfEntries.find(e => e.type === 'all');
-        if (allEntry) {
-            allQualifier = allEntry.qualifier || '';
-        }
-    }
-    
-    const hasDkim = dkimCount > 0;
+    const allEntry = result.spfEntries && result.spfEntries.find(e => e.type === 'all');
+    const allQualifier = allEntry ? (allEntry.qualifier || '') : '';
+    const hasDkim = dkimCountOf(result) > 0;
     const hasMtaSts = result.mtaSts && result.mtaSts.policy?.valid;
-    
-    let posture = { grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' };
+
+    // posture.key es un identificador neutral de idioma; la UI lo traduce.
     if (hasSpf && allQualifier === '-' && hasDmarc && dmarcPolicy === 'reject' && hasSegOrIces && hasDkim && hasMtaSts) {
-        posture = { grade: 'Fuerte', color: 'green', class: 'safe', label: 'Fuerte' };
-    } else if (!hasSpf || allQualifier === '+' || allQualifier === '?' || !hasDmarc || dmarcPolicy === 'none' || !hasSegOrIces) {
-        posture = { grade: 'Débil', color: 'red', class: 'danger', label: 'Débil' };
+        return { key: 'strong', grade: 'Fuerte', color: 'green', class: 'safe', label: 'Fuerte' };
+    }
+    if (!hasSpf || allQualifier === '+' || allQualifier === '?' || !hasDmarc || dmarcPolicy === 'none' || !hasSegOrIces) {
+        return { key: 'weak', grade: 'Débil', color: 'red', class: 'danger', label: 'Débil' };
+    }
+    return { key: 'moderate', grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' };
+}
+
+function determineGrade(score) {
+    if (score >= 95) return { grade: 'A+', cardClass: 'safe' };
+    if (score >= 90) return { grade: 'A', cardClass: 'safe' };
+    if (score >= 80) return { grade: 'B', cardClass: 'safe' };
+    if (score >= 70) return { grade: 'C', cardClass: 'warning' };
+    if (score >= 50) return { grade: 'D', cardClass: 'warning' };
+    return { grade: 'F', cardClass: 'danger' };
+}
+
+export function calculateScoreAndFindings(result) {
+    let score = 0;
+    const findings = [];
+    for (const check of SCORE_CHECKS) {
+        const { points, findings: sectionFindings } = check(result);
+        score += points;
+        findings.push(...sectionFindings);
     }
 
-    // Determine Grade
-    let grade = 'F';
-    let cardClass = 'danger';
-    if (score >= 95) { grade = 'A+'; cardClass = 'safe'; }
-    else if (score >= 90) { grade = 'A'; cardClass = 'safe'; }
-    else if (score >= 80) { grade = 'B'; cardClass = 'safe'; }
-    else if (score >= 70) { grade = 'C'; cardClass = 'warning'; }
-    else if (score >= 50) { grade = 'D'; cardClass = 'warning'; }
-    else { grade = 'F'; cardClass = 'danger'; }
+    const posture = determinePosture(result);
+
+    // Acotar la puntuación al rango 0–100 antes de derivar el grado.
+    score = Math.max(0, Math.min(100, score));
+    const { grade, cardClass } = determineGrade(score);
 
     return { score, grade, cardClass, findings, posture };
 }

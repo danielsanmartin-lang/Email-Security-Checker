@@ -49,6 +49,25 @@ js/
 
 ---
 
+## 🔐 Privacidad y servicios de terceros
+
+La herramienta es 100% cliente y no usa backend propio, pero ciertas comprobaciones
+delegan en servicios externos. Al usarlas, **el dominio analizado se envía a esos terceros**:
+
+* **DNS-over-HTTPS (Google `dns.google` y Cloudflare `cloudflare-dns.com`):** todas las
+  consultas DNS. Cloudflare actúa como _fallback_ si Google falla.
+* **Proxy CORS `api.allorigins.win`:** solo como _fallback_ para descargar el fichero de
+  política MTA-STS (`https://mta-sts.<dominio>/.well-known/mta-sts.txt`) cuando el navegador
+  bloquea la petición directa por CORS. El dominio objetivo viaja en la URL del proxy.
+* **Certificate Transparency `crt.sh`:** el módulo de Awareness consulta los CT logs para
+  enriquecer la detección; el dominio se envía como parámetro de búsqueda.
+
+Si la privacidad es crítica (p. ej. auditorías confidenciales), se recomienda alojar un
+proxy CORS propio y/o un resolver DoH interno y sustituir estas URLs en `js/api.js` y
+`js/awarenessDetector.js`.
+
+---
+
 ## 💻 Instalación y Uso Local
 
 Si prefieres ejecutar este proyecto de forma local en tu máquina:
@@ -72,20 +91,67 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
      ```
 4. Abre tu navegador y accede a **`http://localhost:8080`**.
 
-### Ejecutar Tests Unitarios
+### Desarrollo: Tests, Lint y Formato
 
-El módulo de Awareness incluye una suite completa de tests con fixtures DNS mockeados:
+El proyecto incluye `package.json` con scripts y dependencias de desarrollo (Vitest, ESLint, Prettier):
 
 ```bash
-# Requiere Vitest (ESM-compatible)
-npx vitest run js/awarenessDetector.test.js
+npm install        # instala devDependencies
+
+npm test           # ejecuta toda la suite de tests (Vitest)
+npm run test:watch # modo watch
+npm run lint       # ESLint sobre js/
+npm run format     # Prettier (formatea js/)
 ```
+
+La suite (68 tests) cubre el módulo de Awareness (fixtures DNS mockeados), los parsers
+(`parseSPF`, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`, `extractTxtValue`),
+el analizador (`extractRootDomain`, `calculateScoreAndFindings`), las utilidades
+(`normalizeDomain`, helper `html``) y pruebas de integración con **jsdom** que ejecutan
+`renderResults` y la generación del informe verificando el escapado anti-XSS de extremo a
+extremo. Cada push/PR ejecuta lint + tests en CI mediante GitHub Actions
+(`.github/workflows/ci.yml`).
 
 ---
 
 ## 📅 Historial de Cambios
 
-### v2.0.0 — Detección Avanzada de DNS (SRV/DANE), Postura de Seguridad y Mejoras en Awareness (Actual)
+### v2.3.0 — Detección de Capas de Seguridad Multi-Señal (Actual)
+
+* **Detección SEG/ICES ponderada y multi-señal**: La identificación de capas de seguridad dejó de ser binaria. Ahora `detectSecurityLayers` agrega evidencia de varias fuentes y calcula una **confianza por vendor** (noisy-OR → nivel Alta/Media/Baja), mostrada en la UI y en el informe junto a las evidencias concretas.
+* **Nuevas fuentes de señal aprovechando datos que ya se obtenían**:
+  - **SPF aplanado**: se inspecciona toda la cadena de includes (no solo el primer nivel), detectando gateways escondidos en includes anidados (`collectSpfDomains` sobre el árbol SPF).
+  - **Lista `mx:` de la política MTA-STS**: los hostnames MX autorizados en el fichero de política se cruzan contra la base de conocimiento, revelando el gateway aunque el MX activo no lo muestre.
+  - **Selectores DKIM → vendor** (`KB.dkim_security_selectors`): permite detectar la capa de seguridad por la firma DKIM incluso cuando el MX es el del proveedor (Microsoft/Google) y el gateway opera en modo API o re-firmando.
+* **ICES basados en API**: ampliada la base de conocimiento de tokens de verificación TXT (Material, Sublime, Avanan/Check Point, Tessian, Egress, Vade, Darktrace, Cyren…) y la UI deja claro que estos ICES (Graph/Google API) **no dejan rastro DNS**: "no detectado" ≠ "no hay capa de seguridad".
+* **Awareness**: el matching de IPs SPF ahora soporta **IPv6** (CIDR con BigInt), y **crt.sh** nunca puede ser señal única (requiere al menos otra evidencia) con caché ampliada para reducir su fragilidad.
+* **Pesos centralizados** en `KB.seg_signal_weights` y **20 tests** nuevos (detección multi-señal, SPF aplanado, IPv6 CIDR). Total: 80 tests.
+
+> ⚠️ Las listas de selectores/tokens por vendor son heurísticas y deben validarse contra la documentación oficial; pueden cambiar con el tiempo.
+
+### v2.2.0 — Refactorización Arquitectónica
+
+* **Helper de plantillas `html`` ` con auto-escapado**: Nuevo tagged template (`js/utils.js`) que escapa cada interpolación por defecto (XSS-safe), con marcador `raw()` para HTML ya seguro y soporte de anidación/arrays. `escapeHtml` se reimplementó sin DOM (funciona en Node y escapa también comillas). Adoptado en `renderSPFTree` y en el renderizado de findings/postura.
+* **Capa view-model compartida (`js/viewmodel.js`)**: Centraliza la lógica de presentación que antes duplicaban `ui.js` y `export.js` (texto de findings, política DMARC, postura, descripción de servicios, fuente del proveedor, conteo RBL, etiquetas de categoría).
+* **Scoring declarativo**: `calculateScoreAndFindings` se reescribió como una tabla de evaluadores por sección con pesos centralizados (`SCORE_WEIGHTS`, `MAX_POSITIVE_SCORE`), preservando el comportamiento y facilitando los tests.
+* **Eliminado el patrón "sentinel" de proveedor/fuente**: El analyzer emite estructura neutral de idioma (`providerIdentified`, `providerSource = { key, arg }`) y la traducción ocurre en la capa de presentación, en lugar de revertir cadenas en español por coincidencia de texto.
+* **Etiquetas de categoría movidas a i18n**: Los mapas de traducción de categorías viven ahora en `i18n.js` (`category_labels`, `category_defaults`).
+* **Capa DNS unificada**: `awarenessDetector.js` reutiliza `queryDNS` de `api.js` (caché y fallback compartidos) en vez de su propio cliente DoH duplicado.
+* **`extractTxtValue`**: Extraído el parsing repetido de registros TXT entrecomillados (usado por SPF, DMARC, MTA-STS, TLS-RPT y getAllTXT).
+* **Tests**: 68 en total, incluyendo pruebas de integración con jsdom que ejecutan `renderResults` y el informe de exportación verificando el escapado anti-XSS de extremo a extremo.
+
+### v2.1.0 — Robustez, i18n completa, IPv6 y Tooling
+
+* **Puntuación acotada (0–100)**: El cálculo del score ahora se limita correctamente al rango 0–100 antes de derivar el grado, evitando valores incoherentes (>100) frente al umbral A+.
+* **Internacionalización completa de la lógica**: Se eliminaron las cadenas en español incrustadas en el código. Los errores del árbol SPF, la postura de seguridad y los paneles SRV/DANE ahora usan claves i18n y se traducen correctamente en ambos idiomas. El informe exportado (`export.js`) consume claves de `i18n.js` en lugar de duplicar el sistema de traducción con ternarios `es/en`.
+* **Soporte IPv6 y multi-IP en RBL**: La resolución de IPs ahora incluye registros `AAAA` y todas las IPs del host; `checkRBL` soporta el formato de consulta inverso IPv6. Las listas RBL se externalizaron a `knowledge.js` (se retiró SORBS, cerrada en 2024).
+* **Análisis en paralelo**: `runAnalysis` ejecuta las consultas DNS independientes concurrentemente (MX, SPF, DMARC, BIMI, avanzadas), reduciendo significativamente el tiempo total, manteniendo el feedback por pasos.
+* **Refuerzo anti-XSS**: Auditoría y escapado (`escapeHtml`) de todos los valores derivados de DNS insertados vía `innerHTML`, tanto en la UI como en el informe exportado.
+* **Utilidad compartida `normalizeDomain`**: Deduplicada la lógica de normalización de dominio (email, esquema, `www`, ruta) en `js/utils.js`.
+* **Tooling de desarrollo**: `package.json` completo (`type: module`, scripts), Vitest configurado, ESLint (flat config) + Prettier, y CI con GitHub Actions. Nueva cobertura de tests para parsers y analizador (49 tests).
+* **Privacidad documentada**: Nueva sección del README sobre los servicios de terceros (DoH de Google/Cloudflare, proxy CORS `allorigins.win`, `crt.sh`).
+
+### v2.0.0 — Detección Avanzada de DNS (SRV/DANE), Postura de Seguridad y Mejoras en Awareness
 
 * **Protocolo DANE (TLSA) y Registros SRV**: Añadido soporte para consultas DNS en paralelo de registros de autenticación DANE/TLSA (`_25._tcp`) para verificar la seguridad del cifrado en los servidores MX, además de sondeos de autodescubrimiento SRV (`_autodiscover`, `_imaps`, `_submission`).
 * **Indicador de Postura de Seguridad**: Cálculo automático y visualización de la postura general del dominio (`Fuerte` 🟢, `Moderada` 🟡, `Débil` 🔴) en la tarjeta de puntuación, evaluando SPF, DMARC, DKIM, SEG/ICES y MTA-STS.
