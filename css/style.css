@@ -1416,3 +1416,61 @@ body {
         print-color-adjust: exact !important;
     }
 }
+
+/* ===== Awareness: badge de origen, módulo no confirmado y analizador de cabeceras ===== */
+.awareness-source-badge {
+    margin-left: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 5px;
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--accent-violet);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.awareness-unconfirmed {
+    font-size: 12px;
+    color: var(--accent-amber);
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+}
+.awareness-header-tool {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+}
+.awareness-header-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+}
+.awareness-header-input {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary, rgba(0, 0, 0, 0.02));
+    color: var(--text-primary);
+    resize: vertical;
+}
+.awareness-header-btn {
+    margin-top: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: var(--accent-violet);
+    color: #fff;
+}
+.awareness-header-btn:hover {
+    filter: brightness(1.08);
+}

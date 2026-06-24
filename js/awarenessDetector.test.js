@@ -350,6 +350,61 @@ describe('detectAwarenessVendors — peso del MX hint (representatividad)', () =
     });
 });
 
+describe('detectAwarenessVendors — productConfirmed (gateway vs módulo)', () => {
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('marca productConfirmed=false cuando solo hay señal de gateway (MX)', async () => {
+        global.fetch = buildFetchMock({
+            'ppgw.com': { TXT: ['v=spf1 -all'], MX: ['10 mail.pphosted.com'] },
+            '_dmarc.ppgw.com': { TXT: ['v=DMARC1; p=none;'] },
+        });
+        const result = await detectAwarenessVendors('ppgw.com');
+        const pp = result.detectedVendors.find(v => v.vendor === 'proofpointSat');
+        expect(pp).toBeDefined();
+        expect(pp.productConfirmed).toBe(false); // solo mx_hint/correlated_seg → indirecto
+    });
+
+    it('marca productConfirmed=true con evidencia directa (SPF include de la infra)', async () => {
+        const result = await detectAwarenessVendors('knowbe4domain.com');
+        const kb4 = result.detectedVendors.find(v => v.vendor === 'knowbe4');
+        expect(kb4.productConfirmed).toBe(true);
+    });
+});
+
+describe('detectAwarenessVendors — correlación DKIM estricta', () => {
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('un selector de vendor con clave genérica (sin referenciar al vendor) es señal débil', async () => {
+        global.fetch = buildFetchMock({
+            'dkweak.com': { TXT: ['v=spf1 -all'], MX: [] },
+            // selector de KnowBe4 'psm' resuelve, pero la clave no referencia knowbe4.com
+            'psm._domainkey.dkweak.com': { TXT: ['v=DKIM1; k=rsa; p=MIGfMA0GENERICKEY'] },
+        });
+        const result = await detectAwarenessVendors('dkweak.com');
+        const kb4 = result.detectedVendors.find(v => v.vendor === 'knowbe4');
+        expect(kb4).toBeDefined();
+        expect(kb4.evidence.some(e => e.signal === 'dkim_selector_weak')).toBe(true);
+        expect(kb4.evidence.some(e => e.signal === 'dkim_selector')).toBe(false);
+        expect(kb4.productConfirmed).toBe(false); // dkim_selector_weak es indirecto
+    });
+});
+
+describe('detectAwarenessVendors — CNAME apuntando a infra del vendor', () => {
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('detecta vendor por un subdominio del cliente CNAME-ado a su infra', async () => {
+        global.fetch = buildFetchMock({
+            'cnamedom.com': { TXT: ['v=spf1 -all'], MX: [] },
+            'click.cnamedom.com': { CNAME: ['click.knowbe4.com'] },
+        });
+        const result = await detectAwarenessVendors('cnamedom.com');
+        const kb4 = result.detectedVendors.find(v => v.vendor === 'knowbe4');
+        expect(kb4).toBeDefined();
+        expect(kb4.evidence.some(e => e.signal === 'cname_probe')).toBe(true);
+        expect(kb4.productConfirmed).toBe(true);
+    });
+});
+
 describe('detectAwarenessVendors — SPF PermError', () => {
     beforeEach(() => { global.fetch = buildFetchMock(DNS_FIXTURES); });
     afterEach(() => { vi.restoreAllMocks(); });

@@ -11,7 +11,8 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 
 * **Análisis DNS en tiempo real:** Consulta registros MX, SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, NS y **DNSSEC** directamente desde el navegador vía DNS-over-HTTPS.
 * **Identificación de Proveedores (SEGs/ICES):** Base de conocimiento local con más de 50 firmas de servicios de correo (Microsoft 365, Google Workspace, Proofpoint, Mimecast, etc.).
-* **Awareness-Vendor Detector:** Módulo dedicado que detecta plataformas de concienciación de seguridad y simulación de phishing (KnowBe4, Proofpoint SAT, Cofense, Hoxhunt, Barracuda PhishLine, etc.) a partir de señales DNS, con score de confianza y evidencia estructurada.
+* **Awareness-Vendor Detector:** Módulo dedicado que detecta plataformas de concienciación de seguridad y simulación de phishing (KnowBe4, Proofpoint SAT, Cofense, Hoxhunt, Barracuda PhishLine, etc.) a partir de señales DNS, con score de confianza y evidencia estructurada. Distingue **"tiene el gateway del vendor"** de **"usa el módulo de awareness"** (confirmación de producto), y se enriquece con dos fuentes de Certificate Transparency (crt.sh + Certspotter).
+* **Análisis por cabeceras de correo:** Pega las cabeceras de un correo de simulación recibido y la herramienta detecta el vendor con **alta confianza** por dominios de envío y X-headers propietarias (`X-PHISHTEST`, `X-Gophish-*`, `simulator.office.com`…). Cubre **Microsoft Attack Simulation Training**, que no deja rastro en DNS. 100% local.
 * **Evaluación de Seguridad:** Diagnóstico visual del estado de las políticas de autenticación (A+ a F, 0–100 puntos).
 * **Análisis profundo de autenticación:**
   - **DMARC**: política de subdominios (`sp`), porcentaje (`pct`), modo de alineación (`adkim`/`aspf`) y **autorización de destinos de informe externos** (`_report._dmarc`, RFC 7489).
@@ -39,7 +40,8 @@ js/
 ├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…)
 ├── analyzer.js          # Lógica de identificación de proveedores/SEGs
 ├── ui.js                # Renderizado de resultados y paneles
-├── awarenessDetector.js # 🆕 Detector de plataformas de Awareness/PhishSim
+├── awarenessDetector.js # 🆕 Detector de plataformas de Awareness/PhishSim (DNS)
+├── headerAnalyzer.js    # 🆕 Detección por cabeceras de correo (cubre el punto ciego DNS)
 ├── knowledge.js         # Base de conocimiento de vendors (>50 firmas)
 ├── i18n.js              # Traducciones ES/EN
 ├── lang.js              # Selector de idioma con persistencia
@@ -66,8 +68,12 @@ delegan en servicios externos. Al usarlas, **el dominio analizado se envía a es
 * **Proxy CORS `api.allorigins.win`:** solo como _fallback_ para descargar el fichero de
   política MTA-STS (`https://mta-sts.<dominio>/.well-known/mta-sts.txt`) cuando el navegador
   bloquea la petición directa por CORS. El dominio objetivo viaja en la URL del proxy.
-* **Certificate Transparency `crt.sh`:** el módulo de Awareness consulta los CT logs para
-  enriquecer la detección; el dominio se envía como parámetro de búsqueda.
+* **Certificate Transparency (`crt.sh` y `api.certspotter.com`):** el módulo de Awareness
+  consulta los CT logs para enriquecer la detección; el dominio se envía como parámetro de
+  búsqueda. Certspotter actúa como _fallback_ si crt.sh falla o no devuelve datos.
+
+El **análisis por cabeceras de correo** es 100% local (no envía nada a terceros): las
+cabeceras pegadas se procesan en el navegador.
 
 Si la privacidad es crítica (p. ej. auditorías confidenciales), se recomienda alojar un
 proxy CORS propio y/o un resolver DoH interno y sustituir estas URLs en `js/api.js` y
@@ -112,7 +118,8 @@ npm run lint       # ESLint sobre js/
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**116 tests**) cubre el módulo de Awareness (fixtures DNS mockeados), los parsers
+La suite (**128 tests**) cubre el módulo de Awareness (fixtures DNS mockeados), el análisis
+por cabeceras (`headerAnalyzer`), los parsers
 (`parseSPF`, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`, `analyzeDKIMRecord`,
 `extractTxtValue`), el analizador (`extractRootDomain`, `calculateScoreAndFindings` y los
 nuevos findings de DMARC/DKIM/SPF/DNSSEC/MTA-STS), la capa DNS (`checkRBL`, `getDNSSEC`,
@@ -131,7 +138,20 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 ## 📅 Historial de Cambios
 
-### v2.4.0 — Precisión del Análisis, DNSSEC y Endurecimiento de Calidad (Actual)
+### v2.5.0 — Detección de Awareness más precisa y por cabeceras (Actual)
+
+Seis mejoras al detector de plataformas de Awareness / Phishing Simulation, centradas en exactitud y en romper el techo del análisis solo-DNS.
+
+* **Análisis por cabeceras de correo (`js/headerAnalyzer.js`):** nuevo módulo + panel inyectado en la UI para **pegar las cabeceras** de un correo de simulación y detectar el vendor con **alta confianza** por dominios de envío y X-headers propietarias (`X-PHISHTEST` de KnowBe4, `X-Gophish-Contact`/`X-Gophish-Signature`, `X-PhishMe` de Cofense, `simulator.office.com`/`phishingsimulations.microsoft.com` de Microsoft AST…). Cubre **Microsoft Attack Simulation Training**, indetectable por DNS. Trabajo 100% local.
+* **Gateway vs. módulo de awareness (`productConfirmed`):** se distingue la evidencia *directa* del producto de concienciación de la evidencia *indirecta* (su gateway de correo / co-ubicación). Si solo hay señal de gateway (p. ej. MX de Proofpoint/Mimecast), la tarjeta lo indica: *"proveedor compatible — módulo no confirmado"*.
+* **Sondeo CNAME ampliado y con verificación de destino:** lista de subdominios de campaña mucho mayor; ahora **cualquier** subdominio del cliente cuyo CNAME apunte a infra del vendor cuenta (se verifica el destino, no solo que el subdominio exista).
+* **Correlación DKIM más estricta:** un selector de vendor recibe peso fuerte solo si el registro **referencia/está CNAME-ado** al dominio firmante del vendor; un selector con clave genérica que no lo referencia pasa a indicio débil (evita falsos positivos por selectores comunes como `s1`).
+* **Doble fuente de Certificate Transparency:** `crt.sh` como primaria y **Certspotter** como _fallback_ (fusiona resultados, degrada con elegancia si CORS/red falla).
+* **Diccionario versionado y actualizable:** versión exportada (`AWARENESS_DICT_VERSION`) y funciones para cargar/persistir fingerprints personalizados (`loadCustomFingerprints`/`saveCustomFingerprints`/`loadFingerprintsFromUrl` + auto-carga desde `localStorage`), para mantener las firmas al día sin tocar código.
+
+> **Nota:** también se corrigió un *bug* de pesos del MX hint heredado (cualquier dominio M365 mostraba 70% de usar AST con la única señal "usa Microsoft"); ahora Microsoft AST queda en **15% ("baja")** y los gateways reales (Proofpoint/Mimecast 0.3) pesan más. **+12 tests** (total **128**).
+
+### v2.4.0 — Precisión del Análisis, DNSSEC y Endurecimiento de Calidad
 
 Esta versión profundiza la **exactitud** de los resultados que la herramienta presenta como verdad, además de reforzar la validación de entrada y el tooling de calidad.
 

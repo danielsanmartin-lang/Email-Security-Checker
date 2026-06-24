@@ -1,6 +1,7 @@
 import { KB } from './knowledge.js';
 import { identifyMX, identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { escapeHtml } from './parsers.js';
+import { detectFromHeaders } from './headerAnalyzer.js';
 import { html, raw } from './utils.js';
 import { translations } from './i18n.js';
 import { getLanguage } from './lang.js';
@@ -910,6 +911,58 @@ export function renderAdvancedDNS(result, lang, t) {
     body.innerHTML = html;
 }
 
+// Construye la tarjeta de un vendor (compartida por la detección DNS y la de cabeceras).
+function buildAwarenessCard(v, t) {
+    const signalLabel = (sig) => t[`awareness_signal_${sig}`] || sig;
+    const levelClass = { alta: 'awareness-level--alta', media: 'awareness-level--media', baja: 'awareness-level--baja' };
+    const levelColorVar = { alta: 'var(--accent-emerald)', media: 'var(--accent-amber)', baja: 'var(--accent-rose)' };
+    const lvlLabel = t[`awareness_level_${v.level}`] || v.level;
+    const lvlClass = levelClass[v.level] || 'awareness-level--baja';
+    const pct = Math.round(v.score * 100);
+    const color = levelColorVar[v.level] || 'var(--accent-rose)';
+
+    const sourceBadge = v.source === 'headers'
+        ? `<span class="awareness-source-badge">✉ ${escapeHtml(t.awareness_source_headers || 'headers')}</span>`
+        : '';
+    // Distingue "tiene el gateway del vendor" de "usa el módulo de awareness"
+    const unconfirmed = (v.productConfirmed === false)
+        ? `<div class="awareness-unconfirmed">${escapeHtml(t.awareness_module_unconfirmed || '')}</div>`
+        : '';
+
+    return `
+    <div class="awareness-vendor-card">
+        <div class="awareness-vendor-card__header">
+            <div class="awareness-vendor-card__name-row">
+                <span class="awareness-vendor-card__name">${escapeHtml(v.displayName)}</span>
+                ${sourceBadge}
+                <span class="awareness-level-badge ${lvlClass}">${escapeHtml(lvlLabel)}</span>
+            </div>
+            <div class="awareness-vendor-card__score-row">
+                <div class="awareness-score-bar-wrap">
+                    <div class="awareness-score-bar" style="width:${pct}%; background:${color};"></div>
+                </div>
+                <span class="awareness-score-pct" style="color:${color};">${pct}%</span>
+            </div>
+        </div>
+        <div class="awareness-vendor-card__body">
+            ${unconfirmed}
+            <div class="awareness-evidence-label">${t.awareness_evidence_label || 'Evidence'}</div>
+            <div class="awareness-evidence-pills">
+                ${v.evidence.map(e => `
+                <span class="awareness-evidence-pill" title="${escapeHtml(e.value)} (${Math.round(e.weight * 100)}%)">
+                    <span class="awareness-evidence-pill__signal">${escapeHtml(signalLabel(e.signal))}</span>
+                    <span class="awareness-evidence-pill__value">${escapeHtml(e.value)}</span>
+                </span>`).join('')}
+            </div>
+            ${v.notes ? `
+            <div class="awareness-vendor-notes">
+                <span class="awareness-vendor-notes__label">${t.awareness_vendor_notes || 'Notes'}: </span>
+                <span class="awareness-vendor-notes__text">${escapeHtml(v.notes)}</span>
+            </div>` : ''}
+        </div>
+    </div>`;
+}
+
 // ---------------------------------------------------------------------------
 // renderAwarenessVendors — Awareness / Phishing Simulation Detector panel
 // ---------------------------------------------------------------------------
@@ -942,60 +995,13 @@ export function renderAwarenessVendors(result, lang, t) {
         return;
     }
 
-    const signalLabel = (sig) => t[`awareness_signal_${sig}`] || sig;
-
-    const levelClass = {
-        alta: 'awareness-level--alta',
-        media: 'awareness-level--media',
-        baja: 'awareness-level--baja',
-    };
-    const levelColorVar = {
-        alta: 'var(--accent-emerald)',
-        media: 'var(--accent-amber)',
-        baja: 'var(--accent-rose)',
-    };
-
     let html = '';
 
     // --- Vendors detectados ---
     if (result.detectedVendors && result.detectedVendors.length > 0) {
         html += '<div class="awareness-vendors-list">';
         for (const v of result.detectedVendors) {
-            const lvlLabel = t[`awareness_level_${v.level}`] || v.level;
-            const lvlClass = levelClass[v.level] || 'awareness-level--baja';
-            const pct = Math.round(v.score * 100);
-            const color = levelColorVar[v.level] || 'var(--accent-rose)';
-
-            html += `
-            <div class="awareness-vendor-card">
-                <div class="awareness-vendor-card__header">
-                    <div class="awareness-vendor-card__name-row">
-                        <span class="awareness-vendor-card__name">${escapeHtml(v.displayName)}</span>
-                        <span class="awareness-level-badge ${lvlClass}">${escapeHtml(lvlLabel)}</span>
-                    </div>
-                    <div class="awareness-vendor-card__score-row">
-                        <div class="awareness-score-bar-wrap">
-                            <div class="awareness-score-bar" style="width:${pct}%; background:${color};"></div>
-                        </div>
-                        <span class="awareness-score-pct" style="color:${color};">${pct}%</span>
-                    </div>
-                </div>
-                <div class="awareness-vendor-card__body">
-                    <div class="awareness-evidence-label">${t.awareness_evidence_label || 'Evidence'}</div>
-                    <div class="awareness-evidence-pills">
-                        ${v.evidence.map(e => `
-                        <span class="awareness-evidence-pill" title="${escapeHtml(e.value)} (${Math.round(e.weight*100)}%)">
-                            <span class="awareness-evidence-pill__signal">${escapeHtml(signalLabel(e.signal))}</span>
-                            <span class="awareness-evidence-pill__value">${escapeHtml(e.value)}</span>
-                        </span>`).join('')}
-                    </div>
-                    ${v.notes ? `
-                    <div class="awareness-vendor-notes">
-                        <span class="awareness-vendor-notes__label">${t.awareness_vendor_notes || 'Notes'}: </span>
-                        <span class="awareness-vendor-notes__text">${escapeHtml(v.notes)}</span>
-                    </div>` : ''}
-                </div>
-            </div>`;
+            html += buildAwarenessCard(v, t);
         }
         html += '</div>';
     } else {
@@ -1029,5 +1035,32 @@ export function renderAwarenessVendors(result, lang, t) {
         </div>`;
     }
 
+    // --- Herramienta: análisis de cabeceras de un correo (cubre el punto ciego DNS) ---
+    html += `<div class="awareness-header-tool">
+        <div class="awareness-evidence-label" style="margin-bottom:6px;">${t.awareness_header_title}</div>
+        <p class="awareness-header-desc">${t.awareness_header_desc}</p>
+        <textarea id="awareness-header-input" class="awareness-header-input" rows="5" placeholder="${escapeHtml(t.awareness_header_placeholder || '')}"></textarea>
+        <button type="button" id="awareness-header-btn" class="awareness-header-btn">${t.awareness_header_btn}</button>
+        <div id="awareness-header-results" class="awareness-header-results"></div>
+    </div>`;
+
     body.innerHTML = html;
+
+    // Listener del analizador de cabeceras (re-vinculado en cada render; el innerHTML
+    // anterior se descarta junto con sus listeners).
+    const headerBtn = document.getElementById('awareness-header-btn');
+    if (headerBtn) {
+        headerBtn.addEventListener('click', () => {
+            const input = document.getElementById('awareness-header-input');
+            const out = document.getElementById('awareness-header-results');
+            if (!input || !out) return;
+            const res = detectFromHeaders(input.value);
+            if (res.error || !res.detectedVendors.length) {
+                const msg = res.error === 'empty' ? t.awareness_header_empty : t.awareness_header_none;
+                out.innerHTML = `<p class="no-data" style="font-size:12px;margin-top:8px;">${msg}</p>`;
+                return;
+            }
+            out.innerHTML = `<div class="awareness-vendors-list" style="margin-top:10px;">${res.detectedVendors.map(v => buildAwarenessCard(v, t)).join('')}</div>`;
+        });
+    }
 }

@@ -772,37 +772,79 @@ export function _ipInCidr(observed, cidr) {
 // 6. crt.sh — Certificate Transparency enrichment (con caché y rate-limit)
 // ---------------------------------------------------------------------------
 const _crtCache = new Map();
-const CRT_CACHE_TTL = 60 * 60 * 1000; // 60 min (crt.sh es frágil/rate-limited)
+const CRT_CACHE_TTL = 60 * 60 * 1000; // 60 min (los logs CT son frágiles/rate-limited)
 
+// Fuente primaria: crt.sh
+async function _fetchCrtSh(domain) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 10000);
+    try {
+        const url = `https://crt.sh/?q=%.${encodeURIComponent(domain)}&output=json`;
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`crt.sh HTTP ${res.status}`);
+        const json = await res.json();
+        const names = new Set();
+        for (const entry of json) {
+            if (entry.name_value) entry.name_value.split('\n').forEach(n => names.add(n.trim().toLowerCase()));
+            if (entry.common_name) names.add(entry.common_name.trim().toLowerCase());
+        }
+        return [...names];
+    } finally {
+        clearTimeout(tid);
+    }
+}
+
+// Fuente de respaldo: Certspotter (SSLMate). API pública con CORS permisivo.
+async function _fetchCertspotter(domain) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 10000);
+    try {
+        const url = `https://api.certspotter.com/v1/issuances?domain=${encodeURIComponent(domain)}&include_subdomains=true&expand=dns_names`;
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`certspotter HTTP ${res.status}`);
+        const json = await res.json();
+        const names = new Set();
+        for (const entry of json) {
+            for (const n of (entry.dns_names || [])) names.add(String(n).trim().toLowerCase());
+        }
+        return [...names];
+    } finally {
+        clearTimeout(tid);
+    }
+}
+
+// Orquesta ambas fuentes CT: crt.sh primero; si falla o no devuelve nada, Certspotter.
+// Si ambas responden, fusiona los nombres. Degrada con elegancia (devuelve []).
 async function _queryCrt(domain) {
     const key = `crt:${domain}`;
     const cached = _crtCache.get(key);
     if (cached && Date.now() - cached.ts < CRT_CACHE_TTL) return cached.data;
 
+    const names = new Set();
+    let primaryOk = false;
     try {
-        const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 10000);
-        const url = `https://crt.sh/?q=%.${encodeURIComponent(domain)}&output=json`;
-        const res = await fetch(url, { signal: ctrl.signal });
-        clearTimeout(tid);
-        if (!res.ok) throw new Error(`crt.sh HTTP ${res.status}`);
-        const json = await res.json();
-        // Aplanar nombres comunes y SANs
-        const names = new Set();
-        for (const entry of json) {
-            if (entry.name_value) {
-                entry.name_value.split('\n').forEach(n => names.add(n.trim().toLowerCase()));
-            }
-            if (entry.common_name) names.add(entry.common_name.trim().toLowerCase());
-        }
-        const data = [...names];
-        _crtCache.set(key, { data, ts: Date.now() });
-        return data;
-    } catch {
-        _crtCache.set(key, { data: [], ts: Date.now() }); // cacheamos fallo para no saturar
-        return [];
+        for (const n of await _fetchCrtSh(domain)) names.add(n);
+        primaryOk = true;
+    } catch { /* probamos la fuente de respaldo */ }
+
+    // Usamos Certspotter si crt.sh falló o no devolvió nada.
+    if (!primaryOk || names.size === 0) {
+        try {
+            for (const n of await _fetchCertspotter(domain)) names.add(n);
+        } catch { /* ambas fuentes no disponibles */ }
     }
+
+    const data = [...names];
+    _crtCache.set(key, { data, ts: Date.now() }); // cacheamos incluso el fallo para no saturar
+    return data;
 }
+
+// Señales INDIRECTAS: indican el gateway de correo del vendor o co-ubicación, pero
+// NO confirman que el módulo de awareness esté contratado/desplegado.
+const INDIRECT_SIGNALS = new Set([
+    'mx_hint_exact', 'mx_hint_substring', 'correlated_seg', 'gateway_spf',
+    'cert_transparency', 'dkim_selector_weak',
+]);
 
 // ---------------------------------------------------------------------------
 // 7. DETECCIÓN PRINCIPAL
@@ -855,10 +897,16 @@ export async function detectAwarenessVendors(domain) {
     try { crtNames = await _queryCrt(domain); } catch { /* silencio */ }
 
     // --- CNAME Probing ---
+    // Subdominios típicos de landing/tracking de campañas de awareness, delegados
+    // (CNAME) a la infraestructura del vendor. El destino del CNAME se verifica
+    // después contra la infra del vendor (no basta con que el subdominio exista).
     const AWARENESS_SUBDOMAINS = [
-        'click', 'track', 'phish', 'phishtest', 'training', 'awareness',
-        'security-training', 'learn', 'simulate', 'campaign',
-        'mail-test', 'phishing-test', 'sat', 'cb', 'knowbe4'
+        'click', 'clicks', 'track', 'tracking', 'link', 'links', 'go',
+        'phish', 'phishtest', 'phishing', 'phishing-test', 'mail-test',
+        'training', 'train', 'awareness', 'security-training', 'securityawareness',
+        'learn', 'learning', 'lms', 'academy', 'simulate', 'simulation', 'sim',
+        'campaign', 'campaigns', 'sat', 'cb', 'knowbe4', 'kb4', 'hoxhunt',
+        'cofense', 'phishme', 'proofpoint', 'mimecast', 'email-security'
     ];
     const cnameResults = {};
     await Promise.all(AWARENESS_SUBDOMAINS.map(async sub => {
@@ -956,22 +1004,31 @@ export async function detectAwarenessVendors(domain) {
             evidence.push({ signal: 'dmarc_rua', value: fp.dmarcRuaHint, weight: w.dmarc ?? 0.4 });
         }
 
-        // 7g. DKIM: sondear SOLO selectores conocidos del diccionario
+        // 7g. DKIM: sondear SOLO selectores conocidos del diccionario.
+        // Correlación estricta: el peso fuerte se reserva para cuando el registro del
+        // selector REFERENCIA al vendor — bien porque está CNAME-ado a su dominio
+        // firmante (setup real de safelisting: `psm._domainkey.cliente → ...knowbe4.com`),
+        // bien porque el TXT lo menciona. Si el selector (con nombre del vendor) solo
+        // resuelve a una clave genérica que no referencia al vendor, es un indicio débil
+        // (el cliente podría tener una clave propia en ese nombre).
         for (const sel of (fp.dkimSelectors || [])) {
-            let hit = false;
             try {
                 const txts = await _getTxt(`${sel}._domainkey.${domain}`);
-                if (txts.some(t => {
+                let signingMatch = false;
+                let hasKey = false;
+                for (const t of txts) {
                     const lt = t.toLowerCase();
-                    return lt.includes('v=dkim1') ||
-                           (fp.dkimSigningDomains || []).some(sd => lt.includes(sd.toLowerCase()));
-                })) {
-                    hit = true;
+                    if (lt.includes('v=dkim1') || lt.includes('p=')) hasKey = true;
+                    if ((fp.dkimSigningDomains || []).some(sd => lt.includes(sd.toLowerCase()))) {
+                        signingMatch = true;
+                    }
+                }
+                if (signingMatch) {
+                    evidence.push({ signal: 'dkim_selector', value: sel, weight: w.dkim ?? 0.85 });
+                } else if (hasKey) {
+                    evidence.push({ signal: 'dkim_selector_weak', value: sel, weight: w.dkimSelectorOnly ?? 0.5 });
                 }
             } catch { /* NXDOMAIN es normal */ }
-            if (hit) {
-                evidence.push({ signal: 'dkim_selector', value: sel, weight: w.dkim ?? 0.85 });
-            }
         }
 
         // 7h. Certificate Transparency (crt.sh)
@@ -985,21 +1042,26 @@ export async function detectAwarenessVendors(domain) {
             }
         }
 
-        // 7i. CNAME Probe
-        for (const sub of (fp.cnameSubdomains || [])) {
-            const targets = cnameResults[sub];
-            if (targets) {
-                for (const target of targets) {
-                    const matchesInfra = (fp.infraDomains || []).some(id => target.includes(id));
-                    const matchesDkimSig = (fp.dkimSigningDomains || []).some(dsd => target.includes(dsd));
-                    if (matchesInfra || matchesDkimSig) {
-                        evidence.push({
-                            signal: 'cname_probe',
-                            value: `${sub} -> ${target}`,
-                            weight: w.cname ?? 0.95
-                        });
-                        break;
-                    }
+        // 7i. CNAME Probe — cualquier subdominio del cliente cuyo CNAME apunte a infra
+        // del vendor (se VERIFICA el destino, no basta con que el subdominio exista).
+        const vendorCnameTargets = [
+            ...(fp.infraDomains || []),
+            ...(fp.assetDomains || []),
+            ...(fp.dkimSigningDomains || []),
+            ...(fp.crtPatterns || []),
+        ];
+        let cnameMatched = false;
+        for (const [sub, targets] of Object.entries(cnameResults)) {
+            if (cnameMatched) break;
+            for (const target of targets) {
+                if (vendorCnameTargets.some(vt => vt && target.includes(vt))) {
+                    evidence.push({
+                        signal: 'cname_probe',
+                        value: `${sub} -> ${target}`,
+                        weight: w.cname ?? 0.95
+                    });
+                    cnameMatched = true;
+                    break;
                 }
             }
         }
@@ -1058,12 +1120,18 @@ export async function detectAwarenessVendors(domain) {
             // Score combinado: 1 - Π(1 - peso_i)  → nunca pasa de 1
             const score = 1 - evidence.reduce((acc, e) => acc * (1 - e.weight), 1);
             const rounded = Math.round(score * 100) / 100;
+            // productConfirmed: ¿hay evidencia DIRECTA del módulo de awareness, o solo
+            // señales indirectas (su gateway de correo / co-ubicación)? Un MX de
+            // Proofpoint/Mimecast prueba su email security gateway, no que tengan
+            // contratado el módulo de concienciación.
+            const productConfirmed = evidence.some(e => !INDIRECT_SIGNALS.has(e.signal));
             detected.push({
                 vendor: key,
                 displayName: fp.displayName,
                 score: rounded,
                 level: rounded >= 0.75 ? 'alta' : rounded >= 0.45 ? 'media' : 'baja',
                 evidence,
+                productConfirmed,
                 notes: fp.notes || null,
             });
         }
@@ -1109,3 +1177,54 @@ export function mergeFingerprints(externalFPs) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// 9. DICCIONARIO VERSIONADO Y ACTUALIZABLE
+//    Permite mantener las firmas al día sin tocar código: cargar un JSON de
+//    fingerprints desde localStorage (persistente) o desde una URL remota.
+// ---------------------------------------------------------------------------
+export const AWARENESS_DICT_VERSION = '2026-06-05';
+
+const CUSTOM_FP_STORAGE_KEY = 'custom_awareness_fp';
+
+/** Fusiona en el diccionario los fingerprints personalizados guardados en localStorage. */
+export function loadCustomFingerprints() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(CUSTOM_FP_STORAGE_KEY);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        mergeFingerprints(obj);
+        return obj;
+    } catch {
+        return null;
+    }
+}
+
+/** Persiste (y fusiona) un objeto de fingerprints personalizados en localStorage. */
+export function saveCustomFingerprints(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    mergeFingerprints(obj);
+    if (typeof localStorage === 'undefined') return true;
+    try {
+        let stored = {};
+        const raw = localStorage.getItem(CUSTOM_FP_STORAGE_KEY);
+        if (raw) stored = JSON.parse(raw);
+        localStorage.setItem(CUSTOM_FP_STORAGE_KEY, JSON.stringify({ ...stored, ...obj }));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** Descarga un JSON de fingerprints desde una URL, lo fusiona y lo persiste. */
+export async function loadFingerprintsFromUrl(url) {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const obj = await res.json();
+    saveCustomFingerprints(obj);
+    return obj;
+}
+
+// Auto-carga de fingerprints personalizados al importar el módulo (no-op en Node/tests).
+loadCustomFingerprints();
