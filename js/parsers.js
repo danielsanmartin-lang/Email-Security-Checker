@@ -101,30 +101,42 @@ export function parseMTASTSPolicy(text) {
     return result;
 }
 
+/** Extrae max_age (segundos) de una política MTA-STS parseada; null si ausente/ inválido. */
+export function parseMaxAge(parsed) {
+    if (!parsed || parsed.max_age == null) return null;
+    const n = parseInt(String(parsed.max_age).trim(), 10);
+    return Number.isFinite(n) ? n : null;
+}
+
 /**
  * Validate fetched MTA-STS policy: HTTP 200, version STSv1, mode enforce.
+ * Nota: `max_age` NO afecta a la validez aquí (se expone como `maxAge` para que la
+ * capa de scoring emita un aviso si falta o es muy bajo, sin invalidar la política).
  * @param {{ httpStatus: number|null, parsed: object|null }} policyFetch
  */
 export function validateMTASTSPolicy(policyFetch) {
+    const maxAge = parseMaxAge(policyFetch?.parsed);
     if (!policyFetch || policyFetch.httpStatus !== 200) {
         return {
             valid: false,
             reason: policyFetch?.httpStatus ? 'http_status' : 'fetch_failed',
             mode: policyFetch?.parsed?.mode
                 ? String(policyFetch.parsed.mode).toLowerCase()
-                : policyFetch?.mode || null
+                : policyFetch?.mode || null,
+            maxAge
         };
     }
     const parsed = policyFetch.parsed;
     if (!parsed) {
-        return { valid: false, reason: 'parse_error', mode: null };
+        return { valid: false, reason: 'parse_error', mode: null, maxAge };
     }
     const version = parsed.version ? String(parsed.version).toUpperCase() : '';
     if (version !== 'STSV1') {
         return {
             valid: false,
             reason: 'invalid_version',
-            mode: parsed.mode ? String(parsed.mode).toLowerCase() : null
+            mode: parsed.mode ? String(parsed.mode).toLowerCase() : null,
+            maxAge
         };
     }
     const mode = parsed.mode ? String(parsed.mode).toLowerCase() : '';
@@ -132,8 +144,98 @@ export function validateMTASTSPolicy(policyFetch) {
         return {
             valid: false,
             reason: mode ? 'mode_not_enforce' : 'missing_mode',
-            mode: mode || null
+            mode: mode || null,
+            maxAge
         };
     }
-    return { valid: true, reason: null, mode: 'enforce' };
+    return { valid: true, reason: null, mode: 'enforce', maxAge };
+}
+
+// ===== Análisis de registro DKIM (fuerza de clave, algoritmo, revocación) =====
+
+const _B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** Decodifica base64 a array de bytes (sin depender de atob/Buffer, portable navegador+Node). */
+function _b64ToBytes(b64) {
+    const clean = String(b64).replace(/[^A-Za-z0-9+/]/g, '');
+    const bytes = [];
+    let buffer = 0;
+    let bits = 0;
+    for (const ch of clean) {
+        const val = _B64_ALPHABET.indexOf(ch);
+        if (val < 0) continue;
+        buffer = (buffer << 6) | val;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            bytes.push((buffer >> bits) & 0xff);
+        }
+    }
+    return bytes;
+}
+
+function _readDerLen(bytes, i) {
+    let len = bytes[i++];
+    if (len & 0x80) {
+        const n = len & 0x7f;
+        len = 0;
+        for (let k = 0; k < n; k++) len = (len << 8) | bytes[i++];
+    }
+    return { len, next: i };
+}
+
+/**
+ * Devuelve la longitud en bits del módulo RSA a partir de un SubjectPublicKeyInfo DER.
+ * Recorre: SEQ { SEQ(algId) , BITSTRING { SEQ { INTEGER(modulus), INTEGER(exp) } } }.
+ * @returns {number|null} bits del módulo, o null si no se pudo parsear.
+ */
+export function rsaModulusBits(spkiBytes) {
+    try {
+        let i = 0;
+        if (spkiBytes[i++] !== 0x30) return null; // SEQUENCE (SPKI)
+        ({ next: i } = _readDerLen(spkiBytes, i));
+        if (spkiBytes[i++] !== 0x30) return null; // SEQUENCE (AlgorithmIdentifier)
+        const algInfo = _readDerLen(spkiBytes, i);
+        i = algInfo.next + algInfo.len; // saltar el algoritmo
+        if (spkiBytes[i++] !== 0x03) return null; // BIT STRING
+        ({ next: i } = _readDerLen(spkiBytes, i));
+        i += 1; // byte de bits no usados
+        if (spkiBytes[i++] !== 0x30) return null; // SEQUENCE (RSAPublicKey)
+        ({ next: i } = _readDerLen(spkiBytes, i));
+        if (spkiBytes[i++] !== 0x02) return null; // INTEGER (modulus)
+        let modLen;
+        ({ len: modLen, next: i } = _readDerLen(spkiBytes, i));
+        // Quitar el byte 0x00 de signo si está presente
+        if (spkiBytes[i] === 0x00) modLen -= 1;
+        return modLen > 0 ? modLen * 8 : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Analiza un registro DKIM (v=DKIM1; k=...; p=...; t=...).
+ * @returns {{ revoked: boolean, algorithm: string, keyBits: number|null, testing: boolean }}
+ */
+export function analyzeDKIMRecord(record) {
+    const tags = {};
+    for (const part of String(record || '').split(';')) {
+        const eq = part.indexOf('=');
+        if (eq > 0) tags[part.substring(0, eq).trim().toLowerCase()] = part.substring(eq + 1).trim();
+    }
+    const algorithm = (tags.k || 'rsa').toLowerCase();
+    const flags = (tags.t || '').toLowerCase().split(':').map(s => s.trim());
+    const testing = flags.includes('y');
+    const p = tags.p !== undefined ? tags.p.replace(/\s+/g, '') : undefined;
+
+    // p= vacío ⇒ clave revocada (RFC 6376 §3.6.1)
+    if (p === '') {
+        return { revoked: true, algorithm, keyBits: null, testing };
+    }
+
+    let keyBits = null;
+    if (p && algorithm === 'rsa') {
+        keyBits = rsaModulusBits(_b64ToBytes(p));
+    }
+    return { revoked: false, algorithm, keyBits, testing };
 }

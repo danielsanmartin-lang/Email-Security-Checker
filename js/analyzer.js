@@ -1,5 +1,5 @@
 import { KB } from './knowledge.js';
-import { parseSPF, parseDMARC } from './parsers.js';
+import { parseSPF, parseDMARC, analyzeDKIMRecord } from './parsers.js';
 
 export function identifyMX(host, domain) {
     const h = host.toLowerCase();
@@ -402,7 +402,8 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         tlsRpt: advancedData.tlsRpt || null,
         tlsrptReporters,
         srvRecords: advancedData.srvRecords || null,
-        daneRecords: advancedData.daneRecords || null
+        daneRecords: advancedData.daneRecords || null,
+        dnssec: advancedData.dnssec || null
     };
 }
 
@@ -413,6 +414,8 @@ export const SCORE_WEIGHTS = {
     spfMultiple: -10,
     spfAllPass: -25,
     spfAllNeutral: -15,
+    spfNoAll: -10,
+    spfPtr: -5,
     spfLookupsOk: 10,
     dmarcPresent: 20,
     dmarcMultiple: -10,
@@ -422,11 +425,17 @@ export const SCORE_WEIGHTS = {
     dmarcVersionInvalid: -10,
     dmarcPolicyInvalid: -25,
     dmarcReporting: 5,
+    dmarcSpWeak: -10,
+    dmarcPctPartial: -5,
+    dmarcExternalUnauthorized: -10,
     dkim: 10,
+    dkimWeakKey: -10,
+    dkimRevoked: -5,
     bimi: 5,
     mtaStsValid: 5,
     mtaStsInvalid: -15,
-    dane: 5
+    dane: 5,
+    dnssec: 5
 };
 
 // Suma teórica de los aportes positivos (máximo alcanzable antes de acotar).
@@ -474,6 +483,15 @@ const SCORE_CHECKS = [
             } else if (q === '-') {
                 findings.push({ status: 'success', key: 'finding_spf_all_hardfail' });
             }
+        } else {
+            // Sin mecanismo 'all' ⇒ política por defecto neutral (?all): no protege.
+            points += SCORE_WEIGHTS.spfNoAll;
+            findings.push({ status: 'warning', key: 'finding_spf_no_all' });
+        }
+        // El mecanismo 'ptr' está desaconsejado (RFC 7208 §5.5): lento y poco fiable.
+        if (result.spfEntries && result.spfEntries.some(e => e.type === 'ptr')) {
+            points += SCORE_WEIGHTS.spfPtr;
+            findings.push({ status: 'warning', key: 'finding_spf_ptr' });
         }
         const spfLookups = result.spfLookups || 0;
         if (spfLookups <= 10) {
@@ -532,15 +550,78 @@ const SCORE_CHECKS = [
         } else {
             findings.push({ status: 'warning', key: 'finding_dmarc_reporting_err' });
         }
+
+        // Política de subdominios (sp): un sp más débil que p abre un hueco en *.dominio
+        if (result.dmarcParsed) {
+            const p = (result.dmarcParsed.p || 'none').toLowerCase();
+            const sp = result.dmarcParsed.sp ? result.dmarcParsed.sp.toLowerCase() : null;
+            const rank = { none: 0, quarantine: 1, reject: 2 };
+            if (sp && rank[sp] != null && rank[p] != null && rank[sp] < rank[p]) {
+                points += SCORE_WEIGHTS.dmarcSpWeak;
+                findings.push({ status: 'warning', key: 'finding_dmarc_sp_weak', replacements: { '{sp}': sp.toUpperCase(), '{p}': p.toUpperCase() } });
+            }
+            // pct < 100: la política solo se aplica a una fracción del correo
+            const pct = result.dmarcParsed.pct != null ? parseInt(result.dmarcParsed.pct, 10) : 100;
+            if (Number.isFinite(pct) && pct < 100) {
+                points += SCORE_WEIGHTS.dmarcPctPartial;
+                findings.push({ status: 'warning', key: 'finding_dmarc_pct_partial', replacements: { '{pct}': String(pct) } });
+            }
+            // Alineación estricta (adkim/aspf = s) — informativo
+            const adkim = (result.dmarcParsed.adkim || 'r').toLowerCase();
+            const aspf = (result.dmarcParsed.aspf || 'r').toLowerCase();
+            if (adkim === 's' && aspf === 's') {
+                findings.push({ status: 'info', key: 'finding_dmarc_alignment_strict' });
+            }
+        }
+
+        // Autorización de destinos de informe EXTERNOS (RFC 7489 §7.1)
+        if (Array.isArray(result.dmarcExternalAuth) && result.dmarcExternalAuth.length > 0) {
+            const unauthorized = result.dmarcExternalAuth.filter(d => d.authorized === false);
+            const unverifiable = result.dmarcExternalAuth.filter(d => d.authorized === null);
+            if (unauthorized.length > 0) {
+                points += SCORE_WEIGHTS.dmarcExternalUnauthorized;
+                findings.push({ status: 'error', key: 'finding_dmarc_rua_unauthorized', replacements: { '{dest}': unauthorized.map(d => d.destDomain).join(', ') } });
+            } else if (unverifiable.length === 0) {
+                findings.push({ status: 'success', key: 'finding_dmarc_rua_authorized' });
+            }
+        }
         return { points, findings };
     },
 
     function dkim(result) {
-        const count = dkimCountOf(result);
-        if (count > 0) {
-            return { points: SCORE_WEIGHTS.dkim, findings: [{ status: 'success', key: 'finding_dkim_ok', replacements: { '{count}': count } }] };
+        const records = (result.dkimRecords && result.dkimRecords.records) || [];
+        const count = records.length;
+        // Ausencia: NO penaliza. La detección prueba selectores comunes (best-effort);
+        // un selector personalizado válido no se detecta y no debe bajar la nota.
+        if (count === 0) {
+            return { points: 0, findings: [{ status: 'info', key: 'finding_dkim_besteffort' }] };
         }
-        return { points: 0, findings: [{ status: 'warning', key: 'finding_dkim_err' }] };
+
+        let points = SCORE_WEIGHTS.dkim;
+        const findings = [{ status: 'success', key: 'finding_dkim_ok', replacements: { '{count}': count } }];
+
+        const analyses = records.map(r => ({ selector: r.selector, ...analyzeDKIMRecord(r.record) }));
+        const revoked = analyses.filter(a => a.revoked);
+        const weak = analyses.filter(a => !a.revoked && a.keyBits != null && a.keyBits < 1024);
+        const deprecated = analyses.filter(a => !a.revoked && a.keyBits === 1024);
+        const testing = analyses.filter(a => a.testing);
+
+        if (revoked.length > 0) {
+            points += SCORE_WEIGHTS.dkimRevoked;
+            findings.push({ status: 'warning', key: 'finding_dkim_revoked', replacements: { '{selectors}': revoked.map(a => a.selector).join(', ') } });
+        }
+        if (weak.length > 0) {
+            points += SCORE_WEIGHTS.dkimWeakKey;
+            const w = weak[0];
+            findings.push({ status: 'error', key: 'finding_dkim_weak_key', replacements: { '{selector}': w.selector, '{bits}': String(w.keyBits) } });
+        }
+        if (deprecated.length > 0) {
+            findings.push({ status: 'warning', key: 'finding_dkim_key_1024', replacements: { '{selectors}': deprecated.map(a => a.selector).join(', ') } });
+        }
+        if (testing.length > 0) {
+            findings.push({ status: 'info', key: 'finding_dkim_testing', replacements: { '{selectors}': testing.map(a => a.selector).join(', ') } });
+        }
+        return { points, findings };
     },
 
     function bimi(result) {
@@ -556,7 +637,15 @@ const SCORE_CHECKS = [
             return { points: 0, findings: [{ status: 'info', key: 'finding_mta_sts_err' }] };
         }
         if (result.mtaSts.policy?.valid) {
-            return { points: SCORE_WEIGHTS.mtaStsValid, findings: [{ status: 'success', key: 'finding_mta_sts_ok' }] };
+            const findings = [{ status: 'success', key: 'finding_mta_sts_ok' }];
+            const maxAge = result.mtaSts.policy.maxAge;
+            // RFC 8461: max_age es obligatorio; se recomienda ≥ 604800 s (1 semana).
+            if (maxAge == null || Number.isNaN(maxAge)) {
+                findings.push({ status: 'warning', key: 'finding_mta_sts_no_maxage' });
+            } else if (maxAge < 604800) {
+                findings.push({ status: 'warning', key: 'finding_mta_sts_low_maxage', replacements: { '{maxage}': String(maxAge) } });
+            }
+            return { points: SCORE_WEIGHTS.mtaStsValid, findings };
         }
         const policy = result.mtaSts.policy || {};
         const replacements = {};
@@ -590,6 +679,13 @@ const SCORE_CHECKS = [
             return { points: SCORE_WEIGHTS.dane, findings: [{ status: 'success', key: 'finding_dane_ok' }] };
         }
         return { points: 0, findings: [{ status: 'info', key: 'finding_dane_err' }] };
+    },
+
+    function dnssec(result) {
+        if (result.dnssec && result.dnssec.signed) {
+            return { points: SCORE_WEIGHTS.dnssec, findings: [{ status: 'success', key: 'finding_dnssec_ok' }] };
+        }
+        return { points: 0, findings: [{ status: 'info', key: 'finding_dnssec_err' }] };
     },
 
     function srv(result) {

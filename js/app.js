@@ -1,4 +1,4 @@
-import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE } from './api.js';
+import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists } from './api.js';
 import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
 import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
@@ -6,7 +6,7 @@ import { KB } from './knowledge.js';
 import { getLanguage, setLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { detectAwarenessVendors } from './awarenessDetector.js';
-import { normalizeDomain } from './utils.js';
+import { normalizeDomain, isValidDomain } from './utils.js';
 
 export const state = {
     currentDomain: '',
@@ -21,16 +21,31 @@ async function runAnalysis(domain, dkimSelector = null) {
         input.value = domain;
     }
 
+    const lang = getLanguage();
+    const t = translations[lang];
+
+    // Validación de formato (IDN ya normalizado a punycode) antes de consultar nada.
+    if (!isValidDomain(domain)) {
+        document.getElementById('error-message').textContent = t.error_invalid_domain || t.error_default_message;
+        showSection('error-section');
+        return;
+    }
+
     const btn = document.getElementById('search-btn');
     btn.classList.add('loading');
     showSection('loading-section');
-    
+
     ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis', 'step-awareness'].forEach(s => setStep(s, null));
-    
-    const lang = getLanguage();
-    const t = translations[lang];
-    
+
     try {
+        // Comprobación de existencia del dominio (distingue NXDOMAIN de "sin registros").
+        const exists = await checkDomainExists(domain);
+        if (!exists) {
+            const e = new Error('Domain not found');
+            e.code = 'nxdomain';
+            throw e;
+        }
+
         // ===== Fase 1: consultas DNS independientes en paralelo =====
         // Cada consulta marca su propio paso como 'done' al resolverse, conservando
         // el feedback por pasos pero ejecutándose concurrentemente.
@@ -45,7 +60,8 @@ async function runAnalysis(domain, dkimSelector = null) {
             getMTASTS(domain),
             getTLSRPT(domain),
             getNS(domain),
-            getSRV(domain)
+            getSRV(domain),
+            getDNSSEC(domain)
         ]).then(r => { setStep('step-advanced', 'done'); return r; });
 
         // SPF tree, lookups y DKIM dependen del registro SPF
@@ -66,7 +82,7 @@ async function runAnalysis(domain, dkimSelector = null) {
         ]);
         const spfLookups = spfTree ? spfTree.lookups : 0;
         const dmarcRaw = dmarcData.record;
-        const [allTxtRecords, mtaSts, tlsRpt, nsRecords, srvRecords] = advanced;
+        const [allTxtRecords, mtaSts, tlsRpt, nsRecords, srvRecords, dnssec] = advanced;
 
         // Process advanced data
         const txtVerifications = identifyTXTVerifications(allTxtRecords);
@@ -109,6 +125,7 @@ async function runAnalysis(domain, dkimSelector = null) {
             dmarcData,
             srvRecords,
             daneRecords,
+            dnssec,
             spfTree,
             dkimSelectors: (dkimRecords.records || []).map(r => r.selector)
         });
@@ -117,6 +134,16 @@ async function runAnalysis(domain, dkimSelector = null) {
         result.dkimRecords = dkimRecords;
         result.bimiRecord = bimiRecord;
         result.rblResults = rblResults;
+
+        // Autorización de destinos de informe DMARC externos (RFC 7489 §7.1).
+        const dmarcUris = [...(result.dmarcRua || []), ...(result.dmarcRuf || [])];
+        try {
+            result.dmarcExternalAuth = await checkDMARCExternalAuth(domain, dmarcUris);
+        } catch (err) {
+            console.warn('DMARC external auth check failed:', err);
+            result.dmarcExternalAuth = [];
+        }
+
         result.scoreCard = calculateScoreAndFindings(result);
         
         state.currentDomain = domain;
@@ -139,7 +166,15 @@ async function runAnalysis(domain, dkimSelector = null) {
         showSection('results-section');
     } catch (err) {
         console.error(err);
-        document.getElementById('error-message').textContent = err.message || t.error_default_message;
+        let message;
+        if (err.code === 'nxdomain') {
+            message = (t.error_domain_not_found || '').replace('{domain}', domain) || t.error_default_message;
+        } else if (err.code === 'network') {
+            message = t.error_network || t.error_default_message;
+        } else {
+            message = err.message || t.error_default_message;
+        }
+        document.getElementById('error-message').textContent = message;
         showSection('error-section');
     } finally {
         btn.classList.remove('loading');

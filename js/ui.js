@@ -499,6 +499,16 @@ export function renderResults(domain, result) {
 
     const repBody = document.getElementById('dmarc-reporting-body');
     if (result.dmarcRua.length > 0 || result.dmarcRuf.length > 0) {
+        const extAuth = {};
+        (result.dmarcExternalAuth || []).forEach(d => { extAuth[d.uri] = d; });
+        // Badge de autorización para destinos externos (RFC 7489 §7.1)
+        const authBadge = (uri) => {
+            const d = extAuth[uri];
+            if (!d) return '';
+            if (d.authorized === true) return `<div class="reporting-item__service" style="color:var(--accent-emerald);">✓ ${escapeHtml(t.dmarc_ext_authorized)} (${escapeHtml(d.destDomain)})</div>`;
+            if (d.authorized === false) return `<div class="reporting-item__service" style="color:var(--accent-rose);">✗ ${escapeHtml(t.dmarc_ext_unauthorized)} (${escapeHtml(d.destDomain)})</div>`;
+            return `<div class="reporting-item__service" style="color:var(--text-muted);">? ${escapeHtml(t.dmarc_ext_unverifiable)} (${escapeHtml(d.destDomain)})</div>`;
+        };
         let html = '';
         for (const rua of result.dmarcRua) {
             const reporter = identifyDMARCReporter(rua);
@@ -506,6 +516,7 @@ export function renderResults(domain, result) {
                 <div class="reporting-item__type">RUA (${t.dmarc_aggregate})</div>
                 <div class="reporting-item__value">${escapeHtml(rua)}</div>
                 ${reporter ? `<div class="reporting-item__service">${t.tool_label}: ${escapeHtml(reporter)}</div>` : ''}
+                ${authBadge(rua)}
             </div>`;
         }
         for (const ruf of result.dmarcRuf) {
@@ -514,6 +525,7 @@ export function renderResults(domain, result) {
                 <div class="reporting-item__type">RUF (${t.dmarc_forensic})</div>
                 <div class="reporting-item__value">${escapeHtml(ruf)}</div>
                 ${reporter ? `<div class="reporting-item__service">${t.tool_label}: ${escapeHtml(reporter)}</div>` : ''}
+                ${authBadge(ruf)}
             </div>`;
         }
         repBody.innerHTML = html;
@@ -596,14 +608,20 @@ export function renderReputation(rblResults, lang, t) {
     }
 
     let anyListed = false;
+    let anyError = false;
     let html = '';
 
     for (const entry of rblResults) {
         let checksHTML = '';
         for (const check of entry.checks) {
-            if (check.listed) anyListed = true;
-            const cls = check.listed ? 'rbl-check__badge--listed' : 'rbl-check__badge--clean';
-            const label = check.listed ? (t.rbl_listed || 'Listed') : (t.rbl_clean || 'Clean');
+            // status: 'listed' | 'clean' | 'error' (inconcluso). Compat: si no hay status, usar listed.
+            const status = check.status || (check.listed ? 'listed' : 'clean');
+            if (status === 'listed') anyListed = true;
+            if (status === 'error') anyError = true;
+            let cls = 'rbl-check__badge--clean';
+            let label = t.rbl_clean || 'Clean';
+            if (status === 'listed') { cls = 'rbl-check__badge--listed'; label = t.rbl_listed || 'Listed'; }
+            else if (status === 'error') { cls = 'rbl-check__badge--error'; label = t.rbl_inconclusive || 'Inconclusive'; }
             checksHTML += `<div class="rbl-check">
                 <span class="rbl-check__name">${escapeHtml(check.rbl)}</span>
                 <span class="rbl-check__badge ${cls}">${escapeHtml(label)}</span>
@@ -619,12 +637,19 @@ export function renderReputation(rblResults, lang, t) {
         </div>`;
     }
 
+    // Aviso best-effort: las DNSBL suelen rechazar consultas vía resolvers DoH públicos.
+    html += `<p class="rbl-disclaimer" style="margin-top:10px;font-size:11px;color:var(--text-muted);font-style:italic;">${escapeHtml(t.rbl_disclaimer || '')}</p>`;
+
     body.innerHTML = html;
 
     if (anyListed) {
         badge.textContent = t.rbl_badge_listed || '⚠ Listed';
         badge.style.background = 'rgba(239,68,68,0.15)';
         badge.style.color = 'var(--accent-rose)';
+    } else if (anyError) {
+        badge.textContent = t.rbl_badge_inconclusive || '? Inconclusive';
+        badge.style.background = 'rgba(245,158,11,0.15)';
+        badge.style.color = 'var(--accent-amber)';
     } else {
         badge.textContent = t.rbl_badge_clean || '✓ Clean';
         badge.style.background = 'rgba(16,185,129,0.15)';
@@ -818,6 +843,25 @@ export function renderAdvancedDNS(result, lang, t) {
         html += `<div class="advanced-dns-section__body">${daneBody}</div>`;
     } else {
         html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_dane_none}</p></div>`;
+    }
+    html += '</div>';
+
+    // === DNSSEC ===
+    const dnssecSigned = result.dnssec && result.dnssec.signed;
+    html += '<div class="advanced-dns-section">';
+    html += `<div class="advanced-dns-section__header">
+        <h4 class="advanced-dns-section__title">${t.adv_dnssec_title}</h4>
+        <span class="advanced-dns-section__badge ${dnssecSigned ? 'badge--success' : 'badge--neutral'}">${dnssecSigned ? t.adv_dnssec_signed : t.adv_dnssec_unsigned}</span>
+    </div>`;
+    if (dnssecSigned) {
+        html += `<div class="advanced-dns-section__body">
+            <div class="info-block">
+                <div class="info-block__detail">${t.adv_dnssec_signed_desc}</div>
+                ${result.dnssec.ad ? `<div class="info-block__detail" style="color:var(--accent-emerald);margin-top:4px;">${t.adv_dnssec_validated}</div>` : ''}
+            </div>
+        </div>`;
+    } else {
+        html += `<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_dnssec_desc}</p></div>`;
     }
     html += '</div>';
 

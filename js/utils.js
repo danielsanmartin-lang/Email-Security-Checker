@@ -60,6 +60,28 @@ export function normalizeDomain(input) {
     domain = domain
         .replace(/^https?:\/\//, '')
         .replace(/\/.*$/, '')
+        .replace(/:\d+$/, '')
         .replace(/^www\./, '');
+    // IDN → punycode (ASCII). La API URL convierte automáticamente dominios con
+    // acentos/no-ASCII (p. ej. "café.com" → "xn--caf-dma.com"). Disponible en
+    // navegador y en Node. Si falla, se conserva el valor ya saneado.
+    try {
+        const host = new URL(`http://${domain}`).hostname;
+        if (host) domain = host;
+    } catch {
+        /* entrada no parseable como URL: mantener el valor saneado */
+    }
     return domain;
+}
+
+/**
+ * Valida que una cadena tenga forma de nombre de dominio (ASCII/punycode) con al
+ * menos un punto (un TLD). No comprueba existencia en DNS.
+ * @param {string} domain
+ * @returns {boolean}
+ */
+export function isValidDomain(domain) {
+    if (!domain || typeof domain !== 'string') return false;
+    if (domain.length > 253) return false;
+    return /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(domain);
 }

@@ -226,9 +226,15 @@ export function generateReportHTML() {
             <div style="margin-top: 15px;">
                 ${currentResult.rblResults.map(mxRes => {
                     const checkLines = mxRes.checks ? mxRes.checks.map(check => {
-                        const statusBadge = check.listed
-                            ? `<span style="background-color: #fee2e2; color: #b91c1c; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-family: sans-serif;">${t.rbl_badge_listed}</span>`
-                            : `<span style="background-color: #d1fae5; color: #065f46; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-family: sans-serif;">${t.rbl_badge_clean}</span>`;
+                        const status = check.status || (check.listed ? 'listed' : 'clean');
+                        let statusBadge;
+                        if (status === 'listed') {
+                            statusBadge = `<span style="background-color: #fee2e2; color: #b91c1c; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-family: sans-serif;">${t.rbl_badge_listed}</span>`;
+                        } else if (status === 'error') {
+                            statusBadge = `<span style="background-color: #fef3c7; color: #b45309; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-family: sans-serif;">${t.rbl_badge_inconclusive}</span>`;
+                        } else {
+                            statusBadge = `<span style="background-color: #d1fae5; color: #065f46; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-family: sans-serif;">${t.rbl_badge_clean}</span>`;
+                        }
                         return `
                             <tr style="border-bottom: 1px solid #f1f5f9;">
                                 <td style="padding: 8px; color: #475569; font-family: sans-serif; font-size: 13px; text-align: left;">${escapeHtml(check.rbl)}</td>

@@ -56,12 +56,22 @@ export async function queryDNS(name, type) {
             if (!res.ok) throw new Error(`Cloudflare DNS failed: ${res.status}`);
             data = await res.json();
         } catch (err) {
-            throw new Error(`DNS queries failed for ${name} (${type})`);
+            const e = new Error(`DNS queries failed for ${name} (${type})`);
+            e.code = 'network';
+            throw e;
         }
     }
 
     _setCache(name, type, data);
     return data;
+}
+
+// DoH RCODE: 0 = NOERROR, 3 = NXDOMAIN (dominio inexistente).
+// Devuelve false solo si el resolver confirma NXDOMAIN en el ápex del dominio.
+export async function checkDomainExists(domain) {
+    const data = await queryDNS(domain, 'NS');
+    if (data && typeof data.Status === 'number' && data.Status === 3) return false;
+    return true;
 }
 
 export async function getMX(domain) {
@@ -305,12 +315,20 @@ function expandIPv6ForRbl(ip) {
     return fullHex.split('').reverse().join('.');
 }
 
+// Comprueba una IP contra una DNSBL.
+// status: 'listed' | 'clean' | 'error'
+//   - 'listed'  : respuesta 127.0.0.x (la IP está en la lista)
+//   - 'clean'   : NXDOMAIN / sin respuesta (no listada)
+//   - 'error'   : 127.255.255.x (resolver público bloqueado/cuota) o fallo de red →
+//                 resultado NO concluyente. Muchas DNSBL (Spamhaus, SpamCop…) rechazan
+//                 las consultas que llegan vía resolvers DoH públicos (Google/Cloudflare),
+//                 por lo que estas comprobaciones son best-effort.
 export async function checkRBL(ip, rblHost) {
     try {
         let queryName;
         if (ip.includes(':')) {
             const reversed = expandIPv6ForRbl(ip);
-            if (!reversed) return { listed: false, rbl: rblHost };
+            if (!reversed) return { status: 'error', listed: false, rbl: rblHost };
             queryName = `${reversed}.${rblHost}`;
         } else {
             const reversedIp = ip.split('.').reverse().join('.');
@@ -318,12 +336,23 @@ export async function checkRBL(ip, rblHost) {
         }
         const data = await queryDNS(queryName, 'A');
         if (data && data.Answer && data.Answer.length > 0) {
-            return { listed: true, rbl: rblHost, details: data.Answer[0].data };
+            const codes = data.Answer.filter(a => a.type === 1 && a.data).map(a => a.data);
+            // 127.255.255.x ⇒ código de error de la DNSBL (consulta rechazada / cuota / resolver público)
+            if (codes.length && codes.every(c => c.startsWith('127.255.255.'))) {
+                return { status: 'error', listed: false, rbl: rblHost, details: codes[0] };
+            }
+            const listedCode = codes.find(c => c.startsWith('127.') && !c.startsWith('127.255.255.'));
+            if (listedCode) {
+                return { status: 'listed', listed: true, rbl: rblHost, details: listedCode };
+            }
+            // Respuesta presente pero fuera de 127.0.0.0/8 ⇒ no concluyente
+            return { status: 'error', listed: false, rbl: rblHost, details: codes[0] || null };
         }
     } catch (e) {
-        // NXDOMAIN or DNS failure is normal, indicating clean status
+        // Fallo de red ⇒ no concluyente (NXDOMAIN no lanza: se trata como 'clean' abajo)
+        return { status: 'error', listed: false, rbl: rblHost };
     }
-    return { listed: false, rbl: rblHost };
+    return { status: 'clean', listed: false, rbl: rblHost };
 }
 
 // ===== NEW: Advanced DNS queries for ICES detection =====
@@ -507,6 +536,52 @@ export async function getSRV(domain) {
     }));
     
     return srvRecords;
+}
+
+// Detecta si el dominio está firmado con DNSSEC.
+//   signed : hay registros DNSKEY (type 48) publicados en el ápex
+//   ad     : el resolver marcó la respuesta como Authenticated Data (validada)
+export async function getDNSSEC(domain) {
+    try {
+        const data = await queryDNS(domain, 'DNSKEY');
+        const hasDnskey = !!(data && data.Answer && data.Answer.some(a => a.type === 48));
+        const ad = !!(data && data.AD);
+        return { signed: hasDnskey || ad, hasDnskey, ad };
+    } catch (e) {
+        return { signed: false, hasDnskey: false, ad: false, error: e.message };
+    }
+}
+
+// Verifica la autorización de destinos DMARC EXTERNOS (RFC 7489 §7.1):
+// si rua/ruf apunta a un dominio distinto del analizado, ese dominio debe publicar
+// `<dominio>._report._dmarc.<destino>` con un registro v=DMARC1, o los informes se descartan.
+//   authorized: true | false | null (null = no se pudo comprobar / error de red)
+export async function checkDMARCExternalAuth(domain, uris) {
+    const results = [];
+    if (!uris || uris.length === 0) return results;
+    const analyzed = domain.toLowerCase().replace(/\.$/, '');
+    const seen = new Set();
+    for (const uri of uris) {
+        const m = String(uri).match(/mailto:[^@\s]+@([^\s!,;]+)/i);
+        if (!m) continue;
+        const destDomain = m[1].toLowerCase().replace(/\.$/, '');
+        if (destDomain === analyzed) continue; // mismo dominio: no requiere autorización
+        if (seen.has(destDomain)) continue;
+        seen.add(destDomain);
+        try {
+            const data = await queryDNS(`${analyzed}._report._dmarc.${destDomain}`, 'TXT');
+            let authorized = false;
+            if (data && data.Answer) {
+                for (const a of data.Answer) {
+                    if (/^v=DMARC1/i.test(extractTxtValue(a.data))) { authorized = true; break; }
+                }
+            }
+            results.push({ uri, destDomain, authorized });
+        } catch (e) {
+            results.push({ uri, destDomain, authorized: null });
+        }
+    }
+    return results;
 }
 
 export async function getDANE(mxHosts) {

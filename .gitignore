@@ -6,3 +6,6 @@ graphify-out/
 
 # Cobertura de tests
 coverage/
+
+# Configuración local de Claude Code (permisos y launch.json de preview)
+.claude/

@@ -9,12 +9,19 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 
 ## 💡 Características principales
 
-* **Análisis DNS en tiempo real:** Consulta registros MX, SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT y NS directamente desde el navegador vía DNS-over-HTTPS.
+* **Análisis DNS en tiempo real:** Consulta registros MX, SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, NS y **DNSSEC** directamente desde el navegador vía DNS-over-HTTPS.
 * **Identificación de Proveedores (SEGs/ICES):** Base de conocimiento local con más de 50 firmas de servicios de correo (Microsoft 365, Google Workspace, Proofpoint, Mimecast, etc.).
 * **Awareness-Vendor Detector:** Módulo dedicado que detecta plataformas de concienciación de seguridad y simulación de phishing (KnowBe4, Proofpoint SAT, Cofense, Hoxhunt, Barracuda PhishLine, etc.) a partir de señales DNS, con score de confianza y evidencia estructurada.
 * **Evaluación de Seguridad:** Diagnóstico visual del estado de las políticas de autenticación (A+ a F, 0–100 puntos).
-* **Reputación y Listas Negras (RBL):** Verificación en tiempo real de IPs de servidores MX contra listas globales.
+* **Análisis profundo de autenticación:**
+  - **DMARC**: política de subdominios (`sp`), porcentaje (`pct`), modo de alineación (`adkim`/`aspf`) y **autorización de destinos de informe externos** (`_report._dmarc`, RFC 7489).
+  - **DKIM**: validación de la **fuerza de la clave** (bits del módulo RSA), detección de claves **revocadas** (`p=` vacío) y **modo de prueba** (`t=y`). La ausencia de DKIM ya no penaliza (detección *best-effort* por selectores comunes).
+  - **SPF**: aviso de ausencia de mecanismo `all` (neutral por defecto) y de uso del mecanismo `ptr` (desaconsejado por RFC 7208).
+  - **MTA-STS**: validación de `max_age` (presencia y valor recomendado, RFC 8461).
+  - **DNSSEC**: detección de zona firmada (DNSKEY + flag `AD`) que protege la integridad de SPF/DMARC/DKIM.
+* **Reputación y Listas Negras (RBL):** Verificación en tiempo real de IPs de servidores MX contra listas globales, con interpretación de los códigos de respuesta (`listado` / `limpio` / `no concluyente`) y aviso *best-effort* — muchas DNSBL rechazan consultas vía resolvers DoH públicos.
 * **Exportaciones Premium:** Informes en Google Docs, Word (.doc) y PDF con score, hallazgos, SPF tree y DMARC detallado.
+* **Validación de entrada y errores claros:** Normalización de dominios **IDN → punycode**, validación de formato y mensajes de error diferenciados (dominio inexistente / sin conexión / formato inválido).
 * **Multilingüe:** Interfaz completa en Español e Inglés con persistencia por `localStorage`.
 
 ## 🏗️ Arquitectura del Sistema
@@ -100,23 +107,46 @@ npm install        # instala devDependencies
 
 npm test           # ejecuta toda la suite de tests (Vitest)
 npm run test:watch # modo watch
+npm run coverage   # tests + informe de cobertura (v8)
 npm run lint       # ESLint sobre js/
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (68 tests) cubre el módulo de Awareness (fixtures DNS mockeados), los parsers
-(`parseSPF`, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`, `extractTxtValue`),
-el analizador (`extractRootDomain`, `calculateScoreAndFindings`), las utilidades
-(`normalizeDomain`, helper `html``) y pruebas de integración con **jsdom** que ejecutan
-`renderResults` y la generación del informe verificando el escapado anti-XSS de extremo a
-extremo. Cada push/PR ejecuta lint + tests en CI mediante GitHub Actions
-(`.github/workflows/ci.yml`).
+La suite (**114 tests**) cubre el módulo de Awareness (fixtures DNS mockeados), los parsers
+(`parseSPF`, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`, `analyzeDKIMRecord`,
+`extractTxtValue`), el analizador (`extractRootDomain`, `calculateScoreAndFindings` y los
+nuevos findings de DMARC/DKIM/SPF/DNSSEC/MTA-STS), la capa DNS (`checkRBL`, `getDNSSEC`,
+`checkDomainExists`, `checkDMARCExternalAuth` con `fetch` mockeado), las utilidades
+(`normalizeDomain` IDN, `isValidDomain`, helper `html``) y pruebas de integración con
+**jsdom** que ejecutan `renderResults` y la generación del informe verificando el escapado
+anti-XSS de extremo a extremo.
+
+Cada push/PR ejecuta en CI mediante GitHub Actions:
+* **`ci.yml`** — lint + tests con cobertura + `npm audit` (informativo). El informe de
+  cobertura se publica como artefacto.
+* **`codeql.yml`** — análisis estático de seguridad (CodeQL, `security-extended`) en cada
+  push/PR y de forma programada semanalmente.
 
 ---
 
 ## 📅 Historial de Cambios
 
-### v2.3.0 — Detección de Capas de Seguridad Multi-Señal (Actual)
+### v2.4.0 — Precisión del Análisis, DNSSEC y Endurecimiento de Calidad (Actual)
+
+Esta versión profundiza la **exactitud** de los resultados que la herramienta presenta como verdad, además de reforzar la validación de entrada y el tooling de calidad.
+
+* **RBL más fiable (interpretación de códigos):** `checkRBL` ya no trata cualquier respuesta como "listado". Distingue **`listado`** (`127.0.0.x`), **`limpio`** (NXDOMAIN) y **`no concluyente`** (`127.255.255.x` = consulta rechazada por resolver público o fallo de red). La UI y el informe muestran el estado real y un aviso *best-effort*, porque muchas DNSBL (Spamhaus, SpamCop…) rechazan las consultas que llegan vía DoH público (Google/Cloudflare).
+* **Análisis DMARC profundo:** nuevos hallazgos para política de subdominios más débil (`sp` < `p`), aplicación parcial (`pct` < 100), alineación estricta (`adkim`/`aspf`) y, sobre todo, **autorización de destinos de informe externos** (`<dominio>._report._dmarc.<destino>`, RFC 7489 §7.1) — un fallo de configuración real que provoca que los informes se descarten. Se muestra por destino en el panel de reporting.
+* **DKIM: fuerza de clave y estado, sin falsos castigos:** `analyzeDKIMRecord` parsea el `SubjectPublicKeyInfo` (DER) y calcula los **bits del módulo RSA**, marcando claves **débiles (< 1024)**, **1024 (mínimo, recomienda 2048)**, **revocadas** (`p=` vacío) y en **modo prueba** (`t=y`). La **ausencia** de DKIM pasa a ser informativa (detección *best-effort* por selectores comunes): un selector personalizado válido ya no baja la nota.
+* **SPF: cobertura de huecos comunes:** aviso cuando **no hay mecanismo `all`** (la política por defecto es neutral `?all`) y cuando se usa el mecanismo **`ptr`** (desaconsejado por RFC 7208).
+* **MTA-STS `max_age`:** validación de presencia y valor recomendado (≥ 604800 s, RFC 8461) sin invalidar la política, expuesto como aviso.
+* **DNSSEC:** nuevo `getDNSSEC` (registros `DNSKEY` + flag `AD`), con bonificación de score, hallazgo y panel propio en DNS avanzado. La firma de la zona protege la integridad de SPF/DMARC/DKIM frente a envenenamiento de caché.
+* **Validación de entrada y errores diferenciados:** `normalizeDomain` convierte **IDN → punycode** (vía API `URL`) y quita puerto; `isValidDomain` valida el formato antes de consultar. Los errores se distinguen entre **dominio inexistente (NXDOMAIN)**, **error de red** y **formato inválido**, cada uno con su mensaje (ES/EN).
+* **Calidad y DevEx:** `playwright` movido a `devDependencies`; añadido **`@vitest/coverage-v8`** y script `npm run coverage`. CI ampliado con cobertura (artefacto) + `npm audit`, y nuevo workflow **CodeQL** (`security-extended`, también semanal). **+34 tests** nuevos (total **114**), incluyendo `js/api.test.js` con `fetch` mockeado y validación del parser DKIM contra claves RSA reales.
+
+> ⚠️ Las comprobaciones RBL son **orientativas** (best-effort): para resultados fiables se recomienda un resolver/proxy propio. Las listas de selectores/tokens por vendor siguen siendo heurísticas.
+
+### v2.3.0 — Detección de Capas de Seguridad Multi-Señal
 
 * **Detección SEG/ICES ponderada y multi-señal**: La identificación de capas de seguridad dejó de ser binaria. Ahora `detectSecurityLayers` agrega evidencia de varias fuentes y calcula una **confianza por vendor** (noisy-OR → nivel Alta/Media/Baja), mostrada en la UI y en el informe junto a las evidencias concretas.
 * **Nuevas fuentes de señal aprovechando datos que ya se obtenían**:

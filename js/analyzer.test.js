@@ -178,4 +178,78 @@ describe('calculateScoreAndFindings', () => {
         const card = calculateScoreAndFindings(baseResult({ spfData: { multiple: true } }));
         expect(card.findings.some(f => f.key === 'finding_spf_multiple')).toBe(true);
     });
+
+    it('avisa cuando SPF no tiene mecanismo all', () => {
+        const card = calculateScoreAndFindings(baseResult({ spfEntries: [{ type: 'include', value: 'x' }] }));
+        expect(card.findings.some(f => f.key === 'finding_spf_no_all')).toBe(true);
+    });
+
+    it('avisa del mecanismo ptr (desaconsejado)', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            spfEntries: [{ type: 'all', qualifier: '-' }, { type: 'ptr', value: '' }]
+        }));
+        expect(card.findings.some(f => f.key === 'finding_spf_ptr')).toBe(true);
+    });
+
+    it('detecta política de subdominio más débil (sp)', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            dmarcParsed: { v: 'DMARC1', p: 'reject', sp: 'none' }
+        }));
+        expect(card.findings.some(f => f.key === 'finding_dmarc_sp_weak')).toBe(true);
+    });
+
+    it('detecta pct parcial en DMARC', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            dmarcParsed: { v: 'DMARC1', p: 'reject', pct: '50' }
+        }));
+        expect(card.findings.some(f => f.key === 'finding_dmarc_pct_partial')).toBe(true);
+    });
+
+    it('marca destino DMARC externo no autorizado', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            dmarcExternalAuth: [{ uri: 'mailto:r@ext.com', destDomain: 'ext.com', authorized: false }]
+        }));
+        expect(card.findings.some(f => f.key === 'finding_dmarc_rua_unauthorized')).toBe(true);
+    });
+
+    it('confirma autorización externa DMARC correcta', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            dmarcExternalAuth: [{ uri: 'mailto:r@ext.com', destDomain: 'ext.com', authorized: true }]
+        }));
+        expect(card.findings.some(f => f.key === 'finding_dmarc_rua_authorized')).toBe(true);
+    });
+
+    it('no penaliza la ausencia de DKIM (info best-effort)', () => {
+        const card = calculateScoreAndFindings(baseResult({ dkimRecords: { records: [] } }));
+        const f = card.findings.find(x => x.key === 'finding_dkim_besteffort');
+        expect(f).toBeTruthy();
+        expect(f.status).toBe('info');
+    });
+
+    it('detecta clave DKIM débil (<1024 bits)', () => {
+        const RSA_512 = 'MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAKyJEaa3SfJ/U3LSG8oJ6tikdzKzRrAinSnmqCrJVlbz75GKqVc1Ck6Qq2sOS6bf93KA8BQSz/nKOegAPr2BTAsCAwEAAQ==';
+        const card = calculateScoreAndFindings(baseResult({
+            dkimRecords: { records: [{ selector: 's1', record: `v=DKIM1; p=${RSA_512}` }] }
+        }));
+        expect(card.findings.some(f => f.key === 'finding_dkim_weak_key')).toBe(true);
+    });
+
+    it('detecta clave DKIM revocada (p= vacío)', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            dkimRecords: { records: [{ selector: 's1', record: 'v=DKIM1; p=' }] }
+        }));
+        expect(card.findings.some(f => f.key === 'finding_dkim_revoked')).toBe(true);
+    });
+
+    it('bonifica DNSSEC firmado', () => {
+        const card = calculateScoreAndFindings(baseResult({ dnssec: { signed: true } }));
+        expect(card.findings.some(f => f.key === 'finding_dnssec_ok')).toBe(true);
+    });
+
+    it('avisa de max_age bajo en MTA-STS', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            mtaSts: { policy: { valid: true, maxAge: 3600 } }
+        }));
+        expect(card.findings.some(f => f.key === 'finding_mta_sts_low_maxage')).toBe(true);
+    });
 });

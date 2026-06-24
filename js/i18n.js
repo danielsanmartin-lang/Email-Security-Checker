@@ -87,6 +87,45 @@ export const translations = {
         finding_dane_ok: "Protocolo DANE (TLSA) detectado y configurado en los servidores MX.",
         finding_dane_err: "Protocolo DANE (TLSA) no configurado (sin cifrado oportunista verificado por DNSSEC).",
         finding_srv_autodiscover_ok: "Registro de autodescubrimiento SRV configurado, apunta a {target}.",
+        finding_spf_no_all: "El registro SPF no incluye un mecanismo 'all'. La política por defecto es NEUTRAL (?all), que no protege contra el spoofing. Añade '-all' o '~all'.",
+        finding_spf_ptr: "El registro SPF usa el mecanismo 'ptr', desaconsejado por el RFC 7208 (lento, poco fiable y puede causar PermError). Sustitúyelo por 'a', 'mx' o 'ip4/ip6'.",
+        finding_dmarc_sp_weak: "La política de subdominios (sp={sp}) es más débil que la del dominio (p={p}). Los subdominios quedan menos protegidos frente a suplantación.",
+        finding_dmarc_pct_partial: "DMARC se aplica solo al {pct}% del correo (pct<100). El resto se entrega sin aplicar la política — protección parcial.",
+        finding_dmarc_alignment_strict: "Alineación DMARC estricta configurada (adkim=s, aspf=s): máxima exigencia de coincidencia de dominio.",
+        finding_dmarc_rua_unauthorized: "Los informes DMARC apuntan a un dominio externo ({dest}) que NO ha publicado el registro de autorización (_report._dmarc). Los informes serán descartados (RFC 7489).",
+        finding_dmarc_rua_authorized: "Los destinos externos de informes DMARC están correctamente autorizados (_report._dmarc).",
+        finding_dkim_besteffort: "No se detectaron firmas DKIM en los selectores comunes. La detección es best-effort: un selector personalizado válido podría no aparecer (usa el campo de selector opcional).",
+        finding_dkim_weak_key: "Clave DKIM débil en el selector '{selector}': {bits} bits. Las claves RSA por debajo de 1024 bits se consideran inseguras; usa 2048 bits.",
+        finding_dkim_key_1024: "Clave DKIM de 1024 bits en: {selectors}. Es la longitud mínima; se recomienda migrar a 2048 bits.",
+        finding_dkim_revoked: "Clave DKIM revocada (p= vacío) en: {selectors}. Ese selector no puede firmar correo.",
+        finding_dkim_testing: "DKIM en modo de prueba (t=y) en: {selectors}. Los receptores tratan los fallos como si DKIM no estuviera desplegado.",
+        finding_mta_sts_no_maxage: "La política MTA-STS no especifica 'max_age' (obligatorio según RFC 8461).",
+        finding_mta_sts_low_maxage: "El 'max_age' de MTA-STS es bajo ({maxage} s). Se recomienda al menos 604800 s (1 semana) para resistir ataques de downgrade.",
+        finding_dnssec_ok: "DNSSEC activo: la zona DNS está firmada, protegiendo la integridad de SPF/DMARC/DKIM frente a manipulación.",
+        finding_dnssec_err: "DNSSEC no detectado. Los registros DNS (SPF/DMARC/DKIM) podrían ser manipulados mediante envenenamiento de caché.",
+
+        // Destinos externos DMARC (autorización RFC 7489)
+        dmarc_ext_authorized: "Externo autorizado",
+        dmarc_ext_unauthorized: "Externo NO autorizado",
+        dmarc_ext_unverifiable: "Externo (no verificable)",
+
+        // DNSSEC (panel DNS avanzado)
+        adv_dnssec_title: "DNSSEC",
+        adv_dnssec_signed: "Firmado",
+        adv_dnssec_unsigned: "Sin firmar",
+        adv_dnssec_signed_desc: "La zona publica registros DNSKEY: las respuestas DNS pueden validarse criptográficamente.",
+        adv_dnssec_validated: "✓ Respuesta validada por el resolver (flag AD).",
+        adv_dnssec_desc: "No se detectaron registros DNSKEY. La zona no está firmada con DNSSEC.",
+
+        // RBL (estados adicionales)
+        rbl_inconclusive: "No concluyente",
+        rbl_badge_inconclusive: "? No concluyente",
+        rbl_disclaimer: "Nota: muchas DNSBL rechazan las consultas vía resolvers DoH públicos (Google/Cloudflare), por lo que estas comprobaciones son orientativas (best-effort) y pueden marcarse como «no concluyente».",
+
+        // Errores diferenciados
+        error_domain_not_found: "El dominio «{domain}» no existe (NXDOMAIN). Revisa que esté bien escrito.",
+        error_network: "No se pudo conectar con los servidores DNS. Comprueba tu conexión a Internet e inténtalo de nuevo.",
+        error_invalid_domain: "El valor introducido no es un nombre de dominio válido (ej.: empresa.com).",
 
         spf_header_prefix: "Prefijo",
         spf_header_type: "Tipo",
@@ -477,6 +516,45 @@ export const translations = {
         finding_dane_ok: "DANE (TLSA) protocol detected and configured on MX servers.",
         finding_dane_err: "DANE (TLSA) protocol not configured (no opportunistic encryption verified via DNSSEC).",
         finding_srv_autodiscover_ok: "SRV autodiscover record configured, pointing to {target}.",
+        finding_spf_no_all: "The SPF record has no 'all' mechanism. The default policy is NEUTRAL (?all), which does not protect against spoofing. Add '-all' or '~all'.",
+        finding_spf_ptr: "The SPF record uses the 'ptr' mechanism, discouraged by RFC 7208 (slow, unreliable, and may cause PermError). Replace it with 'a', 'mx' or 'ip4/ip6'.",
+        finding_dmarc_sp_weak: "The subdomain policy (sp={sp}) is weaker than the domain policy (p={p}). Subdomains are less protected against spoofing.",
+        finding_dmarc_pct_partial: "DMARC is applied to only {pct}% of mail (pct<100). The rest is delivered without enforcing the policy — partial protection.",
+        finding_dmarc_alignment_strict: "Strict DMARC alignment configured (adkim=s, aspf=s): maximum domain-match requirement.",
+        finding_dmarc_rua_unauthorized: "DMARC reports point to an external domain ({dest}) that has NOT published the authorization record (_report._dmarc). Reports will be discarded (RFC 7489).",
+        finding_dmarc_rua_authorized: "External DMARC report destinations are correctly authorized (_report._dmarc).",
+        finding_dkim_besteffort: "No DKIM signatures detected on common selectors. Detection is best-effort: a valid custom selector may not appear (use the optional selector field).",
+        finding_dkim_weak_key: "Weak DKIM key on selector '{selector}': {bits} bits. RSA keys below 1024 bits are considered insecure; use 2048 bits.",
+        finding_dkim_key_1024: "1024-bit DKIM key on: {selectors}. This is the minimum length; migrating to 2048 bits is recommended.",
+        finding_dkim_revoked: "Revoked DKIM key (empty p=) on: {selectors}. That selector cannot sign mail.",
+        finding_dkim_testing: "DKIM in testing mode (t=y) on: {selectors}. Receivers treat failures as if DKIM were not deployed.",
+        finding_mta_sts_no_maxage: "The MTA-STS policy does not specify 'max_age' (required by RFC 8461).",
+        finding_mta_sts_low_maxage: "The MTA-STS 'max_age' is low ({maxage} s). At least 604800 s (1 week) is recommended to resist downgrade attacks.",
+        finding_dnssec_ok: "DNSSEC enabled: the DNS zone is signed, protecting the integrity of SPF/DMARC/DKIM against tampering.",
+        finding_dnssec_err: "DNSSEC not detected. DNS records (SPF/DMARC/DKIM) could be tampered with via cache poisoning.",
+
+        // DMARC external destinations (RFC 7489 authorization)
+        dmarc_ext_authorized: "External authorized",
+        dmarc_ext_unauthorized: "External NOT authorized",
+        dmarc_ext_unverifiable: "External (unverifiable)",
+
+        // DNSSEC (advanced DNS panel)
+        adv_dnssec_title: "DNSSEC",
+        adv_dnssec_signed: "Signed",
+        adv_dnssec_unsigned: "Unsigned",
+        adv_dnssec_signed_desc: "The zone publishes DNSKEY records: DNS answers can be cryptographically validated.",
+        adv_dnssec_validated: "✓ Answer validated by the resolver (AD flag).",
+        adv_dnssec_desc: "No DNSKEY records detected. The zone is not signed with DNSSEC.",
+
+        // RBL (additional states)
+        rbl_inconclusive: "Inconclusive",
+        rbl_badge_inconclusive: "? Inconclusive",
+        rbl_disclaimer: "Note: many DNSBLs reject queries via public DoH resolvers (Google/Cloudflare), so these checks are best-effort and may be marked as \"inconclusive\".",
+
+        // Differentiated errors
+        error_domain_not_found: "The domain \"{domain}\" does not exist (NXDOMAIN). Check the spelling.",
+        error_network: "Could not reach the DNS servers. Check your internet connection and try again.",
+        error_invalid_domain: "The value entered is not a valid domain name (e.g.: company.com).",
 
         spf_header_prefix: "Prefix",
         spf_header_type: "Type",

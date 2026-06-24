@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parseSPF, parseDMARC, parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './parsers.js';
+import { parseSPF, parseDMARC, parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, analyzeDKIMRecord, parseMaxAge } from './parsers.js';
+
+// Claves públicas RSA reales (SPKI DER en base64 = valor del tag p= de un registro DKIM)
+const RSA_1024 = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDHKI9Hv9UXFuaCMiUm4ByPZYWK4CySUGGnMLiUksN5v0eN7MlEbY1C3O8tU4yvGMGGrtJ279KC1EJi8twRn1bqVt5TsffmluZ6r5wZUndUHOLUmNubZdcaG8jW0uXy9w2pOJhr8sz+UAvXvthBnok0Ld8NL37wHC7lNePzrMYwGQIDAQAB';
+const RSA_2048 = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmBBYI7zVX1AV5i/TYH8ujMlXkMfD7YzBoRnf1b34d5hhBa0RG3k7GT5Z8irrBPeP/ZIxKEIn4okhyhpd2NY0OP1RQsEEzDSnVQL5MmtINeyxY0bBALRL/maj6EtXrKrpAQvkfPOlEo9U4mRDJaLb0D0G6nxmqbztSlHToGlgp6B9EvDV/NNgYYhBVCaqfzVoJqgRzes5elhnODddSCw4burNfq+375sHa5vSlf6nZ38hz6witOE1NZEhI1MYIwiQhsfVy3tav9mdbL/YcW0gBmXMjq/03QlAQS8pUL4ZwGPhPjnt/0Q3X6jYforhfLIraQIrVRPhp5a6ilstNaZ8TQIDAQAB';
 
 describe('extractTxtValue', () => {
     it('concatena múltiples cadenas entrecomilladas', () => {
@@ -96,5 +100,60 @@ describe('validateMTASTSPolicy', () => {
         const res = validateMTASTSPolicy({ httpStatus: 200, parsed: { version: 'STSv2', mode: 'enforce' } });
         expect(res.valid).toBe(false);
         expect(res.reason).toBe('invalid_version');
+    });
+
+    it('expone max_age sin afectar a la validez', () => {
+        const res = validateMTASTSPolicy({ httpStatus: 200, parsed: { version: 'STSv1', mode: 'enforce', max_age: '604800' } });
+        expect(res.valid).toBe(true);
+        expect(res.maxAge).toBe(604800);
+    });
+
+    it('maxAge es null si falta max_age (sigue siendo válida)', () => {
+        const res = validateMTASTSPolicy({ httpStatus: 200, parsed: { version: 'STSv1', mode: 'enforce' } });
+        expect(res.valid).toBe(true);
+        expect(res.maxAge).toBeNull();
+    });
+});
+
+describe('parseMaxAge', () => {
+    it('convierte a entero', () => {
+        expect(parseMaxAge({ max_age: '86400' })).toBe(86400);
+    });
+    it('devuelve null si falta o es inválido', () => {
+        expect(parseMaxAge({})).toBeNull();
+        expect(parseMaxAge(null)).toBeNull();
+        expect(parseMaxAge({ max_age: 'abc' })).toBeNull();
+    });
+});
+
+describe('analyzeDKIMRecord', () => {
+    it('calcula 2048 bits para una clave RSA real', () => {
+        const a = analyzeDKIMRecord(`v=DKIM1; k=rsa; p=${RSA_2048}`);
+        expect(a.revoked).toBe(false);
+        expect(a.algorithm).toBe('rsa');
+        expect(a.keyBits).toBe(2048);
+    });
+
+    it('calcula 1024 bits para una clave RSA real', () => {
+        const a = analyzeDKIMRecord(`v=DKIM1; p=${RSA_1024}`);
+        expect(a.keyBits).toBe(1024);
+        expect(a.algorithm).toBe('rsa'); // rsa por defecto
+    });
+
+    it('detecta clave revocada (p= vacío)', () => {
+        const a = analyzeDKIMRecord('v=DKIM1; k=rsa; p=');
+        expect(a.revoked).toBe(true);
+        expect(a.keyBits).toBeNull();
+    });
+
+    it('detecta modo testing (t=y)', () => {
+        const a = analyzeDKIMRecord(`v=DKIM1; t=y; p=${RSA_2048}`);
+        expect(a.testing).toBe(true);
+    });
+
+    it('no calcula bits RSA para claves ed25519', () => {
+        const a = analyzeDKIMRecord('v=DKIM1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=');
+        expect(a.algorithm).toBe('ed25519');
+        expect(a.keyBits).toBeNull();
     });
 });

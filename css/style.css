@@ -618,6 +618,10 @@ body {
     color: var(--accent-rose);
     animation: pulse 2s infinite;
 }
+.rbl-check__badge--error {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-amber);
+}
 
 /* ===== Footer ===== */
 .footer {

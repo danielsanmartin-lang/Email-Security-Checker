@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDomain, html, raw, SafeHtml } from './utils.js';
+import { normalizeDomain, isValidDomain, html, raw, SafeHtml } from './utils.js';
 import { escapeHtml } from './parsers.js';
 
 describe('normalizeDomain', () => {
@@ -9,9 +9,32 @@ describe('normalizeDomain', () => {
     it('quita esquema, www y ruta', () => {
         expect(normalizeDomain('https://www.example.com/path?x=1')).toBe('example.com');
     });
+    it('quita el puerto', () => {
+        expect(normalizeDomain('example.com:8080')).toBe('example.com');
+    });
+    it('convierte IDN (acentos/no-ASCII) a punycode', () => {
+        expect(normalizeDomain('café.com')).toBe('xn--caf-dma.com');
+        expect(normalizeDomain('münchen.de')).toBe('xn--mnchen-3ya.de');
+    });
     it('devuelve cadena vacía para entrada vacía', () => {
         expect(normalizeDomain('')).toBe('');
         expect(normalizeDomain(null)).toBe('');
+    });
+});
+
+describe('isValidDomain', () => {
+    it('acepta dominios válidos', () => {
+        expect(isValidDomain('example.com')).toBe(true);
+        expect(isValidDomain('sub.example.co.uk')).toBe(true);
+        expect(isValidDomain('xn--caf-dma.com')).toBe(true);
+    });
+    it('rechaza entradas inválidas', () => {
+        expect(isValidDomain('localhost')).toBe(false); // sin punto / TLD
+        expect(isValidDomain('-bad.com')).toBe(false);
+        expect(isValidDomain('a..b.com')).toBe(false);
+        expect(isValidDomain('not a domain')).toBe(false);
+        expect(isValidDomain('')).toBe(false);
+        expect(isValidDomain(null)).toBe(false);
     });
 });
 
