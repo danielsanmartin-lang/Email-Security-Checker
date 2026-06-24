@@ -112,7 +112,7 @@ npm run lint       # ESLint sobre js/
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**114 tests**) cubre el módulo de Awareness (fixtures DNS mockeados), los parsers
+La suite (**116 tests**) cubre el módulo de Awareness (fixtures DNS mockeados), los parsers
 (`parseSPF`, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`, `analyzeDKIMRecord`,
 `extractTxtValue`), el analizador (`extractRootDomain`, `calculateScoreAndFindings` y los
 nuevos findings de DMARC/DKIM/SPF/DNSSEC/MTA-STS), la capa DNS (`checkRBL`, `getDNSSEC`,
@@ -142,7 +142,8 @@ Esta versión profundiza la **exactitud** de los resultados que la herramienta p
 * **MTA-STS `max_age`:** validación de presencia y valor recomendado (≥ 604800 s, RFC 8461) sin invalidar la política, expuesto como aviso.
 * **DNSSEC:** nuevo `getDNSSEC` (registros `DNSKEY` + flag `AD`), con bonificación de score, hallazgo y panel propio en DNS avanzado. La firma de la zona protege la integridad de SPF/DMARC/DKIM frente a envenenamiento de caché.
 * **Validación de entrada y errores diferenciados:** `normalizeDomain` convierte **IDN → punycode** (vía API `URL`) y quita puerto; `isValidDomain` valida el formato antes de consultar. Los errores se distinguen entre **dominio inexistente (NXDOMAIN)**, **error de red** y **formato inválido**, cada uno con su mensaje (ES/EN).
-* **Calidad y DevEx:** `playwright` movido a `devDependencies`; añadido **`@vitest/coverage-v8`** y script `npm run coverage`. CI ampliado con cobertura (artefacto) + `npm audit`, y nuevo workflow **CodeQL** (`security-extended`, también semanal). **+34 tests** nuevos (total **114**), incluyendo `js/api.test.js` con `fetch` mockeado y validación del parser DKIM contra claves RSA reales.
+* **Awareness — peso del MX hint corregido (representatividad):** se arregló un *bug* por el que el motor de scoring leía claves de peso (`mxExact`/`mxSubstring`) que los fingerprints no definían, cayendo a un valor por defecto de **0.7**. Esto inflaba la detección: cualquier dominio M365 aparecía con **70% (MEDIA)** de usar *Microsoft Attack Simulation Training* con la única señal de "usa Microsoft". Ahora se honra el peso de cada fingerprint (`w.mxHint`): Microsoft AST baja a **15% ("baja")** y los gateways de seguridad reales (Proofpoint/Mimecast `0.3`, Sophos/Barracuda `0.25`) pesan más que el simple uso de M365, reflejando que suelen venderse o complementarse con concienciación.
+* **Calidad y DevEx:** `playwright` movido a `devDependencies`; añadido **`@vitest/coverage-v8`** y script `npm run coverage`. CI ampliado con cobertura (artefacto) + `npm audit`, y nuevo workflow **CodeQL** (`security-extended`, también semanal). **+36 tests** nuevos (total **116**), incluyendo `js/api.test.js` con `fetch` mockeado, la validación del parser DKIM contra claves RSA reales y los tests del peso del MX hint en Awareness.
 
 > ⚠️ Las comprobaciones RBL son **orientativas** (best-effort): para resultados fiables se recomienda un resolver/proxy propio. Las listas de selectores/tokens por vendor siguen siendo heurísticas.
 

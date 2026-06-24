@@ -314,6 +314,42 @@ describe('detectAwarenessVendors — dominio limpio', () => {
     });
 });
 
+describe('detectAwarenessVendors — peso del MX hint (representatividad)', () => {
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('un MX de M365 (única señal) marca Microsoft AST como "baja", no "media"', async () => {
+        global.fetch = buildFetchMock({
+            'm365only.com': {
+                TXT: ['v=spf1 include:spf.protection.outlook.com -all'],
+                MX: ['10 m365only-com.mail.protection.outlook.com'],
+            },
+            'spf.protection.outlook.com': { TXT: ['v=spf1 ip4:40.92.0.0/15 ~all'] },
+            // DMARC sin rua a dmarc.microsoft.com → la única señal es el MX
+            '_dmarc.m365only.com': { TXT: ['v=DMARC1; p=reject; rua=mailto:rua@m365only.com'] },
+        });
+        const result = await detectAwarenessVendors('m365only.com');
+        const ast = result.detectedVendors.find(v => v.vendor === 'msAttackSimulation');
+        expect(ast).toBeDefined();
+        expect(ast.level).toBe('baja');
+        expect(ast.score).toBeLessThan(0.45);
+        // El peso del MX debe respetar el del fingerprint (0.15), no el antiguo 0.7 por defecto
+        const mxEv = ast.evidence.find(e => e.signal.startsWith('mx_hint'));
+        expect(mxEv.weight).toBeCloseTo(0.15);
+    });
+
+    it('el MX de Proofpoint (gateway real) pesa más que el de Microsoft AST', async () => {
+        global.fetch = buildFetchMock({
+            'ppmx.com': { TXT: ['v=spf1 -all'], MX: ['10 mail.pphosted.com'] },
+            '_dmarc.ppmx.com': { TXT: ['v=DMARC1; p=none;'] },
+        });
+        const result = await detectAwarenessVendors('ppmx.com');
+        const pp = result.detectedVendors.find(v => v.vendor === 'proofpointSat');
+        expect(pp).toBeDefined();
+        const ppMx = pp.evidence.find(e => e.signal.startsWith('mx_hint'));
+        expect(ppMx.weight).toBeGreaterThan(0.15); // 0.3 (Proofpoint) > 0.15 (Microsoft AST)
+    });
+});
+
 describe('detectAwarenessVendors — SPF PermError', () => {
     beforeEach(() => { global.fetch = buildFetchMock(DNS_FIXTURES); });
     afterEach(() => { vi.restoreAllMocks(); });

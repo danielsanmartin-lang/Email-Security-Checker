@@ -923,12 +923,20 @@ export async function detectAwarenessVendors(domain) {
             }
         }
 
-        // 7e. MX hint (exact suffix match vs substring match)
+        // 7e. MX hint — el peso lo define CADA fingerprint en w.mxHint, que codifica
+        // cuánto significa su gateway/MX para ESE vendor: p. ej. el MX de Proofpoint
+        // (pphosted, 0.3) o Mimecast (0.3) — gateways de seguridad reales que suelen
+        // venderse o complementarse con concienciación — pesan más que el simple
+        // "usa M365" de Microsoft AST (0.15). El peso es el mismo tanto si el hint
+        // coincide como sufijo exacto (p. ej. "protection.outlook.com") como por
+        // substring (p. ej. el token "pphosted"); ambos son igual de fiables, solo
+        // difiere cómo se escribió el hint. w.mxExact / w.mxSubstring permiten override.
         if (fp.mxHint) {
+            const mxBase = w.mxHint ?? 0.3;
             let mxMatched = false;
             for (const m of mxHosts) {
                 if (m === fp.mxHint || m.endsWith('.' + fp.mxHint)) {
-                    evidence.push({ signal: 'mx_hint_exact', value: m, weight: w.mxExact ?? 0.7 });
+                    evidence.push({ signal: 'mx_hint_exact', value: m, weight: w.mxExact ?? mxBase });
                     mxMatched = true;
                     break;
                 }
@@ -936,7 +944,7 @@ export async function detectAwarenessVendors(domain) {
             if (!mxMatched) {
                 for (const m of mxHosts) {
                     if (m.includes(fp.mxHint)) {
-                        evidence.push({ signal: 'mx_hint_substring', value: m, weight: w.mxSubstring ?? 0.3 });
+                        evidence.push({ signal: 'mx_hint_substring', value: m, weight: w.mxSubstring ?? mxBase });
                         break;
                     }
                 }
