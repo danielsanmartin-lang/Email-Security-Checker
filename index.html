@@ -548,6 +548,14 @@
                     <div class="panel__body" id="awareness-body">
                         <!-- Awareness vendors rendered here -->
                     </div>
+                    <!-- Header analysis tool (cubre el punto ciego DNS: Microsoft AST, etc.) -->
+                    <div class="awareness-header-tool" id="awareness-header-tool">
+                        <div class="awareness-evidence-label awareness-header-tool__title" data-i18n="awareness_header_title">Analizar cabeceras de un correo (opcional)</div>
+                        <p class="awareness-header-desc" data-i18n="awareness_header_desc">¿Recibiste un correo de simulación? Pega sus cabeceras completas para detectar el vendor con alta confianza, incluido Microsoft AST (que no deja rastro DNS).</p>
+                        <textarea id="awareness-header-input" class="awareness-header-input" rows="5" data-i18n-placeholder="awareness_header_placeholder" placeholder="Pega aquí las cabeceras del correo (Return-Path, From, Received, X-...)"></textarea>
+                        <button type="button" id="awareness-header-btn" class="awareness-header-btn" data-i18n="awareness_header_btn">Analizar cabeceras</button>
+                        <div id="awareness-header-results" class="awareness-header-results"></div>
+                    </div>
                 </div>
 
                 <!-- SPF Panel -->

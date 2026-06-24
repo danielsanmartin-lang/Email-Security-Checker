@@ -1035,32 +1035,23 @@ export function renderAwarenessVendors(result, lang, t) {
         </div>`;
     }
 
-    // --- Herramienta: análisis de cabeceras de un correo (cubre el punto ciego DNS) ---
-    html += `<div class="awareness-header-tool">
-        <div class="awareness-evidence-label" style="margin-bottom:6px;">${t.awareness_header_title}</div>
-        <p class="awareness-header-desc">${t.awareness_header_desc}</p>
-        <textarea id="awareness-header-input" class="awareness-header-input" rows="5" placeholder="${escapeHtml(t.awareness_header_placeholder || '')}"></textarea>
-        <button type="button" id="awareness-header-btn" class="awareness-header-btn">${t.awareness_header_btn}</button>
-        <div id="awareness-header-results" class="awareness-header-results"></div>
-    </div>`;
-
     body.innerHTML = html;
+}
 
-    // Listener del analizador de cabeceras (re-vinculado en cada render; el innerHTML
-    // anterior se descarta junto con sus listeners).
-    const headerBtn = document.getElementById('awareness-header-btn');
-    if (headerBtn) {
-        headerBtn.addEventListener('click', () => {
-            const input = document.getElementById('awareness-header-input');
-            const out = document.getElementById('awareness-header-results');
-            if (!input || !out) return;
-            const res = detectFromHeaders(input.value);
-            if (res.error || !res.detectedVendors.length) {
-                const msg = res.error === 'empty' ? t.awareness_header_empty : t.awareness_header_none;
-                out.innerHTML = `<p class="no-data" style="font-size:12px;margin-top:8px;">${msg}</p>`;
-                return;
-            }
-            out.innerHTML = `<div class="awareness-vendors-list" style="margin-top:10px;">${res.detectedVendors.map(v => buildAwarenessCard(v, t)).join('')}</div>`;
-        });
+// Analiza las cabeceras pegadas (herramienta estática del panel de Awareness) y
+// renderiza los vendors detectados en #awareness-header-results. El listener se
+// vincula una sola vez desde app.js.
+export function analyzeHeaders() {
+    const lang = getLanguage();
+    const t = translations[lang];
+    const input = document.getElementById('awareness-header-input');
+    const out = document.getElementById('awareness-header-results');
+    if (!input || !out) return;
+    const res = detectFromHeaders(input.value);
+    if (res.error || !res.detectedVendors.length) {
+        const msg = res.error === 'empty' ? t.awareness_header_empty : t.awareness_header_none;
+        out.innerHTML = `<p class="no-data" style="font-size:12px;margin-top:8px;">${escapeHtml(msg || '')}</p>`;
+        return;
     }
+    out.innerHTML = `<div class="awareness-vendors-list" style="margin-top:10px;">${res.detectedVendors.map(v => buildAwarenessCard(v, t)).join('')}</div>`;
 }

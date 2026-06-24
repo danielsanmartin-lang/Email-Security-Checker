@@ -1,6 +1,6 @@
 import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists } from './api.js';
 import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
-import { renderResults, showSection, setStep, closeKbModal, translateDOM } from './ui.js';
+import { renderResults, showSection, setStep, closeKbModal, translateDOM, analyzeHeaders } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
 import { getLanguage, setLanguage } from './lang.js';
@@ -309,6 +309,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pdfBtn = document.getElementById('export-pdf-btn');
     if (pdfBtn) pdfBtn.addEventListener('click', exportToPDF);
+
+    // Analizador de cabeceras de correo (panel de Awareness) — se vincula una sola vez.
+    const headerBtn = document.getElementById('awareness-header-btn');
+    if (headerBtn) headerBtn.addEventListener('click', analyzeHeaders);
 
     document.getElementById('error-retry').addEventListener('click', () => {
         const domain = input.value.trim().toLowerCase();
