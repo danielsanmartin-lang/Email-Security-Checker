@@ -314,6 +314,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerBtn = document.getElementById('awareness-header-btn');
     if (headerBtn) headerBtn.addEventListener('click', analyzeHeaders);
 
+    // La herramienta de cabeceras es un complemento opcional (solo aplica si tienes una
+    // muestra de correo en la mano), así que va colapsada y se despliega bajo demanda.
+    const headerToggle = document.getElementById('awareness-header-toggle');
+    const headerBody = document.getElementById('awareness-header-body');
+    if (headerToggle && headerBody) {
+        headerToggle.addEventListener('click', () => {
+            const expanded = headerToggle.getAttribute('aria-expanded') === 'true';
+            headerToggle.setAttribute('aria-expanded', String(!expanded));
+            headerBody.hidden = expanded;
+        });
+    }
+
     document.getElementById('error-retry').addEventListener('click', () => {
         const domain = input.value.trim().toLowerCase();
         const dkimSelector = dkimInput ? dkimInput.value.trim().toLowerCase() : null;

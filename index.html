@@ -549,12 +549,18 @@
                         <!-- Awareness vendors rendered here -->
                     </div>
                     <!-- Header analysis tool (cubre el punto ciego DNS: Microsoft AST, etc.) -->
+                    <!-- Complemento opcional: solo aplica si tienes una muestra de correo en la mano. -->
                     <div class="awareness-header-tool" id="awareness-header-tool">
-                        <div class="awareness-evidence-label awareness-header-tool__title" data-i18n="awareness_header_title">Analizar cabeceras de un correo (opcional)</div>
-                        <p class="awareness-header-desc" data-i18n="awareness_header_desc">¿Recibiste un correo de simulación? Pega sus cabeceras completas para detectar el vendor con alta confianza, incluido Microsoft AST (que no deja rastro DNS).</p>
-                        <textarea id="awareness-header-input" class="awareness-header-input" rows="5" data-i18n-placeholder="awareness_header_placeholder" placeholder="Pega aquí las cabeceras del correo (Return-Path, From, Received, X-...)"></textarea>
-                        <button type="button" id="awareness-header-btn" class="awareness-header-btn" data-i18n="awareness_header_btn">Analizar cabeceras</button>
-                        <div id="awareness-header-results" class="awareness-header-results"></div>
+                        <button type="button" id="awareness-header-toggle" class="awareness-header-toggle" aria-expanded="false" aria-controls="awareness-header-body">
+                            <span class="awareness-header-toggle__chevron" aria-hidden="true">▸</span>
+                            <span data-i18n="awareness_header_title">¿Tienes una muestra de correo de esta organización? Analiza sus cabeceras</span>
+                        </button>
+                        <div class="awareness-header-body" id="awareness-header-body" hidden>
+                            <p class="awareness-header-desc" data-i18n="awareness_header_desc">Si dispones de un correo de muestra de la organización auditada (p. ej. compartido durante el encargo) o de uno de simulación que recibiste, pega sus cabeceras completas para identificar el vendor con alta confianza, incluido Microsoft AST, que no deja rastro en DNS.</p>
+                            <textarea id="awareness-header-input" class="awareness-header-input" rows="5" data-i18n-placeholder="awareness_header_placeholder" placeholder="Pega aquí las cabeceras del correo (Return-Path, From, Received, X-...)"></textarea>
+                            <button type="button" id="awareness-header-btn" class="awareness-header-btn" data-i18n="awareness_header_btn">Analizar cabeceras</button>
+                            <div id="awareness-header-results" class="awareness-header-results"></div>
+                        </div>
                     </div>
                 </div>
 
