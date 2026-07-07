@@ -431,7 +431,12 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass,
         dmarcRua, dmarcRuf, dmarcDetails,
         dmarcData: advancedData.dmarcData || { record: dmarcRaw, records: dmarcRaw ? [dmarcRaw] : [], multiple: false },
+        // DMARC heredado del dominio organizativo (RFC 7489 §6.6.3) al analizar un subdominio.
+        dmarcInherited: !!advancedData.dmarcInherited,
+        dmarcInheritedFrom: advancedData.dmarcInheritedFrom || null,
         mxRecords,
+        // Null MX (RFC 7505): el dominio declara que no recibe correo.
+        nullMx: !!(advancedData.nullMx || mxRecords.nullMx),
         // New advanced data
         txtVerifications,
         nsProvider,
@@ -767,6 +772,16 @@ function determineGrade(score) {
 export function calculateScoreAndFindings(result) {
     let score = 0;
     const findings = [];
+    // Null MX (RFC 7505): declarar que no se recibe correo es una buena práctica
+    // para dominios sin uso de email; se informa como positivo, sin penalizar.
+    if (result.nullMx) {
+        findings.push({ status: 'info', key: 'finding_null_mx' });
+    }
+    // DMARC heredado del dominio organizativo: aclara que la protección proviene
+    // del dominio raíz, no del subdominio analizado.
+    if (result.dmarcInherited && result.dmarcInheritedFrom) {
+        findings.push({ status: 'info', key: 'finding_dmarc_inherited', replacements: { '{org}': result.dmarcInheritedFrom } });
+    }
     for (const check of SCORE_CHECKS) {
         const { points, findings: sectionFindings } = check(result);
         score += points;

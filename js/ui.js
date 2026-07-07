@@ -277,7 +277,10 @@ export function renderResults(domain, result) {
     }
 
     document.getElementById('result-domain').textContent = domain;
-    document.getElementById('result-timestamp').textContent = new Date().toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
+    // Fecha real del escaneo (fijada en app.js), no la del render actual: cambiar de
+    // idioma re-renderiza y no debe "mover" la hora del análisis.
+    const scannedAt = result.scannedAt ? new Date(result.scannedAt) : new Date();
+    document.getElementById('result-timestamp').textContent = scannedAt.toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
 
     const providerDisplay = displayProvider(result, t);
     document.getElementById('summary-provider-value').textContent = providerDisplay;

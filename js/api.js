@@ -99,14 +99,27 @@ export async function checkDomainExists(domain) {
 
 export async function getMX(domain) {
     const data = await queryDNS(domain, 'MX');
-    if (!data.Answer) return [];
-    return data.Answer
-        .filter(a => a.type === 15)
+    const empty = [];
+    if (!data.Answer) return empty;
+    const raw = data.Answer
+        .filter(a => a.type === 15 && a.data)
         .map(a => {
-            const parts = a.data.split(' ');
-            return { priority: parseInt(parts[0]), host: parts[1].replace(/\.$/, '') };
+            const parts = a.data.trim().split(/\s+/);
+            if (parts.length < 2) return null;
+            return { priority: parseInt(parts[0], 10), host: parts[1].replace(/\.$/, '') };
         })
-        .sort((a, b) => a.priority - b.priority);
+        .filter(Boolean);
+
+    // Null MX (RFC 7505): un único registro "0 ." (host vacío tras quitar el punto)
+    // declara explícitamente que el dominio NO recibe correo. Devolvemos un array
+    // vacío marcado con .nullMx para que el análisis lo reconozca como configuración
+    // correcta (dominios aparcados) en vez de auditar hosts vacíos.
+    const nullMx = raw.length > 0 && raw.every(r => r.priority === 0 && r.host === '');
+    const hosts = raw.filter(r => r.host !== '').sort((a, b) => a.priority - b.priority);
+    if (nullMx) {
+        hosts.nullMx = true;
+    }
+    return hosts;
 }
 
 export async function getSPF(domain) {

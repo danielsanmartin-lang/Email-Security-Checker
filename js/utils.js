@@ -71,6 +71,9 @@ export function normalizeDomain(input) {
     } catch {
         /* entrada no parseable como URL: mantener el valor saneado */
     }
+    // Quita el punto final del FQDN absoluto (habitual al copiar de dig/registros
+    // DNS): el resto del pipeline ya lo tolera, pero isValidDomain lo rechazaría.
+    domain = domain.replace(/\.+$/, '');
     return domain;
 }
 

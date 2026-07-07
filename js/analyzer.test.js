@@ -318,6 +318,23 @@ describe('calculateScoreAndFindings', () => {
         expect(card.findings.some(f => f.key === 'finding_dkim_revoked')).toBe(true);
     });
 
+    it('informa Null MX (RFC 7505) sin penalizar', () => {
+        const card = calculateScoreAndFindings(baseResult({ nullMx: true }));
+        const f = card.findings.find(x => x.key === 'finding_null_mx');
+        expect(f).toBeTruthy();
+        expect(f.status).toBe('info');
+    });
+
+    it('informa DMARC heredado del dominio organizativo', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            dmarcInherited: true,
+            dmarcInheritedFrom: 'example.com'
+        }));
+        const f = card.findings.find(x => x.key === 'finding_dmarc_inherited');
+        expect(f).toBeTruthy();
+        expect(f.replacements['{org}']).toBe('example.com');
+    });
+
     it('bonifica DNSSEC firmado', () => {
         const card = calculateScoreAndFindings(baseResult({ dnssec: { signed: true } }));
         expect(card.findings.some(f => f.key === 'finding_dnssec_ok')).toBe(true);

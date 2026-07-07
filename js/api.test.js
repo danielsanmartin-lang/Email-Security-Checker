@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { queryDNS, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, clearDnsCache } from './api.js';
+import { queryDNS, getMX, getDMARC, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, clearDnsCache } from './api.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
 function fetchMock(handler) {
@@ -51,6 +51,53 @@ describe('queryDNS (validación del Status DoH)', () => {
         const data = await queryDNS('nope.example', 'TXT');
         expect(data.Status).toBe(3);
         expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('getMX (Null MX y robustez)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('reconoce Null MX (RFC 7505, "0 .") como array vacío marcado', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [{ type: 15, data: '0 .' }] }));
+        const mx = await getMX('parked.example');
+        expect(mx).toHaveLength(0);
+        expect(mx.nullMx).toBe(true);
+    });
+
+    it('ordena por prioridad y quita el punto final del host', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [
+            { type: 15, data: '20 mx2.example.com.' },
+            { type: 15, data: '10 mx1.example.com.' }
+        ] }));
+        const mx = await getMX('example.com');
+        expect(mx.map(r => r.host)).toEqual(['mx1.example.com', 'mx2.example.com']);
+        expect(mx.nullMx).toBeUndefined();
+    });
+
+    it('descarta registros MX malformados sin lanzar', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [
+            { type: 15, data: '10' },
+            { type: 15, data: '5 mx.example.com.' }
+        ] }));
+        const mx = await getMX('example.com');
+        expect(mx).toHaveLength(1);
+        expect(mx[0].host).toBe('mx.example.com');
+    });
+});
+
+describe('getDMARC (herencia del dominio organizativo)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('devuelve el registro del subdominio cuando existe', async () => {
+        global.fetch = fetchMock((name) =>
+            name === '_dmarc.mail.example.com'
+                ? { Status: 0, Answer: [{ type: 16, data: '"v=DMARC1; p=reject"' }] }
+                : { Status: 0 }
+        );
+        const r = await getDMARC('mail.example.com');
+        expect(r.record).toContain('p=reject');
     });
 });
 

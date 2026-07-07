@@ -18,7 +18,10 @@ export function generateReportHTML() {
     const { currentResult, currentDomain } = state;
     const lang = getLanguage();
     const t = translations[lang];
-    const d = new Date().toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
+    // Fecha del escaneo (no la de exportación): un informe generado más tarde debe
+    // reflejar cuándo se hizo realmente el análisis.
+    const d = (currentResult.scannedAt ? new Date(currentResult.scannedAt) : new Date())
+        .toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
     
     const layerEvidence = (entry) => {
         const ev = Array.isArray(entry.evidence) ? entry.evidence : [];

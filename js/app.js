@@ -1,5 +1,5 @@
 import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists } from './api.js';
-import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
+import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT, extractRootDomain } from './analyzer.js';
 import { renderResults, showSection, setStep, closeKbModal, translateDOM, analyzeHeaders } from './ui.js';
 import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
@@ -53,7 +53,24 @@ async function runAnalysis(domain, dkimSelector = null) {
 
         const mxP = getMX(domain).then(r => { setStep('step-mx', 'done'); return r; });
         const spfP = getSPF(domain);
-        const dmarcP = getDMARC(domain).then(r => { setStep('step-dmarc', 'done'); return r; });
+        // DMARC con herencia del dominio organizativo (RFC 7489 §6.6.3): si el
+        // subdominio no publica registro, la política se hereda del dominio raíz.
+        const dmarcP = getDMARC(domain).then(async (r) => {
+            if (!r.record) {
+                const org = extractRootDomain(domain);
+                if (org && org !== domain) {
+                    const orgDmarc = await getDMARC(org);
+                    if (orgDmarc.record) {
+                        orgDmarc.inherited = true;
+                        orgDmarc.inheritedFrom = org;
+                        setStep('step-dmarc', 'done');
+                        return orgDmarc;
+                    }
+                }
+            }
+            setStep('step-dmarc', 'done');
+            return r;
+        });
         const bimiP = getBIMI(domain).then(r => { setStep('step-bimi', 'done'); return r; });
         const advancedP = Promise.all([
             getAllTXT(domain),
@@ -127,6 +144,9 @@ async function runAnalysis(domain, dkimSelector = null) {
             tlsrptReporters,
             spfData,
             dmarcData,
+            dmarcInherited: dmarcData.inherited || false,
+            dmarcInheritedFrom: dmarcData.inheritedFrom || null,
+            nullMx: !!mxRecords.nullMx,
             srvRecords,
             daneRecords,
             dnssec,
@@ -150,6 +170,9 @@ async function runAnalysis(domain, dkimSelector = null) {
 
         result.scoreCard = calculateScoreAndFindings(result);
         
+        // Momento real del escaneo: se fija una vez en el propio result y no se
+        // recalcula al re-renderizar (p. ej. al cambiar de idioma) ni al exportar.
+        result.scannedAt = new Date().toISOString();
         state.currentDomain = domain;
         state.currentResult = result;
         setStep('step-analysis', 'done');
