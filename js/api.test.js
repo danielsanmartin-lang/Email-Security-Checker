@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, clearDnsCache } from './api.js';
+import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache } from './api.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
 function fetchMock(handler) {
@@ -51,6 +51,51 @@ describe('queryDNS (validación del Status DoH)', () => {
         const data = await queryDNS('nope.example', 'TXT');
         expect(data.Status).toBe(3);
         expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('queryDNS (caché TTL)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('cachea la respuesta: dos llamadas secuenciales = 1 fetch', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [] }));
+        await queryDNS('cache.example', 'TXT');
+        await queryDNS('cache.example', 'TXT');
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('clearDnsCache invalida la caché: vuelve a consultar', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [] }));
+        await queryDNS('cache.example', 'TXT');
+        clearDnsCache();
+        await queryDNS('cache.example', 'TXT');
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('fetchMTASTSPolicyFile', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('rechaza una política redirigida (RFC 8461 §3.3)', async () => {
+        global.fetch = vi.fn(async () => ({ type: 'opaqueredirect', status: 0, ok: false, text: async () => '' }));
+        const r = await fetchMTASTSPolicyFile('ex.com');
+        expect(r.validationReason).toBe('redirect_not_allowed');
+        expect(r.valid).toBe(false);
+    });
+
+    it('usa el código HTTP real del proxy allorigins (404 → fetch_failed)', async () => {
+        global.fetch = vi.fn(async (url) => {
+            if (String(url).includes('allorigins')) {
+                return { ok: true, status: 200, json: async () => ({ contents: 'Not Found', status: { http_code: 404 } }) };
+            }
+            // Fetch directo falla (CORS) → cae al proxy.
+            throw new TypeError('Failed to fetch');
+        });
+        const r = await fetchMTASTSPolicyFile('ex.com');
+        expect(r.httpStatus).toBe(404);
+        expect(r.validationReason).toBe('fetch_failed');
     });
 });
 
