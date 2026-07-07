@@ -47,7 +47,7 @@ export const KB = {
         // ICES inline MX patterns
         { pattern: 'perception-point.io', name: 'Perception Point', type: 'ices' },
         { pattern: 'xorlab.com', name: 'xorlab', type: 'ices' },
-        { pattern: 'mailprotection.checkpoint.com', name: 'Avanan (Check Point)', type: 'ices' },
+        { pattern: 'mailprotection.checkpoint.com', name: 'Avanan (Check Point Harmony Email)', type: 'ices' },
         { pattern: 'material.security', name: 'Material Security', type: 'ices' },
         { pattern: 'defend.egress.com', name: 'Egress Defend', type: 'ices' },
         // Providers
@@ -109,8 +109,8 @@ export const KB = {
         { pattern: 'proofpoint.com', name: 'Proofpoint', category: 'seg', cat_label: 'SEG' },
         { pattern: 'mimecast.com', name: 'Mimecast', category: 'seg', cat_label: 'SEG' },
         { pattern: 'barracuda', name: 'Barracuda', category: 'seg', cat_label: 'SEG' },
-        { pattern: 'sophos.com', name: 'Sophos', category: 'seg', cat_label: 'SEG' },
-        { pattern: 'trendmicro.com', name: 'Trend Micro', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'sophos.com', name: 'Sophos Email', category: 'seg', cat_label: 'SEG' },
+        { pattern: 'trendmicro.com', name: 'Trend Micro Email Security', category: 'seg', cat_label: 'SEG' },
         { pattern: 'cisco.com', name: 'Cisco Email Security (IronPort)', category: 'seg', cat_label: 'SEG' },
         { pattern: 'iphmx.com', name: 'Cisco Email Security (IronPort)', category: 'seg', cat_label: 'SEG' },
         { pattern: 'mcafee.com', name: 'McAfee / Trellix', category: 'seg', cat_label: 'SEG' },
@@ -130,7 +130,7 @@ export const KB = {
         { pattern: 'mailroute.net', name: 'MailRoute', category: 'seg', cat_label: 'SEG' },
         { pattern: 'libraesva.com', name: 'Libraesva', category: 'seg', cat_label: 'SEG' },
         { pattern: 'vipre.com', name: 'VIPRE Email Security', category: 'seg', cat_label: 'SEG' },
-        { pattern: 'avanan.net', name: 'Avanan (Check Point)', category: 'ices', cat_label: 'ICES' },
+        { pattern: 'avanan.net', name: 'Avanan (Check Point Harmony Email)', category: 'ices', cat_label: 'ICES' },
         { pattern: 'abnormalsecurity.com', name: 'Abnormal Security', category: 'ices', cat_label: 'ICES' },
         { pattern: 'ironscales.com', name: 'Ironscales', category: 'ices', cat_label: 'ICES' },
         { pattern: 'darktrace.com', name: 'Darktrace', category: 'ices', cat_label: 'ICES' },
@@ -163,8 +163,14 @@ export const KB = {
     txt_verification: [
         { pattern: 'proofpoint-verification', name: 'Proofpoint', category: 'seg' },
         { pattern: 'mimecast', name: 'Mimecast', category: 'seg' },
-        { pattern: 'cisco-ci-domain-verification', name: 'Cisco Email Security', category: 'seg' },
-        { pattern: 'sophos-domain-verification', name: 'Sophos', category: 'seg' },
+        // Token de propiedad del Cisco Security Cloud (el "ci" es la identidad común
+        // de la nube de Cisco): es transversal a MUCHOS productos (Secure Email Threat
+        // Defense, Umbrella, XDR, Secure Access...). NO prueba un SEG en el flujo de
+        // correo entrante —eso lo probaría el MX *.iphmx.com / *.ess.cisco.com—, solo
+        // que el dominio se vinculó a un tenant de Cisco. Lo tratamos como ICES de baja
+        // confianza (Threat Defense es API-based y su único rastro DNS suele ser este TXT).
+        { pattern: 'cisco-ci-domain-verification', name: 'Cisco Secure Email (Threat Defense / Security Cloud)', category: 'ices', verificationOnly: true, weight: 0.35 },
+        { pattern: 'sophos-domain-verification', name: 'Sophos Email', category: 'seg' },
         { pattern: 'ironscales-domain-verification', name: 'Ironscales', category: 'ices' },
         { pattern: 'abnormal-security', name: 'Abnormal Security', category: 'ices' },
         { pattern: 'knowbe4-site-verification', name: 'KnowBe4', category: 'other' },
@@ -189,9 +195,9 @@ export const KB = {
         { pattern: 'cloudflare-verify', name: 'Cloudflare', category: 'other' },
         // Additional vendor TXT verifications
         { pattern: 'barracuda-domain-verification', name: 'Barracuda', category: 'seg' },
-        { pattern: 'trendmicro-domain-verification', name: 'Trend Micro', category: 'seg' },
+        { pattern: 'trendmicro-domain-verification', name: 'Trend Micro Email Security', category: 'seg' },
         { pattern: 'hornetsecurity-domain-verification', name: 'Hornetsecurity', category: 'seg' },
-        { pattern: 'forcepoint-domain-verification', name: 'Forcepoint', category: 'seg' },
+        { pattern: 'forcepoint-domain-verification', name: 'Forcepoint Email Security', category: 'seg' },
         { pattern: 'zix-domain-verification', name: 'Zix (OpenText)', category: 'seg' },
         { pattern: 'proofpointessentials', name: 'Proofpoint Essentials', category: 'seg' },
         { pattern: 'cisco-ironport-av', name: 'Cisco Email Security (IronPort)', category: 'seg' },

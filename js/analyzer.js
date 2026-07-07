@@ -144,7 +144,12 @@ export function identifyTXTVerifications(txtRecords) {
                     name: entry.name,
                     category: entry.category,
                     record: txt.length > 80 ? txt.substring(0, 77) + '...' : txt,
-                    fullRecord: txt
+                    fullRecord: txt,
+                    // Peso propio del token (si el diccionario lo define) y marca de
+                    // "solo verificación de propiedad": un token TXT prueba que el
+                    // dominio se vinculó al vendor, no que esté en el flujo de correo.
+                    ...(entry.weight != null ? { weight: entry.weight } : {}),
+                    ...(entry.verificationOnly ? { verificationOnly: true } : {})
                 });
             }
         }
@@ -274,10 +279,10 @@ export function detectSecurityLayers(signals = {}) {
         }
     }
 
-    // 5. Tokens de verificación TXT
+    // 5. Tokens de verificación TXT (peso propio del token si el diccionario lo define)
     for (const v of txtVerifications) {
         if (v.category === 'seg' || v.category === 'ices') {
-            add(v.name, v.category, 'txt', v.record, W.txt);
+            add(v.name, v.category, 'txt', v.record, v.weight ?? W.txt);
         }
     }
 
@@ -289,18 +294,51 @@ export function detectSecurityLayers(signals = {}) {
         if (hit) add(hit.name, hit.category, 'dkim', sel, W.dkim);
     }
 
+    // Un SEG se define por estar EN el flujo de correo entrante (el MX apunta a él).
+    // Estas señales confirman esa presencia; un token de verificación TXT NO.
+    const IN_PATH_SIGNALS = new Set(['mx', 'mta_sts', 'spf', 'spf_nested', 'dkim']);
+    // Identidad canónica del vendor: ignora paréntesis y sufijos genéricos para que un
+    // mismo vendor con distinto nombre en cada diccionario ("Sophos" en el token TXT vs
+    // "Sophos Email" en el MX; "Trend Micro" vs "Trend Micro Email Security") se
+    // reconozca como el mismo y no se marque "sin confirmar" a un vendor cuyo MX SÍ lo confirma.
+    const canonVendor = (name) => String(name).toLowerCase()
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/\b(email|security|messaging|gateway|essentials|ironport)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, '');
+    // Vendors cuyo MX real confirma presencia en el flujo de correo (por identidad canónica).
+    const mxVendorCanon = new Set(
+        mxRecords
+            .map(mx => identifyMX(mx.host, domain))
+            .filter(id => id.type === 'seg' || id.type === 'ices')
+            .map(id => canonVendor(id.name))
+            .filter(Boolean)
+    );
+
     const segList = [];
     const icesList = [];
     for (const entry of map.values()) {
-        const score = Math.round((1 - entry.evidence.reduce((acc, e) => acc * (1 - e.weight), 1)) * 100) / 100;
+        let score = Math.round((1 - entry.evidence.reduce((acc, e) => acc * (1 - e.weight), 1)) * 100) / 100;
         const strongest = entry.evidence.reduce((a, b) => (b.weight > a.weight ? b : a), entry.evidence[0]);
+
+        // Cross-check MX: si la ÚNICA evidencia de un SEG es un token de verificación
+        // TXT (prueba de propiedad de dominio, no de flujo de correo) y ningún MX real
+        // pertenece a ese vendor, la afirmación NO está confirmada → la degradamos a
+        // "baja". Un gateway que no aparece en el MX no está filtrando el correo.
+        // (Los ICES son API-based y no tocan el MX, por eso quedan excluidos.)
+        const hasInPath = entry.evidence.some(e => IN_PATH_SIGNALS.has(e.signal));
+        const canon = canonVendor(entry.name);
+        const mxConfirmsVendor = canon !== '' && mxVendorCanon.has(canon);
+        const unconfirmed = entry.category === 'seg' && !hasInPath && !mxConfirmsVendor;
+        if (unconfirmed && score > 0.4) score = 0.4;
+
         const out = {
             name: entry.name,
             category: entry.category,
             source: strongest ? strongest.value : '',
             score,
             level: _segLevel(score),
-            evidence: entry.evidence
+            evidence: entry.evidence,
+            ...(unconfirmed ? { unconfirmed: true } : {})
         };
         (entry.category === 'seg' ? segList : icesList).push(out);
     }

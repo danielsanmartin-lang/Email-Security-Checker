@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, detectSecurityLayers } from './analyzer.js';
+import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, detectSecurityLayers, identifyTXTVerifications } from './analyzer.js';
 
 describe('collectSpfDomains', () => {
     it('aplana includes/redirects de todo el árbol SPF', () => {
@@ -73,6 +73,83 @@ describe('detectSecurityLayers (multi-señal ponderado)', () => {
             mtaStsMx: ['mx.mimecast.com', '*.protection.outlook.com']
         });
         expect(segList.some(s => s.name === 'Mimecast' && s.evidence.some(e => e.signal === 'mta_sts'))).toBe(true);
+    });
+
+    it('degrada a "baja" un SEG cuya ÚNICA evidencia es un token TXT si el MX no lo confirma', () => {
+        // Caso Amazon: MX propio (amazon-smtp.amazon.com) + token de verificación de un
+        // vendor SEG. Sin presencia en el MX, un SEG no puede estar filtrando el correo.
+        const { segList } = detectSecurityLayers({
+            domain: 'acme.com',
+            mxRecords: [{ priority: 5, host: 'acme-smtp.acme.com' }],
+            txtVerifications: [{ name: 'Barracuda', category: 'seg', record: 'barracuda-domain-verification=abc' }]
+        });
+        const barracuda = segList.find(s => s.name === 'Barracuda');
+        expect(barracuda).toBeTruthy();
+        expect(barracuda.score).toBeLessThanOrEqual(0.4);
+        expect(barracuda.level).toBe('baja');
+        expect(barracuda.unconfirmed).toBe(true);
+    });
+
+    it('NO degrada el SEG si el MX confirma al mismo vendor', () => {
+        const { segList } = detectSecurityLayers({
+            domain: 'acme.com',
+            mxRecords: [{ priority: 5, host: 'mx.mimecast.com' }],
+            txtVerifications: [{ name: 'Mimecast', category: 'seg', record: 'mimecast-verification=abc' }]
+        });
+        const mimecast = segList.find(s => s.name === 'Mimecast');
+        expect(mimecast.score).toBeGreaterThan(0.9);
+        expect(mimecast.unconfirmed).toBeUndefined();
+    });
+
+    it('fusiona en UNA sola entrada el mismo vendor detectado por MX y por token TXT', () => {
+        // Antes: "Sophos Email" (MX) + "Sophos" (TXT) salían como dos entradas por el
+        // nombre inconsistente en el KB. Tras normalizar nombres, deben fusionarse.
+        const txt = identifyTXTVerifications(['sophos-domain-verification=abc']);
+        expect(txt[0].name).toBe('Sophos Email');
+        const { segList } = detectSecurityLayers({
+            domain: 'acme.com',
+            mxRecords: [{ priority: 10, host: 'mx.sophos.com' }],
+            txtVerifications: txt
+        });
+        const sophos = segList.filter(s => s.name === 'Sophos Email');
+        expect(sophos).toHaveLength(1);
+        expect(sophos[0].evidence.map(e => e.signal).sort()).toEqual(['mx', 'txt']);
+        expect(sophos[0].level).toBe('alta');
+    });
+
+    it('NO marca "unconfirmed" cuando el MX confirma al vendor bajo OTRO nombre (identidad canónica)', () => {
+        // El token TXT de Sophos mapea a "Sophos", pero el MX de Sophos identifica como
+        // "Sophos Email". Son el mismo vendor: el token no debe salir "sin confirmar".
+        const { segList } = detectSecurityLayers({
+            domain: 'acme.com',
+            mxRecords: [{ priority: 10, host: 'mx.sophos.com' }],
+            txtVerifications: [{ name: 'Sophos', category: 'seg', record: 'sophos-domain-verification=abc' }]
+        });
+        expect(segList.every(s => !s.unconfirmed)).toBe(true);
+        // El MX de Sophos sigue dando confianza alta.
+        expect(segList.some(s => s.level === 'alta' && s.evidence.some(e => e.signal === 'mx'))).toBe(true);
+    });
+
+    it('el token cisco-ci-domain-verification NO produce un SEG; cae como ICES de baja confianza', () => {
+        // El token de propiedad del Cisco Security Cloud no prueba el gateway IronPort.
+        const txt = identifyTXTVerifications(['cisco-ci-domain-verification=1b256bd11daa486ba2fa405d2d5de70f75feb6757dd8993c']);
+        const cisco = txt.find(t => t.name.startsWith('Cisco Secure Email'));
+        expect(cisco).toBeTruthy();
+        expect(cisco.category).toBe('ices');
+        expect(cisco.weight).toBe(0.35);
+
+        const { segList, icesList } = detectSecurityLayers({
+            domain: 'amazon.com',
+            mxRecords: [{ priority: 5, host: 'amazon-smtp.amazon.com' }],
+            txtVerifications: txt
+        });
+        // No debe aparecer ningún SEG de Cisco.
+        expect(segList.some(s => s.name.toLowerCase().includes('cisco'))).toBe(false);
+        // Y como ICES debe quedar en confianza baja (0.35), no "media 70%".
+        const ices = icesList.find(i => i.name.startsWith('Cisco Secure Email'));
+        expect(ices).toBeTruthy();
+        expect(ices.score).toBe(0.35);
+        expect(ices.level).toBe('baja');
     });
 });
 

@@ -138,7 +138,19 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 ## 📅 Historial de Cambios
 
-### v2.5.0 — Detección de Awareness más precisa y por cabeceras (Actual)
+### v2.5.1 — Precisión SEG/ICES: cross-check con el MX y deduplicación de vendors (Actual)
+
+Correcciones de exactitud en la detección de capas de seguridad (`detectSecurityLayers`), a raíz de un falso positivo del tipo *"amazon.com usa Cisco Email Security — 70%"*.
+
+* **Fin del 70% falso por token de verificación:** un SEG cuya **única** evidencia era un token TXT de propiedad de dominio alcanzaba "media" (0.7) en solitario. Ahora se **cruza con el MX**: si ningún registro MX pertenece a ese vendor (p. ej. el dominio tiene MX propio), la afirmación se degrada a **"baja"** y se marca *"sin confirmar en el MX"* en la UI y el informe. Un gateway que no está en el flujo de correo no está filtrando nada. Mismo patrón que el 70% falso de Microsoft AST ya corregido en v2.4.0.
+* **`cisco-ci-domain-verification` recategorizado:** deja de reportarse como SEG "Cisco Email Security". Es un token del **Cisco Security Cloud** (transversal a Umbrella/XDR/Threat Defense…), no prueba del gateway IronPort. Pasa a **ICES de baja confianza** (peso propio `0.35`), ya que Threat Defense es API-based y su único rastro DNS suele ser ese TXT.
+* **Peso por token TXT:** cada token del diccionario puede fijar su propio peso (`weight`) en lugar del `0.7` global, para calibrar la confianza señal a señal.
+* **Identidad canónica de vendor:** la confirmación por MX reconoce al mismo vendor aunque los diccionarios usen nombres distintos (*"Sophos"* en el token vs *"Sophos Email"* en el MX), evitando marcar como "sin confirmar" a un cliente cuyo MX **sí** es de ese vendor.
+* **Deduplicación de entradas:** nombres unificados en el KB (Sophos, Trend Micro, Forcepoint, Avanan/Check Point) para que un vendor detectado por varias señales (MX + SPF + TXT) se muestre como **una sola** tarjeta con toda la evidencia agregada, en vez de duplicarse. Se preservan los productos genuinamente distintos (Proofpoint vs Proofpoint Essentials, Symantec cloud vs gateway).
+
+> **+6 tests** (total **134**): caso Amazon (token Cisco → ICES baja, no SEG), cross-check de MX, identidad canónica, fusión de entradas y renderizado del aviso en UI y export.
+
+### v2.5.0 — Detección de Awareness más precisa y por cabeceras
 
 Seis mejoras al detector de plataformas de Awareness / Phishing Simulation, centradas en exactitud y en romper el techo del análisis solo-DNS.
 

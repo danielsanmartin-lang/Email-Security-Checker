@@ -46,8 +46,48 @@ function maliciousResult() {
     return result;
 }
 
+// Result con un SEG cuya única evidencia es un token TXT y un MX que NO lo confirma
+// (caso Amazon): la detección debe marcarlo unconfirmed y la UI/export avisarlo.
+function unconfirmedSegResult() {
+    const mxRecords = [{ priority: 5, host: 'acme-smtp.acme.com' }];
+    const spfRaw = 'v=spf1 include:amazonses.com -all';
+    const dmarcRaw = 'v=DMARC1; p=quarantine; rua=mailto:a@b.com';
+    const result = analyze(mxRecords, spfRaw, dmarcRaw, {
+        domain: 'acme.com',
+        txtVerifications: [{ name: 'Barracuda', category: 'seg', record: 'barracuda-domain-verification=abc', fullRecord: 'barracuda-domain-verification=abc' }],
+        nsRecords: [],
+        mtaSts: null,
+        tlsRpt: null,
+        srvRecords: {},
+        daneRecords: {}
+    });
+    result.spfLookups = 1;
+    result.spfTree = { domain: 'acme.com', lookups: 1, error: null, children: [] };
+    result.dkimRecords = { records: [], errors: [] };
+    result.bimiRecord = null;
+    result.rblResults = [];
+    result.awarenessResult = null;
+    result.scoreCard = calculateScoreAndFindings(result);
+    return result;
+}
+
 describe('renderResults (jsdom, integración)', () => {
     beforeEach(buildDom);
+
+    it('avisa "sin confirmar en el MX" para un SEG solo-TXT (UI y export)', () => {
+        const result = unconfirmedSegResult();
+        const barracuda = result.segList.find(s => s.name === 'Barracuda');
+        expect(barracuda.unconfirmed).toBe(true);
+        expect(barracuda.level).toBe('baja');
+
+        renderResults('acme.com', result);
+        expect(document.getElementById('security-body').innerHTML).toContain('Sin confirmar en el MX');
+
+        state.currentResult = result;
+        state.currentDomain = 'acme.com';
+        const report = generateReportHTML().toString();
+        expect(report).toContain('Sin confirmar en el MX');
+    });
 
     it('renderiza sin lanzar y escapa los payloads XSS', () => {
         expect(() => renderResults('evil.com', maliciousResult())).not.toThrow();

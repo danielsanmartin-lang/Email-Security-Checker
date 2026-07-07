@@ -334,10 +334,14 @@ export function renderResults(domain, result) {
         const evidenceHtml = evidence.length
             ? html`<div class="info-block__detail">${t.evidence}: ${evidence.map((e, i) => html`${raw(i ? ' · ' : '')}${t[`seg_signal_${e.signal}`] || e.signal}: ${e.value}`)}</div>`
             : html`<div class="info-block__detail">${t.evidence}: ${entry.source}</div>`;
+        const unconfirmedHtml = entry.unconfirmed
+            ? html`<div class="info-block__detail" style="color:var(--accent-amber,#d97706);font-style:italic;">⚠ ${t.seg_unconfirmed_mx}</div>`
+            : raw('');
         return html`<div class="info-block">
             <div class="info-block__label">${raw(labelText)}</div>
             <div class="info-block__value">${entry.name}${badge}</div>
             ${evidenceHtml}
+            ${unconfirmedHtml}
         </div>`;
     };
 

@@ -30,8 +30,12 @@ export function generateReportHTML() {
         const pct = typeof entry.score === 'number' ? ` ${Math.round(entry.score * 100)}%` : '';
         return lvl ? ` <span style="font-size:11px;color:#6366f1;font-weight:600;">(${t.confidence_label}: ${escapeHtml(lvl)}${escapeHtml(pct)})</span>` : '';
     };
+    const layerUnconfirmed = (entry) =>
+        entry.unconfirmed
+            ? `<br><small style="color: #d97706; font-style: italic;">⚠ ${escapeHtml(t.seg_unconfirmed_mx)}</small>`
+            : '';
     const layerItem = (entry, label) =>
-        `<li style="margin-bottom: 10px;"><strong>${label}:</strong> <span style="color: #4f46e5; font-weight: bold;">${escapeHtml(entry.name)}</span>${layerLevel(entry)} <br><small style="color: #64748b;">${t.evidence}: ${layerEvidence(entry)}</small></li>`;
+        `<li style="margin-bottom: 10px;"><strong>${label}:</strong> <span style="color: #4f46e5; font-weight: bold;">${escapeHtml(entry.name)}</span>${layerLevel(entry)} <br><small style="color: #64748b;">${t.evidence}: ${layerEvidence(entry)}</small>${layerUnconfirmed(entry)}</li>`;
 
     let segHtml = '';
     if (currentResult.segList.length > 0 || currentResult.icesList.length > 0) {
