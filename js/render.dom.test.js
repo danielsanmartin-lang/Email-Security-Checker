@@ -18,6 +18,8 @@ const CONTAINER_IDS = [
 function buildDom() {
     let h = `<div id="score-card"><div class="score-card__title"></div><div id="score-ring-fill"></div><div id="score-findings"></div></div>`;
     h += CONTAINER_IDS.map(id => `<div id="${id}"></div>`).join('');
+    // Modal de la KB, necesario para probar el flujo del botón "Añadir a BD".
+    h += `<div id="add-kb-modal" class="hidden"><input id="kb-domain"><input id="kb-name"><select id="kb-category"><option value="marketing">Marketing</option></select></div>`;
     document.body.innerHTML = h;
 }
 
@@ -98,6 +100,38 @@ describe('renderResults (jsdom, integración)', () => {
         expect(body).toContain('&lt;script&gt;');
         // No debe haber nodos <script> reales inyectados
         expect(document.querySelectorAll('script').length).toBe(0);
+    });
+
+    it('la tabla SPF no usa onclick inline y el payload con comillas llega intacto al modal (fix XSS)', () => {
+        // encodeURIComponent no escapa comillas simples ni paréntesis: con el antiguo
+        // onclick inline, este include ejecutaba alert(1) al pulsar "Añadir a BD".
+        const PAYLOAD = "'-alert(1)-'.evil.com";
+        const result = analyze(
+            [{ priority: 10, host: 'mx.evil.com' }],
+            `v=spf1 include:${PAYLOAD} ~all`,
+            'v=DMARC1; p=reject; rua=mailto:a@b.com',
+            { domain: 'evil.com', txtVerifications: [], nsRecords: [], mtaSts: null, tlsRpt: null, srvRecords: {}, daneRecords: {} }
+        );
+        result.spfLookups = 1;
+        result.spfTree = { domain: 'evil.com', lookups: 1, error: null, children: [] };
+        result.dkimRecords = { records: [], errors: [] };
+        result.bimiRecord = null;
+        result.rblResults = [];
+        result.awarenessResult = null;
+        result.scoreCard = calculateScoreAndFindings(result);
+
+        renderResults('evil.com', result);
+        const spfBody = document.getElementById('spf-table-body').innerHTML;
+        expect(spfBody).not.toContain('onclick');
+
+        const btn = document.querySelector('#spf-table-body button[data-kb-domain]');
+        expect(btn).toBeTruthy();
+        expect(btn.dataset.kbDomain).toBe(PAYLOAD);
+
+        // El listener delegado abre el modal con el valor literal, sin evaluar JS.
+        btn.click();
+        expect(document.getElementById('kb-domain').value).toBe(PAYLOAD);
+        expect(document.getElementById('add-kb-modal').classList.contains('hidden')).toBe(false);
     });
 
     it('muestra "No identificado" traducido cuando no hay proveedor', () => {

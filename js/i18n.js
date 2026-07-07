@@ -126,6 +126,7 @@ export const translations = {
         error_domain_not_found: "El dominio «{domain}» no existe (NXDOMAIN). Revisa que esté bien escrito.",
         error_network: "No se pudo conectar con los servidores DNS. Comprueba tu conexión a Internet e inténtalo de nuevo.",
         error_invalid_domain: "El valor introducido no es un nombre de dominio válido (ej.: empresa.com).",
+        error_servfail: "Los resolvers DNS no pudieron resolver el dominio (SERVFAIL/REFUSED). Suele indicar un problema en la zona DNS del dominio (p. ej. DNSSEC roto), no un fallo de esta herramienta.",
 
         spf_header_prefix: "Prefijo",
         spf_header_type: "Tipo",
@@ -573,6 +574,7 @@ export const translations = {
         error_domain_not_found: "The domain \"{domain}\" does not exist (NXDOMAIN). Check the spelling.",
         error_network: "Could not reach the DNS servers. Check your internet connection and try again.",
         error_invalid_domain: "The value entered is not a valid domain name (e.g.: company.com).",
+        error_servfail: "The DNS resolvers could not resolve the domain (SERVFAIL/REFUSED). This usually points to a problem in the domain's DNS zone (e.g. broken DNSSEC), not a failure of this tool.",
 
         spf_header_prefix: "Prefix",
         spf_header_type: "Type",

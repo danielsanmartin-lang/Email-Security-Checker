@@ -31,39 +31,62 @@ function _setCache(name, type, data) {
 // ===== DNS Query with timeout and fallback =====
 const DNS_TIMEOUT = 8000; // 8 seconds
 
+// RCODEs concluyentes: 0 = NOERROR, 3 = NXDOMAIN ("no existe" es una respuesta
+// válida). Cualquier otro Status (2 = SERVFAIL, 5 = REFUSED…) significa que el
+// resolver NO pudo responder: tratarlo como "sin registros" produciría un falso
+// diagnóstico (p. ej. "sin SPF/DMARC" en dominios con DNSSEC roto).
+const DNS_CONCLUSIVE_STATUSES = [0, 3];
+
+async function _fetchDoH(url, headers) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
+    try {
+        const res = await fetch(url, { headers, signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 export async function queryDNS(name, type) {
     // Check cache first
     const cached = _getCached(name, type);
     if (cached) return cached;
 
-    let data;
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
-        const url = `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`;
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (!res.ok) throw new Error(`Google DNS failed: ${res.status}`);
-        data = await res.json();
-    } catch (e) {
-        console.warn('Google DNS failed, falling back to Cloudflare DoH', e);
+    const providers = [
+        { label: 'Google', url: `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}` },
+        { label: 'Cloudflare', url: `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`, headers: { 'Accept': 'application/dns-json' } }
+    ];
+
+    let badStatus = null;
+    for (const provider of providers) {
+        let candidate;
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
-            const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
-            const res = await fetch(url, { headers: { 'Accept': 'application/dns-json' }, signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (!res.ok) throw new Error(`Cloudflare DNS failed: ${res.status}`);
-            data = await res.json();
-        } catch (err) {
-            const e = new Error(`DNS queries failed for ${name} (${type})`);
-            e.code = 'network';
-            throw e;
+            candidate = await _fetchDoH(provider.url, provider.headers);
+        } catch (e) {
+            console.warn(`${provider.label} DoH failed for ${name} (${type})`, e);
+            continue;
         }
+        if (typeof candidate.Status === 'number' && !DNS_CONCLUSIVE_STATUSES.includes(candidate.Status)) {
+            console.warn(`${provider.label} DoH returned Status ${candidate.Status} for ${name} (${type})`);
+            badStatus = candidate.Status;
+            continue;
+        }
+        // Respuesta concluyente: cachear y devolver. Las respuestas de error no
+        // se cachean, para no fijar un fallo transitorio durante 5 minutos.
+        _setCache(name, type, candidate);
+        return candidate;
     }
 
-    _setCache(name, type, data);
-    return data;
+    if (badStatus !== null) {
+        const e = new Error(`DNS resolvers could not resolve ${name} (${type}): RCODE ${badStatus}`);
+        e.code = 'servfail';
+        throw e;
+    }
+    const e = new Error(`DNS queries failed for ${name} (${type})`);
+    e.code = 'network';
+    throw e;
 }
 
 // DoH RCODE: 0 = NOERROR, 3 = NXDOMAIN (dominio inexistente).

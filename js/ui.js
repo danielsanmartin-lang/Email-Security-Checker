@@ -26,7 +26,13 @@ export function closeKbModal() {
     document.getElementById('add-kb-modal').classList.add('hidden');
 }
 
-window.openKbModal = openKbModal;
+// Listener delegado para los botones "Añadir a BD" de la tabla SPF. El dominio
+// viaja en data-kb-domain (escapado como atributo HTML), nunca en un onclick
+// inline: los valores vienen del registro SPF remoto y podrían inyectar JS.
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-kb-domain]');
+    if (btn) openKbModal(btn.dataset.kbDomain);
+});
 
 // ===== Global Tooltip System =====
 let _tooltipEl = null;
@@ -399,8 +405,7 @@ export function renderResults(domain, result) {
             const catClass = `cat--${svc.category}`;
             const localizedCatLabel = getCategoryLabel(svc, lang);
             if (svc.is_unknown) {
-                const safeQuery = encodeURIComponent(svc.search_query || '');
-                svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="${escapeHtml(t.add_to_db_tooltip)}" onclick="openKbModal(decodeURIComponent('${safeQuery}'))">${t.add_to_db}</button>`;
+                svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="${escapeHtml(t.add_to_db_tooltip)}" data-kb-domain="${escapeHtml(svc.search_query || '')}">${t.add_to_db}</button>`;
             } else {
                 svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><span class="spf-service__category ${catClass}">${escapeHtml(localizedCatLabel)}</span>`;
             }

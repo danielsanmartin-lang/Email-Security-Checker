@@ -1,0 +1,57 @@
+name: Deploy to GitHub Pages
+
+# Publica la app SOLO si lint y tests pasan, y sube únicamente los archivos
+# de la app (index.html, css/, js/ sin tests) en lugar del repo entero.
+# Requiere cambiar Settings → Pages → Source a "GitHub Actions".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Tests
+        run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare site (solo archivos de la app, sin tests ni artefactos)
+        run: |
+          mkdir -p _site/js _site/css
+          cp index.html _site/
+          cp css/*.css _site/css/
+          cp js/*.js _site/js/
+          rm -f _site/js/*.test.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

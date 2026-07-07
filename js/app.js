@@ -101,12 +101,16 @@ async function runAnalysis(domain, dkimSelector = null) {
                     const ips = await getIPAddresses(mx.host);
                     const ip = ips[0] || null;
                     // Una comprobación por lista RBL: marcada como listada si CUALQUIER
-                    // IP del host (IPv4 o IPv6) aparece en esa lista.
+                    // IP del host (IPv4 o IPv6) aparece en esa lista. El estado 'error'
+                    // (consulta rechazada por la DNSBL vía resolver público, o host sin
+                    // IPs) debe llegar a la UI como "inconcluso", nunca como "limpio".
                     const checks = await Promise.all(RBL_LISTS.map(async (rbl) => {
-                        if (!ips.length) return { listed: false, rbl };
+                        if (!ips.length) return { status: 'error', listed: false, rbl };
                         const perIp = await Promise.all(ips.map(addr => checkRBL(addr, rbl)));
                         const hit = perIp.find(c => c.listed);
-                        return hit || { listed: false, rbl };
+                        if (hit) return hit;
+                        if (perIp.every(c => c.status === 'error')) return { status: 'error', listed: false, rbl };
+                        return { status: 'clean', listed: false, rbl };
                     }));
                     return { host: mx.host, ip, ips, checks };
                 })
@@ -171,6 +175,8 @@ async function runAnalysis(domain, dkimSelector = null) {
             message = (t.error_domain_not_found || '').replace('{domain}', domain) || t.error_default_message;
         } else if (err.code === 'network') {
             message = t.error_network || t.error_default_message;
+        } else if (err.code === 'servfail') {
+            message = t.error_servfail || t.error_default_message;
         } else {
             message = err.message || t.error_default_message;
         }

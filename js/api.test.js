@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, clearDnsCache } from './api.js';
+import { queryDNS, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, clearDnsCache } from './api.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
 function fetchMock(handler) {
@@ -10,6 +10,49 @@ function fetchMock(handler) {
         return { ok: true, status: 200, json: async () => handler(name, type) };
     });
 }
+
+describe('queryDNS (validación del Status DoH)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('hace fallback a Cloudflare cuando Google devuelve SERVFAIL (Status 2)', async () => {
+        global.fetch = vi.fn(async (url) => {
+            const isGoogle = String(url).startsWith('https://dns.google/');
+            return {
+                ok: true,
+                status: 200,
+                json: async () => isGoogle
+                    ? { Status: 2 }
+                    : { Status: 0, Answer: [{ type: 16, data: '"v=spf1 -all"' }] }
+            };
+        });
+        const data = await queryDNS('broken.example', 'TXT');
+        expect(data.Status).toBe(0);
+        expect(data.Answer).toHaveLength(1);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("lanza code 'servfail' si ambos resolvers fallan, sin cachear el fallo", async () => {
+        let mode = 'fail';
+        global.fetch = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => mode === 'fail' ? { Status: 2 } : { Status: 0, Answer: [] }
+        }));
+        await expect(queryDNS('servfail.example', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
+        // El fallo no queda cacheado: cuando el resolver se recupera, la misma consulta funciona.
+        mode = 'ok';
+        const data = await queryDNS('servfail.example', 'TXT');
+        expect(data.Status).toBe(0);
+    });
+
+    it('NXDOMAIN (Status 3) sigue siendo una respuesta concluyente, no un error', async () => {
+        global.fetch = fetchMock(() => ({ Status: 3 }));
+        const data = await queryDNS('nope.example', 'TXT');
+        expect(data.Status).toBe(3);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+});
 
 describe('checkRBL', () => {
     beforeEach(() => clearDnsCache());
