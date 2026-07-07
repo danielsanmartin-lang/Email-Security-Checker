@@ -94,9 +94,35 @@ async function runAnalysis(domain, dkimSelector = null) {
             return { spfData, spfRaw, spfTree, dkimRecords };
         });
 
-        const [mxRecords, { spfData, spfRaw, spfTree, dkimRecords }, dmarcData, bimiRecord, advanced] = await Promise.all([
+        // Degradación resiliente: un fallo transitorio en una consulta no debe
+        // descartar las demás. Solo se aborta si fallan a la vez MX y el TXT del
+        // ápex (SPF), que son las consultas nucleares.
+        const [mxS, spfS, dmarcS, bimiS, advS] = await Promise.allSettled([
             mxP, spfDerivedP, dmarcP, bimiP, advancedP
         ]);
+
+        if (mxS.status === 'rejected' && spfS.status === 'rejected') {
+            throw (mxS.reason && mxS.reason.code) ? mxS.reason : spfS.reason;
+        }
+
+        const mxRecords = mxS.status === 'fulfilled' ? mxS.value : [];
+        const spfDerived = spfS.status === 'fulfilled'
+            ? spfS.value
+            : { spfData: { record: null, records: [], multiple: false }, spfRaw: null, spfTree: null, dkimRecords: { records: [], errors: [] }, unavailable: true };
+        const { spfData, spfRaw, spfTree, dkimRecords } = spfDerived;
+        const spfUnavailable = spfS.status === 'rejected';
+        const dmarcData = dmarcS.status === 'fulfilled' ? dmarcS.value : { record: null, records: [], multiple: false };
+        const dmarcUnavailable = dmarcS.status === 'rejected';
+        const bimiRecord = bimiS.status === 'fulfilled' ? bimiS.value : null;
+        const advanced = advS.status === 'fulfilled' ? advS.value : [[], null, null, [], {}, null];
+
+        // Marca los pasos que fallaron para que no queden girando indefinidamente.
+        if (mxS.status === 'rejected') setStep('step-mx', null);
+        if (spfS.status === 'rejected') { setStep('step-spf', null); setStep('step-dkim', null); }
+        if (dmarcS.status === 'rejected') setStep('step-dmarc', null);
+        if (bimiS.status === 'rejected') setStep('step-bimi', null);
+        if (advS.status === 'rejected') setStep('step-advanced', null);
+
         const spfLookups = spfTree ? spfTree.lookups : 0;
         const dmarcRaw = dmarcData.record;
         const [allTxtRecords, mtaSts, tlsRpt, nsRecords, srvRecords, dnssec] = advanced;
@@ -146,6 +172,8 @@ async function runAnalysis(domain, dkimSelector = null) {
             dmarcData,
             dmarcInherited: dmarcData.inherited || false,
             dmarcInheritedFrom: dmarcData.inheritedFrom || null,
+            spfUnavailable,
+            dmarcUnavailable,
             nullMx: !!mxRecords.nullMx,
             srvRecords,
             daneRecords,

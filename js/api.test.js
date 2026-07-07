@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { queryDNS, getMX, getDMARC, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, clearDnsCache } from './api.js';
+import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, clearDnsCache } from './api.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
 function fetchMock(handler) {
@@ -51,6 +51,79 @@ describe('queryDNS (validación del Status DoH)', () => {
         const data = await queryDNS('nope.example', 'TXT');
         expect(data.Status).toBe(3);
         expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('queryDNS (deduplicación en vuelo)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('reutiliza la misma promesa para consultas idénticas concurrentes', async () => {
+        let calls = 0;
+        global.fetch = vi.fn(async () => {
+            calls++;
+            await Promise.resolve();
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        const [a, b] = await Promise.all([queryDNS('x.example', 'TXT'), queryDNS('x.example', 'TXT')]);
+        expect(a).toBe(b);
+        expect(calls).toBe(1);
+    });
+});
+
+describe('getSPFLookupTree', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    const spfMock = (map) => fetchMock((name, type) => {
+        if (type !== 'TXT') return { Status: 0 };
+        const rec = map[name];
+        return rec ? { Status: 0, Answer: [{ type: 16, data: `"${rec}"` }] } : { Status: 0 };
+    });
+
+    it('cuenta los mecanismos con máscara CIDR (a/24, mx/24)', async () => {
+        global.fetch = spfMock({ 'ex.com': 'v=spf1 a/24 mx/24 -all' });
+        const tree = await getSPFLookupTree('ex.com');
+        expect(tree.lookups).toBe(2);
+    });
+
+    it('un include repetido entre ramas hermanas no es un bucle', async () => {
+        global.fetch = spfMock({
+            'root.com': 'v=spf1 include:a.com include:b.com -all',
+            'a.com': 'v=spf1 include:shared.com -all',
+            'b.com': 'v=spf1 include:shared.com -all',
+            'shared.com': 'v=spf1 ip4:1.2.3.4 -all'
+        });
+        const tree = await getSPFLookupTree('root.com');
+        // 2 includes directos + 1 include dentro de cada rama = 4; ninguna marca 'loop'.
+        expect(tree.lookups).toBe(4);
+        const flatErrors = JSON.stringify(tree).match(/"error":"loop"/g);
+        expect(flatErrors).toBeNull();
+    });
+
+    it('detecta un bucle real (a→b→a)', async () => {
+        global.fetch = spfMock({
+            'a.com': 'v=spf1 include:b.com -all',
+            'b.com': 'v=spf1 include:a.com -all'
+        });
+        const tree = await getSPFLookupTree('a.com');
+        expect(JSON.stringify(tree)).toContain('"error":"loop"');
+    });
+});
+
+describe('getDKIM (TXT multi-string)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('concatena una clave DKIM partida en varios chunks entrecomillados', async () => {
+        global.fetch = fetchMock((name) =>
+            name === 'default._domainkey.ex.com'
+                ? { Status: 0, Answer: [{ type: 16, data: '"v=DKIM1; k=rsa; p=AAAA" "BBBBCCCC"' }] }
+                : { Status: 0 }
+        );
+        const r = await getDKIM('ex.com', 'default');
+        expect(r.records).toHaveLength(1);
+        expect(r.records[0].record).toBe('v=DKIM1; k=rsa; p=AAAABBBBCCCC');
     });
 });
 

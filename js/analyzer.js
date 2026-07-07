@@ -434,6 +434,9 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         // DMARC heredado del dominio organizativo (RFC 7489 §6.6.3) al analizar un subdominio.
         dmarcInherited: !!advancedData.dmarcInherited,
         dmarcInheritedFrom: advancedData.dmarcInheritedFrom || null,
+        // Consultas que no se pudieron resolver (fallo transitorio): no se penalizan.
+        spfUnavailable: !!advancedData.spfUnavailable,
+        dmarcUnavailable: !!advancedData.dmarcUnavailable,
         mxRecords,
         // Null MX (RFC 7505): el dominio declara que no recibe correo.
         nullMx: !!(advancedData.nullMx || mxRecords.nullMx),
@@ -501,6 +504,11 @@ const SCORE_CHECKS = [
     function spf(result) {
         const findings = [];
         let points = 0;
+        // La consulta falló (SERVFAIL/red): no penalizar como "sin SPF", solo informar.
+        if (result.spfUnavailable) {
+            findings.push({ status: 'info', key: 'finding_spf_unavailable' });
+            return { points, findings };
+        }
         if (!result.spfRaw) {
             findings.push({ status: 'error', key: 'finding_spf_err' });
             return { points, findings };
@@ -549,6 +557,11 @@ const SCORE_CHECKS = [
     function dmarc(result) {
         const findings = [];
         let points = 0;
+        // La consulta falló (SERVFAIL/red): no penalizar como "sin DMARC", solo informar.
+        if (result.dmarcUnavailable) {
+            findings.push({ status: 'info', key: 'finding_dmarc_unavailable' });
+            return { points, findings };
+        }
         if (!result.dmarcRaw) {
             findings.push({ status: 'error', key: 'finding_dmarc_err' });
             return { points, findings };
