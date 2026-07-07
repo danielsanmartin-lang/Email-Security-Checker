@@ -133,17 +133,17 @@
                         </button>
                     </div>
                     <div class="search-hints">
-                        <span class="search-hint" data-domain="google.com">google.com</span>
-                        <span class="search-hint" data-domain="salesforce.com">salesforce.com</span>
-                        <span class="search-hint" data-domain="microsoft.com">microsoft.com</span>
-                        <span class="search-hint" data-domain="amazon.com">amazon.com</span>
+                        <button type="button" class="search-hint" data-domain="google.com">google.com</button>
+                        <button type="button" class="search-hint" data-domain="salesforce.com">salesforce.com</button>
+                        <button type="button" class="search-hint" data-domain="microsoft.com">microsoft.com</button>
+                        <button type="button" class="search-hint" data-domain="amazon.com">amazon.com</button>
                     </div>
                 </form>
             </div>
         </section>
 
         <!-- Loading State -->
-        <section class="loading-section hidden" id="loading-section">
+        <section class="loading-section hidden" id="loading-section" role="status" aria-live="polite">
             <div class="loading-card">
                 <div class="loading-steps">
                     <div class="loading-step" id="step-mx">
@@ -322,7 +322,7 @@
         </section>
 
         <!-- Error State -->
-        <section class="error-section hidden" id="error-section">
+        <section class="error-section hidden" id="error-section" role="alert" aria-live="assertive">
             <div class="error-card">
                 <div class="error-icon">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5"
@@ -339,7 +339,7 @@
         </section>
 
         <!-- Results Section -->
-        <section class="results-section hidden" id="results-section">
+        <section class="results-section hidden" id="results-section" role="region" aria-live="polite" aria-label="Resultados del análisis">
             <!-- Domain Header -->
             <div class="result-header" id="result-header">
                 <div class="result-header__info">
@@ -741,11 +741,11 @@
     </div>
 
     <!-- Add to KB Modal -->
-    <div id="add-kb-modal" class="modal hidden">
+    <div id="add-kb-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-kb-title">
         <div class="modal__overlay" id="add-kb-overlay"></div>
         <div class="modal__content">
             <div class="modal__header">
-                <h3 class="modal__title" data-i18n="modal_kb_title">Añadir a Knowledge Base</h3>
+                <h3 class="modal__title" id="add-kb-title" data-i18n="modal_kb_title">Añadir a Knowledge Base</h3>
                 <button class="modal__close" id="add-kb-close">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
@@ -788,11 +788,11 @@
     </div>
     
     <!-- DKIM Info Modal -->
-    <div id="dkim-info-modal" class="modal hidden">
+    <div id="dkim-info-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dkim-info-title">
         <div class="modal__overlay" id="dkim-info-overlay"></div>
         <div class="modal__content" style="max-width: 650px;">
             <div class="modal__header">
-                <h3 class="modal__title" data-i18n="modal_dkim_title">¿Para qué sirve el "Selector DKIM Opcional"?</h3>
+                <h3 class="modal__title" id="dkim-info-title" data-i18n="modal_dkim_title">¿Para qué sirve el "Selector DKIM Opcional"?</h3>
                 <button class="modal__close" id="dkim-info-close">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">

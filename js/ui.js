@@ -126,6 +126,10 @@ export function translateDOM() {
     const t = translations[lang];
     if (!t) return;
 
+    // Mantener <html lang> sincronizado con el idioma activo: los lectores de
+    // pantalla aplican la fonética correcta y los buscadores indexan bien.
+    if (document.documentElement) document.documentElement.lang = lang;
+
     // Elements with data-i18n
     document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
