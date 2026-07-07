@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderResults } from './ui.js';
 import { analyze, calculateScoreAndFindings } from './analyzer.js';
 import { generateReportHTML } from './export.js';
-import { state } from './app.js';
+import { state } from './state.js';
 
 const CONTAINER_IDS = [
     'result-domain', 'result-timestamp',
@@ -149,5 +149,33 @@ describe('renderResults (jsdom, integración)', () => {
         expect(report.length).toBeGreaterThan(100);
         expect(report).not.toContain('<script>alert(1)</script>');
         expect(report).toContain('&lt;script&gt;');
+    });
+
+    it('el informe incluye DNSSEC, DANE, SRV, árbol SPF y autorización DMARC externa', () => {
+        const result = maliciousResult();
+        result.dnssec = { signed: true, ad: true };
+        result.daneRecords = { 'mx.evil.com': ['3 1 1 abcd'] };
+        result.srvRecords = { submission: [{ target: 'smtp.evil.com', port: '587' }] };
+        result.spfTree = { domain: 'evil.com', lookups: 2, error: null, children: [{ type: 'include', target: 'a.com', tree: { domain: 'a.com', lookups: 1, error: null, children: [] } }] };
+        result.dmarcExternalAuth = [{ uri: 'mailto:r@ext.com', destDomain: 'ext.com', authorized: false }];
+        state.currentResult = result;
+        state.currentDomain = 'evil.com';
+        const report = generateReportHTML().toString();
+        // Secciones que antes faltaban en el informe:
+        expect(report).toContain('DNSSEC');
+        expect(report).toContain('DANE');
+        expect(report).toContain('mx.evil.com');       // DANE por MX
+        expect(report).toContain('smtp.evil.com');      // SRV
+        expect(report).toContain('lookups');            // árbol SPF
+        expect(report).toContain('ext.com');            // autorización DMARC externa
+    });
+
+    it('no deja títulos de sección del informe hardcodeados en inglés', () => {
+        state.currentResult = maliciousResult();
+        state.currentDomain = 'evil.com';
+        const report = generateReportHTML().toString();
+        expect(report).not.toContain('6. Advanced DNS');
+        expect(report).not.toContain('>Name<');
+        expect(report).not.toContain('DNS Lookups:');
     });
 });

@@ -1,4 +1,4 @@
-import { state } from './app.js';
+import { state } from './state.js';
 import { identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { getLanguage } from './lang.js';
 import { translations } from './i18n.js';
@@ -12,6 +12,19 @@ import {
     serviceDescription,
     rblListedCount
 } from './viewmodel.js';
+
+// Árbol de lookups SPF en tema claro (para el informe exportado, no la UI oscura).
+function renderSpfTreeLight(tree) {
+    if (!tree) return '';
+    const err = tree.error ? ` <span style="color:#dc2626;">[${escapeHtml(tree.error)}]</span>` : '';
+    const kids = (tree.children && tree.children.length)
+        ? `<ul style="margin:2px 0 2px 0; padding-left:18px;">` + tree.children.map(c => c.tree
+            ? `<li><span style="color:#4f46e5; font-weight:600;">${escapeHtml(c.type)}</span>: ${renderSpfTreeLight(c.tree)}</li>`
+            : `<li><span style="color:#4f46e5; font-weight:600;">${escapeHtml(c.type)}</span>: ${escapeHtml(c.target || '')}</li>`).join('') + `</ul>`
+        : '';
+    return `<ul style="list-style:none; margin:0; padding-left:0; font-family:monospace; font-size:12px; color:#334155;">`
+        + `<li><strong>${escapeHtml(tree.domain)}</strong> <span style="color:#64748b;">(${tree.lookups} lookups)</span>${err}${kids}</li></ul>`;
+}
 
 export function generateReportHTML() {
     if (!state.currentResult || !state.currentDomain) return '';
@@ -265,7 +278,7 @@ export function generateReportHTML() {
     }
 
     // Advanced DNS HTML
-    let advDnsHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🌐 6. Advanced DNS</h2>`;
+    let advDnsHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🌐 6. ${t.panel_advanced_dns_title}</h2>`;
     
     // MTA-STS
     advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
@@ -315,7 +328,7 @@ export function generateReportHTML() {
     advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
     advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_ns_title || 'Nameservers (NS)'}</h4>`;
     if (currentResult.nsProvider) {
-        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>Provider:</strong> ${escapeHtml(currentResult.nsProvider.name)}</p>`;
+        advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0;"><strong>${t.report_provider_label}:</strong> ${escapeHtml(currentResult.nsProvider.name)}</p>`;
         if (currentResult.nsProvider.hint) {
             advDnsHtml += `<p style="font-family: sans-serif; font-size: 13px; margin: 0 0 5px 0; color: #4f46e5;"><strong>${t.adv_ns_hint || 'Hint'}:</strong> ${escapeHtml(currentResult.nsProvider.hint)}</p>`;
         }
@@ -335,9 +348,9 @@ export function generateReportHTML() {
     if (currentResult.txtVerifications && currentResult.txtVerifications.length > 0) {
         advDnsHtml += `<table border="1" cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 13px; text-align: left;">
             <tr style="background-color: #f1f5f9;">
-                <th style="padding: 8px; border: 1px solid #e2e8f0;">Name</th>
-                <th style="padding: 8px; border: 1px solid #e2e8f0;">Category</th>
-                <th style="padding: 8px; border: 1px solid #e2e8f0;">Record</th>
+                <th style="padding: 8px; border: 1px solid #e2e8f0;">${t.report_col_name}</th>
+                <th style="padding: 8px; border: 1px solid #e2e8f0;">${t.report_col_category}</th>
+                <th style="padding: 8px; border: 1px solid #e2e8f0;">${t.report_col_record}</th>
             </tr>`;
         for (const v of currentResult.txtVerifications) {
             advDnsHtml += `<tr>
@@ -352,11 +365,57 @@ export function generateReportHTML() {
     }
     advDnsHtml += `</div>`;
 
+    const advBox = (title, statusLabel, statusColor, bodyHtml) => {
+        const statusSpan = statusLabel ? ` - <span style="color: ${statusColor}; font-size: 13px;">${statusLabel}</span>` : '';
+        return `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`
+            + `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${title}${statusSpan}</h4>`
+            + bodyHtml + `</div>`;
+    };
+    const advText = (txt, color = '#475569') => `<p style="font-family: sans-serif; font-size: 13px; color: ${color}; margin: 0 0 5px 0;">${txt}</p>`;
+
+    // DNSSEC
+    const dnssec = currentResult.dnssec;
+    if (dnssec) {
+        const signed = !!dnssec.signed;
+        advDnsHtml += advBox(
+            t.adv_dnssec_title,
+            signed ? t.adv_dnssec_signed : t.adv_dnssec_unsigned,
+            signed ? '#059669' : '#64748b',
+            signed
+                ? advText(t.adv_dnssec_signed_desc) + (dnssec.ad ? advText(t.adv_dnssec_validated, '#059669') : '')
+                : advText(t.adv_dnssec_desc, '#64748b')
+        );
+    }
+
+    // DANE / TLSA
+    const dane = currentResult.daneRecords || {};
+    const daneHosts = Object.keys(dane).filter(h => dane[h] && dane[h].length > 0);
+    advDnsHtml += advBox(
+        t.adv_dane_title,
+        daneHosts.length ? t.adv_dane_configured : t.adv_dane_not_configured,
+        daneHosts.length ? '#059669' : '#64748b',
+        daneHosts.length
+            ? daneHosts.map(h => advText(`<strong>${escapeHtml(h)}</strong>: ${dane[h].length} TLSA`)).join('')
+            : advText(t.adv_dane_none, '#64748b')
+    );
+
+    // SRV
+    const srv = currentResult.srvRecords || {};
+    const srvKeys = Object.keys(srv).filter(k => srv[k] && srv[k].length > 0);
+    advDnsHtml += advBox(
+        t.adv_srv_title,
+        null,
+        null,
+        srvKeys.length
+            ? srvKeys.map(k => srv[k].map(r => advText(`<strong>${escapeHtml(k)}</strong>: ${escapeHtml(r.target || '')}:${escapeHtml(String(r.port || ''))}`)).join('')).join('')
+            : advText(t.adv_srv_none, '#64748b')
+    );
+
     return `
         <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; text-align: left;">
             <p style="font-size: 22px; font-weight: bold; margin: 0 0 15px 0;">${currentDomain}</p>
             <!-- Header Banner -->
-            <div style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 30px; border-radius: 12px; color: #ffffff; margin-bottom: 30px; text-align: left;">
+            <div style="background-color: #1e1b4b; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 30px; border-radius: 12px; color: #ffffff; margin-bottom: 30px; text-align: left;">
                 <h1 style="margin: 0; font-size: 26px; font-weight: 700; font-family: sans-serif; letter-spacing: -0.5px;">${mainTitle}</h1>
                 <p style="margin: 5px 0 0 0; color: #c7d2fe; font-size: 14px; font-family: sans-serif;">${dateLabel}: ${d} | ${t.report_domain_label}: <strong style="color: #ffffff;">${escapeHtml(currentDomain)}</strong></p>
             </div>
@@ -384,7 +443,7 @@ export function generateReportHTML() {
                 <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100)</li>
                 <li><strong>${t.summary_provider}:</strong> ${escapeHtml(providerDisplay)} <br><small style="color: #64748b;">(${escapeHtml(formatProviderSource(currentResult.providerSource, t))})</small></li>
                 <li><strong>${t.summary_dmarc}:</strong> ${dmarcPolicyText}</li>
-                <li><strong>${authorizedServicesLabel}:</strong> ${currentResult.spfServices.length} ${t.detected_plural}</li>
+                <li><strong>${authorizedServicesLabel}:</strong> ${currentResult.spfServices.length} ${currentResult.spfServices.length === 1 ? (t.detected_singular || t.detected_plural) : t.detected_plural}</li>
                 ${awarenessSummaryLine}
                 <li><strong>${rblSummaryLabel}:</strong> ${rblStatusVal}</li>
             </ul>
@@ -416,9 +475,13 @@ export function generateReportHTML() {
             </div>
             ${currentResult.spfLookups !== undefined ? `
                 <p style="font-family: sans-serif; font-size: 13px; color: #475569; text-align: left;">
-                    <strong>DNS Lookups:</strong> 
+                    <strong>${t.report_dns_lookups}:</strong>
                     <span style="color: ${currentResult.spfLookups > 10 ? '#dc2626' : currentResult.spfLookups > 7 ? '#d97706' : '#059669'}; font-weight: bold;">${currentResult.spfLookups}/10</span>
                 </p>
+            ` : ''}
+            ${currentResult.spfTree ? `
+                <p style="font-family: sans-serif; font-size: 13px; color: #475569; font-weight: bold; margin: 10px 0 4px 0; text-align: left;">${t.panel_spf_tree_title}:</p>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; text-align: left;">${renderSpfTreeLight(currentResult.spfTree)}</div>
             ` : ''}
             
             <table border="1" cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 13px; margin-top: 10px; text-align: left;">
@@ -517,15 +580,25 @@ export function generateReportHTML() {
                 ${currentResult.dmarcRua.length > 0 ? currentResult.dmarcRua.map(r => {
                     const reporter = identifyDMARCReporter(r);
                     const reporterSuffix = reporter ? ` <strong style="color: #4f46e5;">(${t.tool_label}: ${escapeHtml(reporter)})</strong>` : '';
-                    return `<li><strong>RUA (Aggregate):</strong> <code>${escapeHtml(r)}</code>${reporterSuffix}</li>`;
+                    return `<li><strong>RUA (${t.dmarc_aggregate}):</strong> <code>${escapeHtml(r)}</code>${reporterSuffix}</li>`;
                 }).join('') : ''}
                 ${currentResult.dmarcRuf.length > 0 ? currentResult.dmarcRuf.map(r => {
                     const reporter = identifyDMARCReporter(r);
                     const reporterSuffix = reporter ? ` <strong style="color: #4f46e5;">(${t.tool_label}: ${escapeHtml(reporter)})</strong>` : '';
-                    return `<li><strong>RUF (Forensic):</strong> <code>${escapeHtml(r)}</code>${reporterSuffix}</li>`;
+                    return `<li><strong>RUF (${t.dmarc_forensic}):</strong> <code>${escapeHtml(r)}</code>${reporterSuffix}</li>`;
                 }).join('') : ''}
                 ${currentResult.dmarcRua.length === 0 && currentResult.dmarcRuf.length === 0 ? `<li>${t.no_dmarc_reporting}</li>` : ''}
             </ul>
+            ${(currentResult.dmarcExternalAuth && currentResult.dmarcExternalAuth.length > 0) ? `
+                <p style="font-family: sans-serif; font-size: 13.5px; color: #334155; font-weight: bold; margin: 12px 0 5px 0; text-align: left;">${t.report_dmarc_ext_auth_title}</p>
+                <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5; text-align: left;">
+                    ${currentResult.dmarcExternalAuth.map(a => {
+                        const label = a.authorized === true ? t.report_dmarc_ext_authorized : a.authorized === false ? t.report_dmarc_ext_unauthorized : t.report_dmarc_ext_unknown;
+                        const color = a.authorized === true ? '#059669' : a.authorized === false ? '#dc2626' : '#64748b';
+                        return `<li><code>${escapeHtml(a.destDomain)}</code>: <strong style="color: ${color};">${label}</strong></li>`;
+                    }).join('')}
+                </ul>
+            ` : ''}
 
             <!-- DKIM Records Section -->
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🔑 4. ${t.panel_dkim_title}</h2>
@@ -627,26 +700,52 @@ export function exportToFile() {
 }
 
 export function exportToPDF() {
-    if (!state.currentDomain) {
+    if (!state.currentDomain || !state.currentResult) {
         window.print();
         return;
     }
-    
+
     const lang = getLanguage();
     const t = translations[lang];
-    const originalTitle = document.title;
-
     const fileTitle = `${t.pdf_doc_title} ${state.currentDomain}`;
 
-    document.title = fileTitle;
-    
-    window.print();
-    
-    const restoreTitle = () => {
-        document.title = originalTitle;
-        window.removeEventListener('afterprint', restoreTitle);
+    // Se imprime el MISMO informe que Word/Google Docs (generateReportHTML) dentro
+    // de un iframe oculto, en vez de window.print() de la vista viva. Así los tres
+    // formatos comparten una única fuente de contenido y no divergen.
+    const reportHtml = generateReportHTML();
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed; right:0; bottom:0; width:0; height:0; border:0;';
+    document.body.appendChild(iframe);
+
+    const cleanup = () => {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
     };
-    
-    window.addEventListener('afterprint', restoreTitle);
-    setTimeout(restoreTitle, 1000);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><title>${fileTitle}</title>
+        <style>@page { margin: 16mm; } body { margin: 0; }</style>
+        </head><body>${reportHtml}</body></html>`);
+    doc.close();
+
+    const printFrame = () => {
+        try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        } catch (err) {
+            console.error('PDF print failed, falling back to window.print()', err);
+            window.print();
+        }
+        // Retira el iframe tras dar tiempo al diálogo de impresión.
+        iframe.contentWindow.addEventListener('afterprint', cleanup);
+        setTimeout(cleanup, 60000);
+    };
+
+    // Espera a que el iframe cargue su contenido antes de imprimir.
+    if (iframe.contentWindow.document.readyState === 'complete') {
+        setTimeout(printFrame, 100);
+    } else {
+        iframe.addEventListener('load', () => setTimeout(printFrame, 100));
+    }
 }

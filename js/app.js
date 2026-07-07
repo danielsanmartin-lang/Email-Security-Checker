@@ -7,11 +7,9 @@ import { getLanguage, setLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { detectAwarenessVendors } from './awarenessDetector.js';
 import { normalizeDomain, isValidDomain } from './utils.js';
+import { state } from './state.js';
 
-export const state = {
-    currentDomain: '',
-    currentResult: null
-};
+export { state };
 
 async function runAnalysis(domain, dkimSelector = null) {
     domain = normalizeDomain(domain);
@@ -289,6 +287,31 @@ document.addEventListener('DOMContentLoaded', () => {
             if (langBtn) langBtn.setAttribute('aria-expanded', 'false');
         });
     }
+
+    // ===== Accesibilidad de modales: cierre con Escape y trampa de foco =====
+    const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    document.addEventListener('keydown', (e) => {
+        const modal = document.querySelector('.modal:not(.hidden)');
+        if (!modal) return;
+        if (e.key === 'Escape') {
+            modal.classList.add('hidden');
+            return;
+        }
+        if (e.key === 'Tab') {
+            // Cicla el foco dentro del modal (no se escapa a la página de fondo).
+            const items = [...modal.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null);
+            if (!items.length) return;
+            const first = items[0];
+            const last = items[items.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        }
+    });
 
     // DKIM UI Logic
     const dkimToggleBtn = document.getElementById('dkim-toggle-btn');
