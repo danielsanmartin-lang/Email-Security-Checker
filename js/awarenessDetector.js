@@ -15,6 +15,7 @@
  */
 
 import { queryDNS } from './api.js';
+import { extractTxtValue } from './parsers.js';
 
 // ---------------------------------------------------------------------------
 // 1. DICCIONARIO DE FINGERPRINTS
@@ -635,11 +636,9 @@ async function _doh(name, type) {
 async function _getTxt(domain) {
     try {
         const d = await _doh(domain, 'TXT');
-        return (d.Answer || []).map(a =>
-            a.data
-                .replace(/^"|"$/g, '')
-                .replace(/" "/g, '')
-        );
+        // extractTxtValue concatena correctamente los chunks entrecomillados que DoH
+        // devuelve para TXT >255 chars (claves DKIM de 2048 bits partidas en trozos).
+        return (d.Answer || []).map(a => extractTxtValue(a.data));
     } catch { return []; }
 }
 

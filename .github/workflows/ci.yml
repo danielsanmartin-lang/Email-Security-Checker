@@ -8,22 +8,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20.x', '22.x']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
       - name: Install dependencies
-        run: npm install
-      - name: Lint
+        run: npm ci
+      - name: Lint (bloqueante, sin warnings)
         run: npm run lint
-      - name: Tests with coverage
+      - name: Tests con cobertura (umbrales bloqueantes)
         run: npm run coverage
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
+          name: coverage-node-${{ matrix.node-version }}
           path: coverage/
           if-no-files-found: ignore
       - name: Dependency audit (informativo)

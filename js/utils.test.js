@@ -20,6 +20,10 @@ describe('normalizeDomain', () => {
         expect(normalizeDomain('')).toBe('');
         expect(normalizeDomain(null)).toBe('');
     });
+    it('quita el punto final del FQDN absoluto', () => {
+        expect(normalizeDomain('example.com.')).toBe('example.com');
+        expect(isValidDomain(normalizeDomain('example.com.'))).toBe(true);
+    });
 });
 
 describe('isValidDomain', () => {

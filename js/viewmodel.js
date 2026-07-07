@@ -99,3 +99,21 @@ export function postureText(t, posture) {
     if (!posture) return '';
     return t[`posture_${posture.key}`] || posture.grade || '';
 }
+
+// Mapeo qualifier SPF → resultado de evaluación. Compartido por ui.js (clase CSS
+// spf-prefix--<kind>) y export.js (color). Antes estaba duplicado en ambos.
+const SPF_QUALIFIER_RESULT = {
+    '+': { kind: 'pass', text: 'Pass' },
+    '-': { kind: 'fail', text: 'Fail' },
+    '~': { kind: 'softfail', text: 'SoftFail' },
+    '?': { kind: 'neutral', text: 'Neutral' }
+};
+export function spfQualifierResult(qualifier) {
+    return SPF_QUALIFIER_RESULT[qualifier] || SPF_QUALIFIER_RESULT['+'];
+}
+
+/** Estado normalizado de una comprobación RBL: 'listed' | 'clean' | 'error'. */
+export function rblCheckStatus(check) {
+    if (!check) return 'error';
+    return check.status || (check.listed ? 'listed' : 'clean');
+}

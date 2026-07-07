@@ -21,9 +21,11 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
   - **MTA-STS**: validación de `max_age` (presencia y valor recomendado, RFC 8461).
   - **DNSSEC**: detección de zona firmada (DNSKEY + flag `AD`) que protege la integridad de SPF/DMARC/DKIM.
 * **Reputación y Listas Negras (RBL):** Verificación en tiempo real de IPs de servidores MX contra listas globales, con interpretación de los códigos de respuesta (`listado` / `limpio` / `no concluyente`) y aviso *best-effort* — muchas DNSBL rechazan consultas vía resolvers DoH públicos.
-* **Exportaciones Premium:** Informes en Google Docs, Word (.doc) y PDF con score, hallazgos, SPF tree y DMARC detallado.
-* **Validación de entrada y errores claros:** Normalización de dominios **IDN → punycode**, validación de formato y mensajes de error diferenciados (dominio inexistente / sin conexión / formato inválido).
-* **Multilingüe:** Interfaz completa en Español e Inglés con persistencia por `localStorage`.
+* **Exportaciones Premium:** Informes en Google Docs, Word (.doc) y PDF con score, hallazgos, SPF tree, DMARC detallado, **DNSSEC, DANE, SRV y autorización DMARC externa**. Los tres formatos comparten una única fuente de contenido (el PDF se genera del mismo informe que Word/Docs).
+* **Motor DNS resiliente:** Consultas con **degradación elegante** (un fallo transitorio no tumba el análisis completo), **validación del `Status` DoH** (distingue SERVFAIL/REFUSED de "sin registros"), **herencia DMARC del dominio organizativo** para subdominios (RFC 7489 §6.6.3), reconocimiento de **Null MX** (RFC 7505), contaje correcto de lookups SPF con máscara CIDR y deduplicación de consultas en vuelo.
+* **Validación de entrada y errores claros:** Normalización de dominios **IDN → punycode**, tolerancia a FQDN con punto final, validación de formato y mensajes de error diferenciados (dominio inexistente / sin conexión / **problema de resolución DNS** / formato inválido).
+* **Multilingüe y accesible:** Interfaz completa en Español e Inglés con persistencia por `localStorage`, `<html lang>` sincronizado, regiones `aria-live`, navegación por teclado, modales accesibles (Escape + trampa de foco) y contraste WCAG AA.
+* **Render progresivo:** Los resultados principales se muestran de inmediato; el panel de Awareness (lo más lento, por los CT logs) se rellena solo al terminar, sin bloquear la vista.
 
 ## 🏗️ Arquitectura del Sistema
 
@@ -36,12 +38,14 @@ Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless
 
 ```
 js/
-├── app.js               # Orquestador principal — runAnalysis()
-├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…)
-├── analyzer.js          # Lógica de identificación de proveedores/SEGs
+├── app.js               # Orquestador: runAnalysis() (DOM) + performAnalysis() (pura, testeable)
+├── state.js             # Estado global compartido (rompe el ciclo app ↔ export)
+├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…) con caché y dedup
+├── analyzer.js          # Lógica de identificación de proveedores/SEGs y scoring
+├── viewmodel.js         # Derivaciones de presentación compartidas por ui.js y export.js
 ├── ui.js                # Renderizado de resultados y paneles
-├── awarenessDetector.js # 🆕 Detector de plataformas de Awareness/PhishSim (DNS)
-├── headerAnalyzer.js    # 🆕 Detección por cabeceras de correo (cubre el punto ciego DNS)
+├── awarenessDetector.js # Detector de plataformas de Awareness/PhishSim (DNS + CT logs)
+├── headerAnalyzer.js    # Detección por cabeceras de correo (cubre el punto ciego DNS)
 ├── knowledge.js         # Base de conocimiento de vendors (>50 firmas)
 ├── i18n.js              # Traducciones ES/EN
 ├── lang.js              # Selector de idioma con persistencia
@@ -53,8 +57,9 @@ js/
 
 * HTML5 / CSS3 (Vanilla — sin frameworks)
 * JavaScript Vanilla (ES6+ Modules)
-* API de DNS-over-HTTPS (Google / Cloudflare)
-* Certificate Transparency API (crt.sh)
+* API de DNS-over-HTTPS (Google / Cloudflare, con fallback automático)
+* Certificate Transparency API (crt.sh + Certspotter)
+* Vitest + jsdom (tests), ESLint + Prettier (calidad), GitHub Actions (CI/CD)
 
 ---
 
@@ -109,28 +114,33 @@ Si prefieres ejecutar este proyecto de forma local en tu máquina:
 El proyecto incluye `package.json` con scripts y dependencias de desarrollo (Vitest, ESLint, Prettier):
 
 ```bash
-npm install        # instala devDependencies
+npm ci             # instala devDependencies desde package-lock (reproducible)
 
 npm test           # ejecuta toda la suite de tests (Vitest)
 npm run test:watch # modo watch
-npm run coverage   # tests + informe de cobertura (v8)
-npm run lint       # ESLint sobre js/
+npm run coverage   # tests + informe de cobertura (v8) con umbrales bloqueantes
+npm run lint       # ESLint sobre js/ (recommended, --max-warnings=0)
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**128 tests**) cubre el módulo de Awareness (fixtures DNS mockeados), el análisis
+La suite (**159 tests**) cubre el módulo de Awareness (fixtures DNS mockeados), el análisis
 por cabeceras (`headerAnalyzer`), los parsers
 (`parseSPF`, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`, `analyzeDKIMRecord`,
 `extractTxtValue`), el analizador (`extractRootDomain`, `calculateScoreAndFindings` y los
-nuevos findings de DMARC/DKIM/SPF/DNSSEC/MTA-STS), la capa DNS (`checkRBL`, `getDNSSEC`,
-`checkDomainExists`, `checkDMARCExternalAuth` con `fetch` mockeado), las utilidades
-(`normalizeDomain` IDN, `isValidDomain`, helper `html``) y pruebas de integración con
-**jsdom** que ejecutan `renderResults` y la generación del informe verificando el escapado
-anti-XSS de extremo a extremo.
+findings de DMARC/DKIM/SPF/DNSSEC/MTA-STS/Null MX/herencia), la **capa DNS** (`queryDNS`
+con fallback y validación de `Status`, caché TTL, dedup en vuelo, `getSPFLookupTree` con
+CIDR y bucles, `fetchMTASTSPolicyFile`, `checkRBL`, `getDNSSEC`, `checkDMARCExternalAuth`
+con `fetch` mockeado), el **orquestador** (`performAnalysis`, flujo completo + NXDOMAIN +
+SERVFAIL), las utilidades (`normalizeDomain` IDN/FQDN, `isValidDomain`, helper `html``) y
+pruebas de integración con **jsdom** que ejecutan `renderResults`/`generateReportHTML`
+verificando el escapado anti-XSS y la completitud del informe de extremo a extremo.
 
 Cada push/PR ejecuta en CI mediante GitHub Actions:
-* **`ci.yml`** — lint + tests con cobertura + `npm audit` (informativo). El informe de
-  cobertura se publica como artefacto.
+* **`ci.yml`** — lint (**bloqueante**) + tests con cobertura (**umbrales bloqueantes**) +
+  `npm audit` (informativo), en Node 20 y 22. El informe de cobertura se publica como artefacto.
+* **`pages.yml`** — despliegue a GitHub Pages **solo si pasan lint y tests**, publicando
+  únicamente `index.html`, `css/` y `js/` (sin los `*.test.js`). Requiere configurar
+  Settings → Pages → Source como "GitHub Actions".
 * **`codeql.yml`** — análisis estático de seguridad (CodeQL, `security-extended`) en cada
   push/PR y de forma programada semanalmente.
 
@@ -138,7 +148,21 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 ## 📅 Historial de Cambios
 
-### v2.5.1 — Precisión SEG/ICES: cross-check con el MX y deduplicación de vendors (Actual)
+> El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
+
+### v2.5.2 → v2.7.1 — Endurecimiento de seguridad, resiliencia del motor DNS, accesibilidad y calidad (Actual)
+
+Serie de auditoría interna. Ver [CHANGELOG.md](CHANGELOG.md) para el detalle. Resumen:
+
+* **Seguridad (v2.5.2):** corregido un **XSS por clic** en la tabla SPF (onclick inline → atributo `data-` + listener delegado); `queryDNS` valida el `Status` DoH (SERVFAIL/REFUSED ya no se reportan como "sin registros" ni se cachean); RBL inconcluso deja de mostrarse como "Limpio"; nuevo workflow de despliegue con **gate de lint+tests** y se deja de publicar `graphify-out/`.
+* **Robustez DNS (v2.5.3–v2.6.0):** herencia DMARC organizativa, Null MX (RFC 7505), FQDN con punto final, hora del escaneo estable; **degradación resiliente** (`Promise.allSettled`), árbol SPF en paralelo con contaje CIDR, MTA-STS sin seguir redirects (RFC 8461), deduplicación de consultas y parseo TXT multi-string unificado.
+* **Accesibilidad y UX (v2.6.2):** `aria-live`/roles, hints por teclado, `<html lang>` dinámico, contraste AA, modales con Escape y trampa de foco, y **render progresivo** del panel de Awareness.
+* **Exportación y arquitectura (v2.6.1–v2.7.1):** informe con DNSSEC/DANE/SRV/árbol SPF/autorización DMARC externa, PDF unificado, i18n del informe, estado extraído a `state.js` y dedup de presentación en `viewmodel.js`.
+* **Testing/CI (v2.6.2–v2.7.0):** `performAnalysis` extraído y testeable (app.js 0%→36%, api.js 26%→76%, global ~78%), ESLint `recommended`, CI con `npm ci` + caché + Node 20/22 + cobertura con umbrales bloqueantes, `LICENSE` (MIT) y `CHANGELOG.md`.
+
+> **159 tests** en verde. Lint y cobertura son ahora **bloqueantes** en CI.
+
+### v2.5.1 — Precisión SEG/ICES: cross-check con el MX y deduplicación de vendors
 
 Correcciones de exactitud en la detección de capas de seguridad (`detectSecurityLayers`), a raíz de un falso positivo del tipo *"amazon.com usa Cisco Email Security — 70%"*.
 

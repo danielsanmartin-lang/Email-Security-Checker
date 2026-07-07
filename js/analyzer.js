@@ -431,7 +431,15 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass,
         dmarcRua, dmarcRuf, dmarcDetails,
         dmarcData: advancedData.dmarcData || { record: dmarcRaw, records: dmarcRaw ? [dmarcRaw] : [], multiple: false },
+        // DMARC heredado del dominio organizativo (RFC 7489 §6.6.3) al analizar un subdominio.
+        dmarcInherited: !!advancedData.dmarcInherited,
+        dmarcInheritedFrom: advancedData.dmarcInheritedFrom || null,
+        // Consultas que no se pudieron resolver (fallo transitorio): no se penalizan.
+        spfUnavailable: !!advancedData.spfUnavailable,
+        dmarcUnavailable: !!advancedData.dmarcUnavailable,
         mxRecords,
+        // Null MX (RFC 7505): el dominio declara que no recibe correo.
+        nullMx: !!(advancedData.nullMx || mxRecords.nullMx),
         // New advanced data
         txtVerifications,
         nsProvider,
@@ -496,6 +504,11 @@ const SCORE_CHECKS = [
     function spf(result) {
         const findings = [];
         let points = 0;
+        // La consulta falló (SERVFAIL/red): no penalizar como "sin SPF", solo informar.
+        if (result.spfUnavailable) {
+            findings.push({ status: 'info', key: 'finding_spf_unavailable' });
+            return { points, findings };
+        }
         if (!result.spfRaw) {
             findings.push({ status: 'error', key: 'finding_spf_err' });
             return { points, findings };
@@ -544,6 +557,11 @@ const SCORE_CHECKS = [
     function dmarc(result) {
         const findings = [];
         let points = 0;
+        // La consulta falló (SERVFAIL/red): no penalizar como "sin DMARC", solo informar.
+        if (result.dmarcUnavailable) {
+            findings.push({ status: 'info', key: 'finding_dmarc_unavailable' });
+            return { points, findings };
+        }
         if (!result.dmarcRaw) {
             findings.push({ status: 'error', key: 'finding_dmarc_err' });
             return { points, findings };
@@ -767,6 +785,16 @@ function determineGrade(score) {
 export function calculateScoreAndFindings(result) {
     let score = 0;
     const findings = [];
+    // Null MX (RFC 7505): declarar que no se recibe correo es una buena práctica
+    // para dominios sin uso de email; se informa como positivo, sin penalizar.
+    if (result.nullMx) {
+        findings.push({ status: 'info', key: 'finding_null_mx' });
+    }
+    // DMARC heredado del dominio organizativo: aclara que la protección proviene
+    // del dominio raíz, no del subdominio analizado.
+    if (result.dmarcInherited && result.dmarcInheritedFrom) {
+        findings.push({ status: 'info', key: 'finding_dmarc_inherited', replacements: { '{org}': result.dmarcInheritedFrom } });
+    }
     for (const check of SCORE_CHECKS) {
         const { points, findings: sectionFindings } = check(result);
         score += points;

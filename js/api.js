@@ -3,9 +3,14 @@ import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './pars
 // ===== DNS Cache =====
 const _dnsCache = new Map();
 const DNS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Deduplicación de consultas en vuelo: si ya hay una petición idéntica pendiente,
+// se reutiliza su promesa en vez de disparar otra a la red (un análisis pide, p. ej.,
+// el TXT del ápex dos veces en paralelo desde getSPF y getAllTXT).
+const _inflight = new Map();
 
 export function clearDnsCache() {
     _dnsCache.clear();
+    _inflight.clear();
 }
 
 function _getCached(name, type) {
@@ -31,39 +36,73 @@ function _setCache(name, type, data) {
 // ===== DNS Query with timeout and fallback =====
 const DNS_TIMEOUT = 8000; // 8 seconds
 
+// RCODEs concluyentes: 0 = NOERROR, 3 = NXDOMAIN ("no existe" es una respuesta
+// válida). Cualquier otro Status (2 = SERVFAIL, 5 = REFUSED…) significa que el
+// resolver NO pudo responder: tratarlo como "sin registros" produciría un falso
+// diagnóstico (p. ej. "sin SPF/DMARC" en dominios con DNSSEC roto).
+const DNS_CONCLUSIVE_STATUSES = [0, 3];
+
+async function _fetchDoH(url, headers) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
+    try {
+        const res = await fetch(url, { headers, signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function _resolveDNS(name, type) {
+    const providers = [
+        { label: 'Google', url: `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}` },
+        { label: 'Cloudflare', url: `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`, headers: { 'Accept': 'application/dns-json' } }
+    ];
+
+    let badStatus = null;
+    for (const provider of providers) {
+        let candidate;
+        try {
+            candidate = await _fetchDoH(provider.url, provider.headers);
+        } catch (e) {
+            console.warn(`${provider.label} DoH failed for ${name} (${type})`, e);
+            continue;
+        }
+        if (typeof candidate.Status === 'number' && !DNS_CONCLUSIVE_STATUSES.includes(candidate.Status)) {
+            console.warn(`${provider.label} DoH returned Status ${candidate.Status} for ${name} (${type})`);
+            badStatus = candidate.Status;
+            continue;
+        }
+        // Respuesta concluyente: cachear y devolver. Las respuestas de error no
+        // se cachean, para no fijar un fallo transitorio durante 5 minutos.
+        _setCache(name, type, candidate);
+        return candidate;
+    }
+
+    if (badStatus !== null) {
+        const e = new Error(`DNS resolvers could not resolve ${name} (${type}): RCODE ${badStatus}`);
+        e.code = 'servfail';
+        throw e;
+    }
+    const e = new Error(`DNS queries failed for ${name} (${type})`);
+    e.code = 'network';
+    throw e;
+}
+
 export async function queryDNS(name, type) {
     // Check cache first
     const cached = _getCached(name, type);
     if (cached) return cached;
 
-    let data;
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
-        const url = `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`;
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (!res.ok) throw new Error(`Google DNS failed: ${res.status}`);
-        data = await res.json();
-    } catch (e) {
-        console.warn('Google DNS failed, falling back to Cloudflare DoH', e);
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), DNS_TIMEOUT);
-            const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
-            const res = await fetch(url, { headers: { 'Accept': 'application/dns-json' }, signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (!res.ok) throw new Error(`Cloudflare DNS failed: ${res.status}`);
-            data = await res.json();
-        } catch (err) {
-            const e = new Error(`DNS queries failed for ${name} (${type})`);
-            e.code = 'network';
-            throw e;
-        }
-    }
+    // Reutiliza una consulta idéntica ya en vuelo (evita duplicados concurrentes).
+    const key = `${name}:${type}`;
+    const pending = _inflight.get(key);
+    if (pending) return pending;
 
-    _setCache(name, type, data);
-    return data;
+    const promise = _resolveDNS(name, type).finally(() => _inflight.delete(key));
+    _inflight.set(key, promise);
+    return promise;
 }
 
 // DoH RCODE: 0 = NOERROR, 3 = NXDOMAIN (dominio inexistente).
@@ -76,14 +115,27 @@ export async function checkDomainExists(domain) {
 
 export async function getMX(domain) {
     const data = await queryDNS(domain, 'MX');
-    if (!data.Answer) return [];
-    return data.Answer
-        .filter(a => a.type === 15)
+    const empty = [];
+    if (!data.Answer) return empty;
+    const raw = data.Answer
+        .filter(a => a.type === 15 && a.data)
         .map(a => {
-            const parts = a.data.split(' ');
-            return { priority: parseInt(parts[0]), host: parts[1].replace(/\.$/, '') };
+            const parts = a.data.trim().split(/\s+/);
+            if (parts.length < 2) return null;
+            return { priority: parseInt(parts[0], 10), host: parts[1].replace(/\.$/, '') };
         })
-        .sort((a, b) => a.priority - b.priority);
+        .filter(Boolean);
+
+    // Null MX (RFC 7505): un único registro "0 ." (host vacío tras quitar el punto)
+    // declara explícitamente que el dominio NO recibe correo. Devolvemos un array
+    // vacío marcado con .nullMx para que el análisis lo reconozca como configuración
+    // correcta (dominios aparcados) en vez de auditar hosts vacíos.
+    const nullMx = raw.length > 0 && raw.every(r => r.priority === 0 && r.host === '');
+    const hosts = raw.filter(r => r.host !== '').sort((a, b) => a.priority - b.priority);
+    if (nullMx) {
+        hosts.nullMx = true;
+    }
+    return hosts;
 }
 
 export async function getSPF(domain) {
@@ -183,7 +235,7 @@ export async function getDKIM(domain, customSelector = null, spfRaw = null, ices
             const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT');
             if (data && data.Answer) {
                 for (const a of data.Answer) {
-                    const txt = a.data.replace(/"/g, '');
+                    const txt = extractTxtValue(a.data);
                     if (txt.startsWith('v=DKIM1')) {
                         results.push({ selector, record: txt });
                     }
@@ -202,7 +254,7 @@ export async function getBIMI(domain) {
         const data = await queryDNS(`default._bimi.${domain}`, 'TXT');
         if (data && data.Answer) {
             for (const a of data.Answer) {
-                const txt = a.data.replace(/"/g, '');
+                const txt = extractTxtValue(a.data);
                 if (txt.startsWith('v=BIMI1')) {
                     const match = txt.match(/l=([^;]+)/);
                     const logo = match ? match[1].trim() : null;
@@ -216,7 +268,11 @@ export async function getBIMI(domain) {
     return null;
 }
 
-export async function getSPFLookupTree(domain, cache = new Set(), depth = 0) {
+// Mecanismos SPF con máscara CIDR opcional (RFC 7208 §5.3/§5.6). Cada uno consume
+// un lookup DNS. Acepta a, mx, ptr con :dominio y /IPv4-cidr y //IPv6-cidr.
+const SPF_LOOKUP_MECH = /^(a|mx|ptr)(:[^/\s]+)?(\/\d{1,2})?(\/\/\d{1,3})?$/;
+
+export async function getSPFLookupTree(domain, path = new Set(), depth = 0) {
     // node.error es un CÓDIGO neutral de idioma ('depth_exceeded' | 'loop' | 'query_failed').
     // node.errorDetail contiene el mensaje técnico original (si aplica).
     const node = { domain, lookups: 0, children: [], error: null, errorDetail: null, record: null };
@@ -224,11 +280,14 @@ export async function getSPFLookupTree(domain, cache = new Set(), depth = 0) {
         node.error = 'depth_exceeded';
         return node;
     }
-    if (cache.has(domain)) {
+    // Bucle real = el dominio aparece en su propia cadena de ANTEPASADOS. Un include
+    // repetido entre ramas hermanas (p. ej. dos includes que a su vez incluyen
+    // _spf.google.com) NO es un bucle: cada rama recibe su propia copia del path.
+    if (path.has(domain)) {
         node.error = 'loop';
         return node;
     }
-    cache.add(domain);
+    const childPath = new Set([...path, domain]);
 
     try {
         const spfData = await getSPF(domain);
@@ -236,31 +295,36 @@ export async function getSPFLookupTree(domain, cache = new Set(), depth = 0) {
         if (!spf) return node;
         node.record = spf;
 
-        const tokens = spf.split(/\s+/);
-        for (const token of tokens) {
+        // Primera pasada: contabiliza mecanismos hoja y recoge include/redirect.
+        const nested = [];
+        for (const token of spf.split(/\s+/)) {
             let t = token.toLowerCase();
             if (/^[+\-~?]/.test(t)) t = t.substring(1);
 
             if (t.startsWith('include:')) {
                 node.lookups++;
-                const includeDomain = t.substring(8);
-                const child = await getSPFLookupTree(includeDomain, cache, depth + 1);
-                node.children.push({ type: 'include', target: includeDomain, tree: child });
-                node.lookups += child.lookups;
-            } else if (t.startsWith('a') || t.startsWith('mx') || t.startsWith('ptr') || t.startsWith('exists:') || t.startsWith('redirect=')) {
-                if (t === 'a' || t.startsWith('a:') || t === 'mx' || t.startsWith('mx:') || t === 'ptr' || t.startsWith('ptr:') || t.startsWith('exists:')) {
-                    node.lookups++;
-                    node.children.push({ type: t.split(':')[0] || t, target: t.includes(':') ? t.substring(t.indexOf(':') + 1) : '(self)' });
-                }
-                if (t.startsWith('redirect=')) {
-                    node.lookups++;
-                    const redirectDomain = t.substring(9);
-                    const child = await getSPFLookupTree(redirectDomain, cache, depth + 1);
-                    node.children.push({ type: 'redirect', target: redirectDomain, tree: child });
-                    node.lookups += child.lookups;
-                }
+                nested.push({ type: 'include', target: t.substring(8) });
+            } else if (t.startsWith('redirect=')) {
+                node.lookups++;
+                nested.push({ type: 'redirect', target: t.substring(9) });
+            } else if (t.startsWith('exists:')) {
+                node.lookups++;
+                node.children.push({ type: 'exists', target: t.substring(7) });
+            } else if (SPF_LOOKUP_MECH.test(t)) {
+                node.lookups++;
+                const mech = t.split(/[:/]/)[0];
+                node.children.push({ type: mech, target: t.includes(':') ? t.substring(t.indexOf(':') + 1) : '(self)' });
             }
         }
+
+        // Segunda pasada: resuelve todos los include/redirect del nivel EN PARALELO.
+        const subtrees = await Promise.all(
+            nested.map(n => getSPFLookupTree(n.target, childPath, depth + 1))
+        );
+        subtrees.forEach((child, i) => {
+            node.children.push({ type: nested[i].type, target: nested[i].target, tree: child });
+            node.lookups += child.lookups;
+        });
     } catch (e) {
         node.error = 'query_failed';
         node.errorDetail = e.message;
@@ -388,16 +452,29 @@ export async function fetchMTASTSPolicyFile(domain) {
     let body;
     let usedUrl = url;
 
+    // Un redirect en el endpoint de política es motivo de fallo (RFC 8461 §3.3):
+    // los MTA reales NO siguen 3xx al obtener mta-sts.txt.
+    const redirectFail = (httpStatus) => ({
+        ...base,
+        httpStatus: httpStatus || null,
+        error: 'Policy endpoint returned a redirect (RFC 8461 §3.3 forbids following it)',
+        validationReason: 'redirect_not_allowed'
+    });
+
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
+        // redirect:'manual' expone el 3xx como respuesta opaca en vez de seguirlo.
         res = await fetch(url, {
             method: 'GET',
             cache: 'no-store',
-            redirect: 'follow',
+            redirect: 'manual',
             signal: controller.signal
         });
         clearTimeout(timeoutId);
+        if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
+            return redirectFail(res.status);
+        }
         body = await res.text();
     } catch (e) {
         console.warn(`Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.`, e);
@@ -410,8 +487,16 @@ export async function fetchMTASTSPolicyFile(domain) {
             if (!proxyRes.ok) throw new Error(`Proxy HTTP error: ${proxyRes.status}`);
             const data = await proxyRes.json();
             if (!data || !data.contents) throw new Error(`Empty contents from proxy`);
+            // Usa el código HTTP REAL del origen (allorigins lo expone en status.http_code)
+            // en vez de asumir 200: una política inexistente (404) o redirigida no debe
+            // reportarse como obtenida con éxito.
+            const httpCode = data.status && typeof data.status.http_code === 'number' ? data.status.http_code : 200;
+            if (httpCode >= 300 && httpCode < 400) return redirectFail(httpCode);
+            if (httpCode < 200 || httpCode >= 400) {
+                return { ...base, httpStatus: httpCode, error: `Policy endpoint returned HTTP ${httpCode}`, validationReason: 'fetch_failed' };
+            }
             body = data.contents;
-            res = { ok: true, status: 200 };
+            res = { ok: true, status: httpCode };
             usedUrl = `${url} (via CORS proxy)`;
         } catch (proxyErr) {
             const message = e.name === 'AbortError' || proxyErr.name === 'AbortError'

@@ -11,7 +11,9 @@ import {
     formatProviderSource,
     resolveFindingText,
     displayDmarcPolicy,
-    postureText
+    postureText,
+    spfQualifierResult,
+    rblCheckStatus
 } from './viewmodel.js';
 
 export function openKbModal(domain) {
@@ -26,7 +28,13 @@ export function closeKbModal() {
     document.getElementById('add-kb-modal').classList.add('hidden');
 }
 
-window.openKbModal = openKbModal;
+// Listener delegado para los botones "Añadir a BD" de la tabla SPF. El dominio
+// viaja en data-kb-domain (escapado como atributo HTML), nunca en un onclick
+// inline: los valores vienen del registro SPF remoto y podrían inyectar JS.
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-kb-domain]');
+    if (btn) openKbModal(btn.dataset.kbDomain);
+});
 
 // ===== Global Tooltip System =====
 let _tooltipEl = null;
@@ -119,6 +127,10 @@ export function translateDOM() {
     const lang = getLanguage();
     const t = translations[lang];
     if (!t) return;
+
+    // Mantener <html lang> sincronizado con el idioma activo: los lectores de
+    // pantalla aplican la fonética correcta y los buscadores indexan bien.
+    if (document.documentElement) document.documentElement.lang = lang;
 
     // Elements with data-i18n
     document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -271,7 +283,10 @@ export function renderResults(domain, result) {
     }
 
     document.getElementById('result-domain').textContent = domain;
-    document.getElementById('result-timestamp').textContent = new Date().toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
+    // Fecha real del escaneo (fijada en app.js), no la del render actual: cambiar de
+    // idioma re-renderiza y no debe "mover" la hora del análisis.
+    const scannedAt = result.scannedAt ? new Date(result.scannedAt) : new Date();
+    document.getElementById('result-timestamp').textContent = scannedAt.toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
 
     const providerDisplay = displayProvider(result, t);
     document.getElementById('summary-provider-value').textContent = providerDisplay;
@@ -377,11 +392,9 @@ export function renderResults(domain, result) {
         const svc = identifySPFService(entry.value);
         const prefixDisplay = entry.qualifier === '+' ? '+' : entry.qualifier === '-' ? '-' : entry.qualifier === '~' ? '~' : entry.qualifier === '?' ? '?' : '';
         
-        let prefixClass = 'spf-prefix--pass';
-        let resultText = 'Pass';
-        if (entry.qualifier === '-') { prefixClass = 'spf-prefix--fail'; resultText = 'Fail'; }
-        else if (entry.qualifier === '~') { prefixClass = 'spf-prefix--softfail'; resultText = 'SoftFail'; }
-        else if (entry.qualifier === '?') { prefixClass = 'spf-prefix--neutral'; resultText = 'Neutral'; }
+        const spfRes = spfQualifierResult(entry.qualifier);
+        let prefixClass = `spf-prefix--${spfRes.kind}`;
+        let resultText = spfRes.text;
         
         if (entry.type === 'v') { resultText = ''; prefixClass = 'spf-prefix--neutral'; }
         if (entry.type === 'all' && entry.qualifier === '-') { resultText = 'Fail'; prefixClass = 'spf-prefix--fail'; }
@@ -399,8 +412,7 @@ export function renderResults(domain, result) {
             const catClass = `cat--${svc.category}`;
             const localizedCatLabel = getCategoryLabel(svc, lang);
             if (svc.is_unknown) {
-                const safeQuery = encodeURIComponent(svc.search_query || '');
-                svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="${escapeHtml(t.add_to_db_tooltip)}" onclick="openKbModal(decodeURIComponent('${safeQuery}'))">${t.add_to_db}</button>`;
+                svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><button type="button" class="spf-service__category ${catClass}" style="border:none; cursor:pointer;" title="${escapeHtml(t.add_to_db_tooltip)}" data-kb-domain="${escapeHtml(svc.search_query || '')}">${t.add_to_db}</button>`;
             } else {
                 svcHTML = `<span class="spf-service">${escapeHtml(svc.name)}</span><span class="spf-service__category ${catClass}">${escapeHtml(localizedCatLabel)}</span>`;
             }
@@ -620,7 +632,7 @@ export function renderReputation(rblResults, lang, t) {
         let checksHTML = '';
         for (const check of entry.checks) {
             // status: 'listed' | 'clean' | 'error' (inconcluso). Compat: si no hay status, usar listed.
-            const status = check.status || (check.listed ? 'listed' : 'clean');
+            const status = rblCheckStatus(check);
             if (status === 'listed') anyListed = true;
             if (status === 'error') anyError = true;
             let cls = 'rbl-check__badge--clean';
