@@ -11,7 +11,9 @@ import {
     formatProviderSource,
     resolveFindingText,
     displayDmarcPolicy,
-    postureText
+    postureText,
+    spfQualifierResult,
+    rblCheckStatus
 } from './viewmodel.js';
 
 export function openKbModal(domain) {
@@ -390,11 +392,9 @@ export function renderResults(domain, result) {
         const svc = identifySPFService(entry.value);
         const prefixDisplay = entry.qualifier === '+' ? '+' : entry.qualifier === '-' ? '-' : entry.qualifier === '~' ? '~' : entry.qualifier === '?' ? '?' : '';
         
-        let prefixClass = 'spf-prefix--pass';
-        let resultText = 'Pass';
-        if (entry.qualifier === '-') { prefixClass = 'spf-prefix--fail'; resultText = 'Fail'; }
-        else if (entry.qualifier === '~') { prefixClass = 'spf-prefix--softfail'; resultText = 'SoftFail'; }
-        else if (entry.qualifier === '?') { prefixClass = 'spf-prefix--neutral'; resultText = 'Neutral'; }
+        const spfRes = spfQualifierResult(entry.qualifier);
+        let prefixClass = `spf-prefix--${spfRes.kind}`;
+        let resultText = spfRes.text;
         
         if (entry.type === 'v') { resultText = ''; prefixClass = 'spf-prefix--neutral'; }
         if (entry.type === 'all' && entry.qualifier === '-') { resultText = 'Fail'; prefixClass = 'spf-prefix--fail'; }
@@ -632,7 +632,7 @@ export function renderReputation(rblResults, lang, t) {
         let checksHTML = '';
         for (const check of entry.checks) {
             // status: 'listed' | 'clean' | 'error' (inconcluso). Compat: si no hay status, usar listed.
-            const status = check.status || (check.listed ? 'listed' : 'clean');
+            const status = rblCheckStatus(check);
             if (status === 'listed') anyListed = true;
             if (status === 'error') anyError = true;
             let cls = 'rbl-check__badge--clean';

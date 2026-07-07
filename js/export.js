@@ -10,7 +10,9 @@ import {
     resolveFindingText,
     displayDmarcPolicy,
     serviceDescription,
-    rblListedCount
+    rblListedCount,
+    spfQualifierResult,
+    rblCheckStatus
 } from './viewmodel.js';
 
 // Árbol de lookups SPF en tema claro (para el informe exportado, no la UI oscura).
@@ -246,7 +248,7 @@ export function generateReportHTML() {
             <div style="margin-top: 15px;">
                 ${currentResult.rblResults.map(mxRes => {
                     const checkLines = mxRes.checks ? mxRes.checks.map(check => {
-                        const status = check.status || (check.listed ? 'listed' : 'clean');
+                        const status = rblCheckStatus(check);
                         let statusBadge;
                         if (status === 'listed') {
                             statusBadge = `<span style="background-color: #fee2e2; color: #b91c1c; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-family: sans-serif;">${t.rbl_badge_listed}</span>`;
@@ -504,12 +506,11 @@ export function generateReportHTML() {
                         svcName = t.spf_default_policy;
                     }
 
-                    let resultText = 'Pass';
-                    let resultColor = '#059669'; // Green
-                    if (e.qualifier === '-') { resultText = 'Fail'; resultColor = '#dc2626'; }
-                    else if (e.qualifier === '~') { resultText = 'SoftFail'; resultColor = '#d97706'; }
-                    else if (e.qualifier === '?') { resultText = 'Neutral'; resultColor = '#475569'; }
-                    
+                    const SPF_RESULT_COLOR = { pass: '#059669', fail: '#dc2626', softfail: '#d97706', neutral: '#475569' };
+                    const spfRes = spfQualifierResult(e.qualifier);
+                    let resultText = spfRes.text;
+                    let resultColor = SPF_RESULT_COLOR[spfRes.kind];
+
                     if (e.type === 'v') { resultText = ''; }
                     if (e.type === 'all' && e.qualifier === '-') { resultText = 'Fail'; resultColor = '#dc2626'; }
                     if (e.type === 'all' && e.qualifier === '~') { resultText = 'SoftFail'; resultColor = '#d97706'; }
