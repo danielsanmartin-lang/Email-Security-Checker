@@ -52,14 +52,21 @@ export function generateReportHTML() {
         entry.unconfirmed
             ? `<br><small style="color: #d97706; font-style: italic;">⚠ ${escapeHtml(t.seg_unconfirmed_mx)}</small>`
             : '';
-    const layerItem = (entry, label) =>
-        `<li style="margin-bottom: 10px;"><strong>${label}:</strong> <span style="color: #4f46e5; font-weight: bold;">${escapeHtml(entry.name)}</span>${layerLevel(entry)} <br><small style="color: #64748b;">${t.evidence}: ${layerEvidence(entry)}</small>${layerUnconfirmed(entry)}</li>`;
+    // Confianza < 50%: no se afirma el uso del producto; se etiqueta como "posible"
+    // y se añade la nota de baja confianza (coherente con la tarjeta de la UI).
+    const isInconclusive = (entry) => typeof entry.score === 'number' && entry.score < 0.5;
+    const layerLowConfidence = (entry) =>
+        isInconclusive(entry)
+            ? `<br><small style="color: #d97706; font-style: italic;">⚠ ${escapeHtml(t.seg_low_confidence_note)}</small>`
+            : '';
+    const layerItem = (entry, label, inconclusiveLabel) =>
+        `<li style="margin-bottom: 10px;"><strong>${isInconclusive(entry) ? inconclusiveLabel : label}:</strong> <span style="color: #4f46e5; font-weight: bold;">${escapeHtml(entry.name)}</span>${layerLevel(entry)} <br><small style="color: #64748b;">${t.evidence}: ${layerEvidence(entry)}</small>${layerLowConfidence(entry)}${layerUnconfirmed(entry)}</li>`;
 
     let segHtml = '';
     if (currentResult.segList.length > 0 || currentResult.icesList.length > 0) {
         segHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🛡️ ${t.panel_security_title}</h2><ul style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px 15px 15px 35px; border-radius: 8px; font-family: sans-serif; font-size: 13px;">`;
-        for (const seg of currentResult.segList) segHtml += layerItem(seg, t.report_seg_label);
-        for (const ices of currentResult.icesList) segHtml += layerItem(ices, t.ices_detected);
+        for (const seg of currentResult.segList) segHtml += layerItem(seg, t.report_seg_label, t.seg_inconclusive);
+        for (const ices of currentResult.icesList) segHtml += layerItem(ices, t.ices_detected, t.ices_inconclusive);
         segHtml += `</ul>`;
     } else {
         segHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🛡️ ${t.panel_security_title}</h2><p style="color: #64748b; font-style: italic; font-family: sans-serif; font-size: 13px;">${t.no_seg_ices_detected}. ${t.no_seg_ices_detail}</p><p style="color: #94a3b8; font-style: italic; font-family: sans-serif; font-size: 12px;">${t.ices_api_blindspot}</p>`;

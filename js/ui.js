@@ -292,10 +292,15 @@ export function renderResults(domain, result) {
     document.getElementById('summary-provider-value').textContent = providerDisplay;
     
     const secValue = document.getElementById('summary-security-value');
+    // Marca las detecciones de confianza baja (<50%) como "(posible)" para no
+    // afirmar en el resumen el uso de un producto que no está confirmado.
+    const summaryName = (s) => (typeof s.score === 'number' && s.score < 0.5)
+        ? `${s.name} (${t.label_possible})`
+        : s.name;
     if (result.segList.length > 0) {
-        secValue.textContent = result.segList.map(s => s.name).join(', ');
+        secValue.textContent = result.segList.map(summaryName).join(', ');
     } else if (result.icesList.length > 0) {
-        secValue.textContent = result.icesList.map(s => s.name).join(', ');
+        secValue.textContent = result.icesList.map(summaryName).join(', ');
     } else {
         secValue.textContent = t.no_evidence_dns;
     }
@@ -339,9 +344,15 @@ export function renderResults(domain, result) {
         </div>`;
 
     const secBody = document.getElementById('security-body');
-    const renderLayer = (entry, labelText) => {
+    const renderLayer = (entry, kind) => {
         const levelLabel = t[`awareness_level_${entry.level}`] || entry.level || '';
         const pct = typeof entry.score === 'number' ? `${Math.round(entry.score * 100)}%` : '';
+        // Confianza < 50%: no afirmamos que se USE el producto; se presenta como
+        // hipótesis ("posible — sin evidencia concluyente"), no como capa confirmada.
+        const inconclusive = typeof entry.score === 'number' && entry.score < 0.5;
+        const labelText = inconclusive
+            ? (kind === 'seg' ? t.seg_inconclusive : t.ices_inconclusive)
+            : (kind === 'seg' ? t.seg_detected : t.ices_detected);
         const evidence = Array.isArray(entry.evidence) ? entry.evidence : [];
         const badge = entry.level
             ? html`<span class="seg-confidence seg-confidence--${raw(entry.level)}" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:rgba(99,102,241,0.12);color:var(--accent-violet);">${levelLabel}${pct ? raw(` · ${escapeHtml(pct)}`) : ''}</span>`
@@ -349,6 +360,9 @@ export function renderResults(domain, result) {
         const evidenceHtml = evidence.length
             ? html`<div class="info-block__detail">${t.evidence}: ${evidence.map((e, i) => html`${raw(i ? ' · ' : '')}${t[`seg_signal_${e.signal}`] || e.signal}: ${e.value}`)}</div>`
             : html`<div class="info-block__detail">${t.evidence}: ${entry.source}</div>`;
+        const inconclusiveHtml = inconclusive
+            ? html`<div class="info-block__detail" style="color:var(--accent-amber,#d97706);font-style:italic;">⚠ ${t.seg_low_confidence_note}</div>`
+            : raw('');
         const unconfirmedHtml = entry.unconfirmed
             ? html`<div class="info-block__detail" style="color:var(--accent-amber,#d97706);font-style:italic;">⚠ ${t.seg_unconfirmed_mx}</div>`
             : raw('');
@@ -356,12 +370,13 @@ export function renderResults(domain, result) {
             <div class="info-block__label">${raw(labelText)}</div>
             <div class="info-block__value">${entry.name}${badge}</div>
             ${evidenceHtml}
+            ${inconclusiveHtml}
             ${unconfirmedHtml}
         </div>`;
     };
 
     if (result.segList.length > 0 || result.icesList.length > 0) {
-        secBody.innerHTML = html`${result.segList.map(seg => renderLayer(seg, t.seg_detected))}${result.icesList.map(ices => renderLayer(ices, t.ices_detected))}`;
+        secBody.innerHTML = html`${result.segList.map(seg => renderLayer(seg, 'seg'))}${result.icesList.map(ices => renderLayer(ices, 'ices'))}`;
     } else {
         secBody.innerHTML = html`<div class="info-block">
             <div class="info-block__label">${raw(t.no_evidence_dns)}</div>

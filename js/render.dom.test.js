@@ -102,6 +102,30 @@ describe('renderResults (jsdom, integración)', () => {
         expect(document.querySelectorAll('script').length).toBe(0);
     });
 
+    it('ICES de confianza baja (<50%) no se afirma como detectado', () => {
+        const result = maliciousResult();
+        result.segList = [];
+        result.icesList = [{ name: 'Cisco Secure Email', level: 'baja', score: 0.35, evidence: [], source: 'cisco-ci-domain-verification' }];
+        renderResults('acme.com', result);
+
+        const secBody = document.getElementById('security-body').innerHTML;
+        // No debe afirmar "ICES Detectado" para una confianza del 35%.
+        expect(secBody).not.toContain('ICES Detectado');
+        expect(secBody).toContain('sin evidencia concluyente');
+        // El resumen marca la detección como "(posible)".
+        expect(document.getElementById('summary-security-value').textContent).toContain('(posible)');
+    });
+
+    it('ICES de confianza alta (≥50%) sí se muestra como detectado', () => {
+        const result = maliciousResult();
+        result.segList = [];
+        result.icesList = [{ name: 'Abnormal Security', level: 'alta', score: 0.85, evidence: [], source: 'mx' }];
+        renderResults('acme.com', result);
+        const secBody = document.getElementById('security-body').innerHTML;
+        expect(secBody).toContain('ICES Detectado');
+        expect(secBody).not.toContain('sin evidencia concluyente');
+    });
+
     it('la tabla SPF no usa onclick inline y el payload con comillas llega intacto al modal (fix XSS)', () => {
         // encodeURIComponent no escapa comillas simples ni paréntesis: con el antiguo
         // onclick inline, este include ejecutaba alert(1) al pulsar "Añadir a BD".
