@@ -432,7 +432,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const existing = localStorage.getItem('custom_kb_spf');
             if (existing) customKB = JSON.parse(existing);
-        } catch(err) {}
+        } catch (err) {
+            /* localStorage corrupto o no disponible: se parte de una lista vacía */
+        }
         customKB.push(newEntry);
         localStorage.setItem('custom_kb_spf', JSON.stringify(customKB));
 
