@@ -28,7 +28,7 @@ export default defineConfig({
                 'js/awarenessDetector.js': { statements: 94 },
                 'js/viewmodel.js': { statements: 95 },
                 'js/app.js': { statements: 88 },
-                'js/ui/**': { statements: 80 }
+                'js/ui/**': { statements: 85 }
             }
         }
     }

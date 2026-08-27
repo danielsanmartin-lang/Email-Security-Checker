@@ -64,6 +64,11 @@ export default [
                 beforeEach: 'readonly',
                 afterEach: 'readonly'
             }
+        },
+        rules: {
+            // Los tests montan fixtures de DOM con literales fijos y controlados:
+            // ahí la plantilla cruda es lo legible y no hay datos externos.
+            'no-restricted-syntax': 'off'
         }
     }
 ];
