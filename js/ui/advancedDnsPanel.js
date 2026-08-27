@@ -84,19 +84,19 @@ export function renderAdvancedDNS(result, lang, t) {
         <span class="advanced-dns-section__badge ${result.tlsRpt ? 'badge--success' : 'badge--neutral'}">${result.tlsRpt ? t.adv_tls_rpt_configured : t.adv_tls_rpt_not_configured}</span>
     </div>`;
     if (result.tlsRpt) {
-        let tlsBody = `<div class="panel__raw-record" style="font-size:12px;margin-bottom:8px;">${result.tlsRpt.record}</div>`;
+        let tlsBody = html`<div class="panel__raw-record" style="font-size:12px;margin-bottom:8px;">${result.tlsRpt.record}</div>`;
         if (result.tlsrptReporters && result.tlsrptReporters.length > 0) {
-            tlsBody += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+            tlsBody += html`<div style="display:flex;flex-direction:column;gap:6px;">`;
             for (const r of result.tlsrptReporters) {
-                tlsBody += `<div class="reporting-item" style="padding:8px 12px;">
+                tlsBody += html`<div class="reporting-item" style="padding:8px 12px;">
                     <div class="reporting-item__type">${t.adv_tls_rpt_dest}</div>
                     <div class="reporting-item__value" style="font-size:13px;">${r.uri}</div>
-                    ${r.reporter ? `<div class="reporting-item__service">${t.adv_tls_rpt_reporter}: ${r.reporter}</div>` : ''}
+                    ${r.reporter ? html`<div class="reporting-item__service">${t.adv_tls_rpt_reporter}: ${r.reporter}</div>` : raw('')}
                 </div>`;
             }
             tlsBody += '</div>';
         }
-        out += html`<div class="advanced-dns-section__body">${tlsBody}</div>`;
+        out += html`<div class="advanced-dns-section__body">${raw(tlsBody)}</div>`;
     } else {
         out += html`<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_tls_rpt_desc}</p></div>`;
     }
@@ -108,22 +108,22 @@ export function renderAdvancedDNS(result, lang, t) {
         <h4 class="advanced-dns-section__title">${t.adv_ns_title}</h4>
     </div>`;
     if (result.nsProvider) {
-        let nsBody = `<div class="info-block">
+        let nsBody = html`<div class="info-block">
             <div class="info-block__value">${result.nsProvider.name}</div>
         </div>`;
         if (result.nsProvider.hint) {
-            nsBody += `<div class="info-block" style="margin-top:6px;">
+            nsBody += html`<div class="info-block" style="margin-top:6px;">
                 <div class="info-block__label">${t.adv_ns_hint}</div>
                 <div class="info-block__detail" style="color:var(--accent-violet);">${result.nsProvider.hint}</div>
             </div>`;
         }
         if (result.nsRecords && result.nsRecords.length > 0) {
-            nsBody += `<div class="info-block" style="margin-top:6px;">
+            nsBody += html`<div class="info-block" style="margin-top:6px;">
                 <div class="info-block__label">${t.adv_ns_servers}</div>
                 <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">${result.nsRecords.join(', ')}</div>
             </div>`;
         }
-        out += html`<div class="advanced-dns-section__body">${nsBody}</div>`;
+        out += html`<div class="advanced-dns-section__body">${raw(nsBody)}</div>`;
     } else if (result.nsRecords && result.nsRecords.length > 0) {
         out += html`<div class="advanced-dns-section__body">
             <div class="info-block">
@@ -147,17 +147,17 @@ export function renderAdvancedDNS(result, lang, t) {
         for (const [key, records] of Object.entries(result.srvRecords)) {
             if (records && records.length > 0) {
                 foundSrv = true;
-                srvBody += `<div class="info-block" style="margin-top:6px;">
+                srvBody += html`<div class="info-block" style="margin-top:6px;">
                     <div class="info-block__label" style="text-transform: capitalize;">${key}</div>
                     <div class="info-block__detail" style="font-family:'JetBrains Mono',monospace;font-size:12px;">
-                        ${records.map(r => `${r.target}:${r.port} (prio:${r.priority}, weight:${r.weight})`).join('<br>')}
+                        ${records.map((r, i) => html`${raw(i ? '<br>' : '')}${r.target}:${r.port} (prio:${r.priority}, weight:${r.weight})`)}
                     </div>
                 </div>`;
             }
         }
         srvBody += '</div>';
         if (foundSrv) {
-            out += html`<div class="advanced-dns-section__body">${srvBody}</div>`;
+            out += html`<div class="advanced-dns-section__body">${raw(srvBody)}</div>`;
         } else {
             out += html`<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_srv_none}</p></div>`;
         }
@@ -185,16 +185,16 @@ export function renderAdvancedDNS(result, lang, t) {
         let daneBody = '<div style="display:flex;flex-direction:column;gap:8px;">';
         for (const mx in result.daneRecords) {
             if (result.daneRecords[mx] && result.daneRecords[mx].length > 0) {
-                daneBody += `<div class="info-block" style="margin-top:6px;">
+                daneBody += html`<div class="info-block" style="margin-top:6px;">
                     <div class="info-block__label">${mx}</div>
                     <div class="panel__raw-record" style="font-size:11px;font-family:'JetBrains Mono',monospace;word-break:break-all;margin-top:4px;">
-                        ${result.daneRecords[mx].map(r => r).join('<br>')}
+                        ${result.daneRecords[mx].map((r, i) => html`${raw(i ? '<br>' : '')}${r}`)}
                     </div>
                 </div>`;
             }
         }
         daneBody += '</div>';
-        out += html`<div class="advanced-dns-section__body">${daneBody}</div>`;
+        out += html`<div class="advanced-dns-section__body">${raw(daneBody)}</div>`;
     } else {
         out += html`<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_dane_none}</p></div>`;
     }
@@ -211,7 +211,7 @@ export function renderAdvancedDNS(result, lang, t) {
         out += html`<div class="advanced-dns-section__body">
             <div class="info-block">
                 <div class="info-block__detail">${t.adv_dnssec_signed_desc}</div>
-                ${result.dnssec.ad ? `<div class="info-block__detail" style="color:var(--accent-emerald);margin-top:4px;">${t.adv_dnssec_validated}</div>` : ''}
+                ${result.dnssec.ad ? html`<div class="info-block__detail" style="color:var(--accent-emerald);margin-top:4px;">${t.adv_dnssec_validated}</div>` : raw('')}
             </div>
         </div>`;
     } else {

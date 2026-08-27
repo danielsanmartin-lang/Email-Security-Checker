@@ -5,6 +5,10 @@ import { detectFromHeaders } from '../headerAnalyzer.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
 
+// Devuelve SafeHtml. Ojo con volver a plantillas planas aquí: v.displayName, e.value
+// y v.notes vienen del DNS del dominio auditado (la evidencia generic_dkim_probe lleva
+// el contenido CRUDO de un registro TXT), así que un dominio malicioso podría inyectar
+// marcado. El tagged template html`` escapa cada interpolación por defecto.
 function buildAwarenessCard(v, t) {
     const signalLabel = (sig) => t[`awareness_signal_${sig}`] || sig;
     const levelClass = { alta: 'awareness-level--alta', media: 'awareness-level--media', baja: 'awareness-level--baja' };
@@ -15,43 +19,43 @@ function buildAwarenessCard(v, t) {
     const color = levelColorVar[v.level] || 'var(--accent-rose)';
 
     const sourceBadge = v.source === 'headers'
-        ? `<span class="awareness-source-badge">✉ ${t.awareness_source_headers || 'headers'}</span>`
-        : '';
+        ? html`<span class="awareness-source-badge">✉ ${t.awareness_source_headers || 'headers'}</span>`
+        : raw('');
     // Distingue "tiene el gateway del vendor" de "usa el módulo de awareness"
     const unconfirmed = (v.productConfirmed === false)
-        ? `<div class="awareness-unconfirmed">${t.awareness_module_unconfirmed || ''}</div>`
-        : '';
+        ? html`<div class="awareness-unconfirmed">${t.awareness_module_unconfirmed || ''}</div>`
+        : raw('');
 
-    return `
+    return html`
     <div class="awareness-vendor-card">
         <div class="awareness-vendor-card__header">
             <div class="awareness-vendor-card__name-row">
                 <span class="awareness-vendor-card__name">${v.displayName}</span>
                 ${sourceBadge}
-                <span class="awareness-level-badge ${lvlClass}">${lvlLabel}</span>
+                <span class="awareness-level-badge ${raw(lvlClass)}">${lvlLabel}</span>
             </div>
             <div class="awareness-vendor-card__score-row">
                 <div class="awareness-score-bar-wrap">
-                    <div class="awareness-score-bar" style="width:${pct}%; background:${color};"></div>
+                    <div class="awareness-score-bar" style="width:${pct}%; background:${raw(color)};"></div>
                 </div>
-                <span class="awareness-score-pct" style="color:${color};">${pct}%</span>
+                <span class="awareness-score-pct" style="color:${raw(color)};">${pct}%</span>
             </div>
         </div>
         <div class="awareness-vendor-card__body">
             ${unconfirmed}
             <div class="awareness-evidence-label">${t.awareness_evidence_label || 'Evidence'}</div>
             <div class="awareness-evidence-pills">
-                ${v.evidence.map(e => `
+                ${v.evidence.map(e => html`
                 <span class="awareness-evidence-pill" title="${e.value} (${Math.round(e.weight * 100)}%)">
                     <span class="awareness-evidence-pill__signal">${signalLabel(e.signal)}</span>
                     <span class="awareness-evidence-pill__value">${e.value}</span>
-                </span>`).join('')}
+                </span>`)}
             </div>
-            ${v.notes ? `
+            ${v.notes ? html`
             <div class="awareness-vendor-notes">
                 <span class="awareness-vendor-notes__label">${t.awareness_vendor_notes || 'Notes'}: </span>
                 <span class="awareness-vendor-notes__text">${v.notes}</span>
-            </div>` : ''}
+            </div>` : raw('')}
         </div>
     </div>`;
 }
@@ -138,7 +142,7 @@ export function renderAwarenessVendors(result, lang, t) {
         out += html`<div class="awareness-notes-section" style="margin-top:14px;">
             <div class="awareness-evidence-label" style="margin-bottom:6px;">${t.awareness_notes_title || 'Notes'}</div>
             <ul class="awareness-notes-list">
-                ${result.notes.filter(n => !n.includes('Microsoft Attack Simulation')).map(n => `<li>${n}</li>`).join('')}
+                ${result.notes.filter(n => !n.includes('Microsoft Attack Simulation')).map(n => html`<li>${n}</li>`)}
             </ul>
         </div>`;
     }
@@ -162,5 +166,5 @@ export function analyzeHeaders() {
         out.innerHTML = html`<p class="no-data no-data--sm">${msg || ''}</p>`;
         return;
     }
-    out.innerHTML = html`<div class="awareness-vendors-list awareness-vendors-list--spaced">${res.detectedVendors.map(v => raw(buildAwarenessCard(v, t)))}</div>`;
+    out.innerHTML = html`<div class="awareness-vendors-list awareness-vendors-list--spaced">${res.detectedVendors.map(v => buildAwarenessCard(v, t))}</div>`;
 }
