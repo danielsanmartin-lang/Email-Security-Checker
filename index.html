@@ -902,15 +902,16 @@
                     <div class="form-group">
                         <label for="kb-category" data-i18n="modal_kb_category">Categoría (Label)</label>
                         <select id="kb-category" class="search-input-wrapper search-input" required>
-                            <option value="marketing" data-i18n="cat_marketing">Marketing</option>
-                            <option value="transactional" data-i18n="cat_transactional">Transaccional</option>
-                            <option value="crm" data-i18n="cat_crm">CRM / ERP</option>
-                            <option value="support" data-i18n="cat_support">Soporte / Tickets</option>
-                            <option value="signatures" data-i18n="cat_signatures">Firmas Email</option>
-                            <option value="email" data-i18n="cat_email">Proveedor Email</option>
+                            <option value="provider" data-kb-for="mx" data-i18n="cat_provider">Proveedor de correo</option>
+                            <option value="marketing" data-kb-for="spf" data-i18n="cat_marketing">Marketing</option>
+                            <option value="transactional" data-kb-for="spf" data-i18n="cat_transactional">Transaccional</option>
+                            <option value="crm" data-kb-for="spf" data-i18n="cat_crm">CRM / ERP</option>
+                            <option value="support" data-kb-for="spf" data-i18n="cat_support">Soporte / Tickets</option>
+                            <option value="signatures" data-kb-for="spf" data-i18n="cat_signatures">Firmas Email</option>
+                            <option value="email" data-kb-for="spf" data-i18n="cat_email">Proveedor Email</option>
                             <option value="seg" data-i18n="cat_seg">SEG (Filtro perimetral)</option>
                             <option value="ices" data-i18n="cat_ices">ICES (Seguridad Integrada)</option>
-                            <option value="other" data-i18n="cat_other">Otro / Varios</option>
+                            <option value="other" data-kb-for="spf" data-i18n="cat_other">Otro / Varios</option>
                         </select>
                     </div>
                     <div class="modal__actions">

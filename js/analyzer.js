@@ -20,12 +20,48 @@ export function identifyMX(host, domain) {
         if (domainRoot && mxRoot && mxRoot === domainRoot) {
             return { name: host, type: 'self' };
         }
-        // Only flag as SEG if the MX clearly belongs to a different, external domain
+        // MX en un dominio distinto y NO reconocido por el diccionario.
+        //
+        // Antes esto se etiquetaba directamente como 'seg', y era un falso positivo
+        // sistemático: paypal.com → "paypalcorp.com", acme.com → "acmegroup.net",
+        // empresa.es → "empresa.com"… Cualquier dominio hermano, variante de ccTLD o
+        // hosting no catalogado se anunciaba como un producto de seguridad cuyo
+        // "nombre" era, en realidad, un dominio. Los SEG de verdad los reconoce el
+        // diccionario ANTES de llegar aquí, así que el atajo no aportaba ninguna
+        // detección real: solo fabricaba afirmaciones que no se pueden sostener.
+        //
+        // Ahora se devuelve lo único que se sabe con certeza —el correo entra por un
+        // dominio externo no identificado— y la UI lo presenta como observación, no
+        // como capa de seguridad detectada.
         if (domainRoot && mxRoot && mxRoot !== domainRoot) {
-            return { name: mxRoot, type: 'seg' };
+            return {
+                name: mxRoot,
+                type: 'unknown',
+                external: true,
+                sameBrand: isSameBrand(mxRoot, domainRoot)
+            };
         }
     }
     return { name: host, type: 'unknown' };
+}
+
+/**
+ * ¿Dos dominios raíz comparten nombre de marca? (paypal.com ↔ paypalcorp.com,
+ * empresa.es ↔ empresa.com, acme.com ↔ acmegroup.net)
+ * Se compara la etiqueta principal y basta con que una sea prefijo de la otra, con
+ * un mínimo de 4 caracteres para no emparejar por casualidad etiquetas cortas
+ * ("mx", "srv"). Es una pista para redactar el aviso, nunca una afirmación de
+ * propiedad: sirve para decir "probablemente es infraestructura propia" en vez de
+ * "dominio no reconocido".
+ */
+export function isSameBrand(rootA, rootB) {
+    const label = (d) => String(d || '').toLowerCase().split('.')[0];
+    const a = label(rootA);
+    const b = label(rootB);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+    return short.length >= 4 && long.startsWith(short);
 }
 
 export function extractRootDomain(hostname) {
@@ -1032,7 +1068,11 @@ function determinePosture(result) {
     if (hasSpf && allQualifier === '-' && hasDmarc && dmarcPolicy === 'reject' && hasSegOrIces && hasDkim && hasMtaSts) {
         return { key: 'strong', grade: 'Fuerte', color: 'green', class: 'safe', label: 'Fuerte' };
     }
-    if (!hasSpf || allQualifier === '+' || allQualifier === '?' || !hasDmarc || dmarcPolicy === 'none' || !hasSegOrIces) {
+    // La AUSENCIA de SEG/ICES no baja la postura a "débil": los ICES modernos son
+    // API-based y no dejan ni un rastro en DNS (punto ciego documentado del análisis),
+    // y muchas organizaciones filtran con el propio proveedor de correo. Su presencia
+    // suma para llegar a "fuerte", pero no detectarla solo significa que no se ve.
+    if (!hasSpf || allQualifier === '+' || allQualifier === '?' || !hasDmarc || dmarcPolicy === 'none') {
         return { key: 'weak', grade: 'Débil', color: 'red', class: 'danger', label: 'Débil' };
     }
     return { key: 'moderate', grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' };

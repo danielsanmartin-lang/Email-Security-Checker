@@ -51,6 +51,23 @@ A+. **Las notas de v3 no son comparables con las de v2.x.**
   MTA-STS) **nunca** se cachea: un análisis servido de caché daría un diagnóstico viejo.
 
 ### Corregido
+- **Falso positivo sistemático de SEG**: cualquier MX cuyo dominio raíz no coincidiera con
+  el analizado se anunciaba como capa de seguridad, con el dominio como "nombre de
+  producto" (paypal.com → «paypalcorp.com», acme.com → «acmegroup.net», empresa.es →
+  «empresa.com»). Los SEG reales los reconoce el diccionario antes de llegar a ese
+  atajo, así que no aportaba ninguna detección: solo afirmaciones insostenibles. Ahora
+  esos MX se presentan como **«MX externo no identificado»**, con la pista de si comparte
+  nombre de marca con el dominio (probable infraestructura propia) y un botón para
+  añadirlo al diccionario.
+- El diccionario acepta entradas propias también en la lista **MX** (antes todo iba a la
+  de includes SPF, que no se consulta para el correo entrante), con las categorías
+  filtradas por lista: a un MX solo se le puede asignar proveedor, SEG o ICES.
+- Guardar en el diccionario reventaba si el `<select>` no tenía una opción coincidente.
+- La **ausencia** de SEG/ICES ya no fuerza la postura a «débil»: los ICES modernos son
+  API-based y no dejan rastro en DNS (punto ciego documentado de la herramienta).
+- El service worker servía módulos de caché mientras traía otros de red, y tras un
+  despliegue podía mezclar versiones y romper la app. El HTML, el CSS y los `.js` van
+  ahora a red primero, con la caché como respaldo sin conexión.
 - Los análisis obsoletos ya no pisan al vigente: `runAnalysis` usa un token de ejecución y
   deshabilita el botón mientras trabaja.
 - El deep-link se construye con `URLSearchParams` (antes interpolaba dominio y selector sin

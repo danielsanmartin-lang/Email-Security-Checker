@@ -7,7 +7,7 @@
  * la política MTA-STS van siempre a la red — un análisis servido desde caché daría
  * un diagnóstico de seguridad desactualizado, que es peor que no dar ninguno.
  */
-const SW_VERSION = 'v3.0.0';
+const SW_VERSION = 'v3.0.1';
 const CACHE = `esc-shell-${SW_VERSION}`;
 
 // Núcleo mínimo para arrancar sin red. El resto de módulos ES se cachea sobre la
@@ -71,7 +71,29 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Estáticos: se sirve lo cacheado y se refresca en segundo plano.
+    // El HTML, el CSS y los módulos ES están ACOPLADOS entre sí por versión. Con
+    // stale-while-revalidate, tras un despliegue una misma carga podía mezclar
+    // módulos viejos y nuevos y romper la app (visto en pruebas: un ui.js cacheado
+    // llamando a un panel ya cambiado). Para esos van a red primero, con la caché
+    // como respaldo cuando no hay conexión.
+    const versionCoupled = /\.(?:js|css|html)$/.test(url.pathname);
+    if (versionCoupled) {
+        event.respondWith(
+            fetch(request)
+                .then(res => {
+                    if (res && res.ok) {
+                        const copy = res.clone();
+                        caches.open(CACHE).then(c => c.put(request, copy));
+                    }
+                    return res;
+                })
+                .catch(() => caches.match(request).then(r => r || Response.error()))
+        );
+        return;
+    }
+
+    // El resto (fuentes, iconos, manifest) no depende de la versión del código:
+    // se sirve de caché al instante y se refresca en segundo plano.
     event.respondWith(
         caches.match(request).then(cached => {
             const network = fetch(request)

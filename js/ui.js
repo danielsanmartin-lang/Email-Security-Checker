@@ -15,11 +15,29 @@ import { renderSpfPanel } from './ui/spfPanel.js';
 import { renderDmarcPanel } from './ui/dmarcPanel.js';
 import { renderDkimBimiPanel } from './ui/dkimBimiPanel.js';
 
-export function openKbModal(domain) {
+/**
+ * @param {string} domain  patrón a reconocer (dominio del include SPF o raíz del MX)
+ * @param {'spf'|'mx'} list  lista del diccionario a la que se añadirá. Un MX y un
+ *   include SPF no son intercambiables: el MX prueba flujo de correo entrante y el
+ *   include solo autorización de envío, y cada uno se consulta por su lado.
+ */
+export function openKbModal(domain, list = 'spf') {
+    const modal = document.getElementById('add-kb-modal');
+    const target = list === 'mx' ? 'mx' : 'spf';
+    const select = document.getElementById('kb-category');
     document.getElementById('kb-domain').value = domain;
     document.getElementById('kb-name').value = '';
-    document.getElementById('kb-category').value = 'marketing';
-    document.getElementById('add-kb-modal').classList.remove('hidden');
+    // Las categorías no son intercambiables: a un MX no se le puede asignar
+    // "Marketing" o "Firmas de email"; solo proveedor, SEG o ICES. Se ocultan las
+    // que no apliquen en vez de ofrecer opciones que producirían una entrada inválida.
+    for (const option of select.options) {
+        const only = option.dataset.kbFor;
+        option.hidden = !!only && only !== target;
+        option.disabled = option.hidden;
+    }
+    select.value = target === 'mx' ? 'seg' : 'marketing';
+    modal.dataset.kbList = target;
+    modal.classList.remove('hidden');
     document.getElementById('kb-name').focus();
 }
 
@@ -32,7 +50,7 @@ export function closeKbModal() {
 // inline: los valores vienen del registro SPF remoto y podrían inyectar JS.
 document.addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-kb-domain]');
-    if (btn) openKbModal(btn.dataset.kbDomain);
+    if (btn) openKbModal(btn.dataset.kbDomain, btn.dataset.kbList || 'spf');
 });
 
 // ===== Tooltips accesibles =====
@@ -260,7 +278,7 @@ export function renderResults(domain, result) {
     renderSummaryPanel(domain, result);
     renderMxPanel(domain, result);
     renderProviderPanel(result);
-    renderSecurityLayersPanel(result);
+    renderSecurityLayersPanel(domain, result);
     renderSpfPanel(result);
     renderDmarcPanel(result);
     renderDkimBimiPanel(result);

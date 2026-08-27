@@ -55,6 +55,10 @@ export const translations = {
 
         // Score Card Findings (ES)
         score_title_panel: "Puntuación de Seguridad",
+        cat_provider: "Proveedor de correo",
+        mx_unidentified_label: "MX externo no identificado",
+        mx_unidentified_detail: "El correo entrante pasa por un dominio que no está en la base de conocimiento. Puede ser infraestructura propia, un proveedor de hosting o un gateway aún no catalogado: sin más señales no se puede afirmar que sea una capa de seguridad.",
+        mx_unidentified_same_brand: "Comparte nombre de marca con el dominio analizado, así que lo más probable es que sea infraestructura propia de la organización y no un gateway de terceros.",
         domain_input_label: "Dominio a analizar",
         dkim_input_label: "Selector DKIM (opcional)",
         results_region_label: "Resultados del análisis",
@@ -617,6 +621,10 @@ export const translations = {
 
         // Score Card Findings (EN)
         score_title_panel: "Security Score",
+        cat_provider: "Email provider",
+        mx_unidentified_label: "Unidentified external MX",
+        mx_unidentified_detail: "Incoming mail goes through a domain that is not in the knowledge base. It may be the organization's own infrastructure, a hosting provider or a gateway not yet catalogued: with no further signals it cannot be claimed to be a security layer.",
+        mx_unidentified_same_brand: "It shares a brand name with the analyzed domain, so it is most likely the organization's own infrastructure rather than a third-party gateway.",
         domain_input_label: "Domain to analyze",
         dkim_input_label: "DKIM selector (optional)",
         results_region_label: "Analysis results",

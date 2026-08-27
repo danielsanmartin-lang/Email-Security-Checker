@@ -41,7 +41,7 @@ export function renderProviderPanel(result) {
         </div>`;
 }
 
-export function renderSecurityLayersPanel(result) {
+export function renderSecurityLayersPanel(domain, result) {
     const t = translations[getLanguage()];
     const secBody = document.getElementById('security-body');
     const renderLayer = (entry, kind) => {
@@ -75,16 +75,40 @@ export function renderSecurityLayersPanel(result) {
         </div>`;
     };
 
+    // MX que apuntan a un dominio externo que el diccionario no reconoce. NO se
+    // afirma que sean un gateway (ese era justo el falso positivo): se describe lo
+    // que se ve y se ofrece añadirlo al diccionario para que la próxima vez sí se
+    // identifique con nombre y categoría.
+    const unidentified = [];
+    const seenRoots = new Set();
+    for (const mx of result.mxRecords || []) {
+        const id = identifyMX(mx.host, domain);
+        if (id.type === 'unknown' && id.external && !seenRoots.has(id.name)) {
+            seenRoots.add(id.name);
+            unidentified.push(id);
+        }
+    }
+    const unidentifiedHtml = unidentified.length
+        ? html`${unidentified.map(id => html`<div class="info-block info-block--spaced">
+            <div class="info-block__label">${t.mx_unidentified_label}</div>
+            <div class="info-block__value">${id.name}</div>
+            <div class="info-block__detail">${id.sameBrand ? t.mx_unidentified_same_brand : t.mx_unidentified_detail}</div>
+            <button type="button" class="kb-add-btn" data-kb-domain="${id.name}" data-kb-list="mx"
+                title="${t.add_to_db_tooltip}">${t.add_to_db}</button>
+        </div>`)}`
+        : raw('');
+
     if (result.segList.length > 0 || result.icesList.length > 0) {
-        secBody.innerHTML = html`${result.segList.map(seg => renderLayer(seg, 'seg'))}${result.icesList.map(ices => renderLayer(ices, 'ices'))}`;
+        secBody.innerHTML = html`${result.segList.map(seg => renderLayer(seg, 'seg'))}${result.icesList.map(ices => renderLayer(ices, 'ices'))}${unidentifiedHtml}`;
     } else {
         secBody.innerHTML = html`<div class="info-block">
             <div class="info-block__label">${t.no_evidence_dns}</div>
             <div class="info-block__value">${t.no_seg_ices_detected}</div>
             <div class="info-block__detail">${t.no_seg_ices_detail}</div>
         </div>
-        <div class="info-block" style="margin-top:8px;">
-            <div class="info-block__detail" style="color:var(--text-muted);font-style:italic;">${t.ices_api_blindspot}</div>
+        ${unidentifiedHtml}
+        <div class="info-block info-block--spaced">
+            <div class="info-block__detail info-block__detail--muted">${t.ices_api_blindspot}</div>
         </div>`;
     }
 }

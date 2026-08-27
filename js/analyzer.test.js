@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, identifyTXTVerifications } from './analyzer.js';
+import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, identifyTXTVerifications, identifyMX, isSameBrand } from './analyzer.js';
 
 describe('collectSpfDomains', () => {
     it('aplana includes/redirects de todo el árbol SPF', () => {
@@ -651,5 +651,87 @@ describe('scoring por categorías ponderadas', () => {
         expect(card.score).toBeGreaterThanOrEqual(0);
         expect(card.score).toBeLessThanOrEqual(100);
         expect(card.grade).toBe('F');
+    });
+});
+
+describe('identifyMX: un MX externo desconocido NO es una capa de seguridad', () => {
+    it('no inventa un SEG con el nombre del dominio hermano (paypal.com → paypalcorp.com)', () => {
+        const id = identifyMX('mx1.paypalcorp.com', 'paypal.com');
+        expect(id.type).toBe('unknown');
+        expect(id.type).not.toBe('seg');
+        expect(id.external).toBe(true);
+        expect(id.sameBrand).toBe(true);
+    });
+
+    it('tampoco con un hosting no catalogado', () => {
+        const id = identifyMX('mx.hosting-desconocido.net', 'acme.com');
+        expect(id.type).toBe('unknown');
+        expect(id.external).toBe(true);
+        expect(id.sameBrand).toBe(false);
+    });
+
+    it('sigue reconociendo los SEG reales del diccionario', () => {
+        expect(identifyMX('mx.mimecast.com', 'acme.com').type).toBe('seg');
+        expect(identifyMX('esa01.arquia.es', 'arquia.es').name).toContain('Cisco');
+        expect(identifyMX('acme-com.mail.protection.outlook.com', 'acme.com').type).toBe('provider');
+    });
+
+    it('un MX del propio dominio sigue siendo propio', () => {
+        expect(identifyMX('mx1.acme.com', 'acme.com').type).toBe('self');
+    });
+
+    it('un MX externo desconocido no llega a segList', () => {
+        const { segList, icesList } = detectSecurityLayers({
+            domain: 'paypal.com',
+            mxRecords: [{ priority: 10, host: 'mx1.paypalcorp.com' }]
+        });
+        expect(segList).toEqual([]);
+        expect(icesList).toEqual([]);
+    });
+});
+
+describe('isSameBrand', () => {
+    it('empareja marca compartida y variantes de TLD', () => {
+        expect(isSameBrand('paypalcorp.com', 'paypal.com')).toBe(true);
+        expect(isSameBrand('acmegroup.net', 'acme.com')).toBe(true);
+        expect(isSameBrand('empresa.com', 'empresa.es')).toBe(true);
+    });
+
+    it('no empareja por etiquetas cortas ni por dominios ajenos', () => {
+        expect(isSameBrand('mx.com', 'acme.com')).toBe(false);
+        expect(isSameBrand('srv.net', 'acme.com')).toBe(false);
+        expect(isSameBrand('proofpoint.com', 'acme.com')).toBe(false);
+        expect(isSameBrand('', 'acme.com')).toBe(false);
+    });
+});
+
+describe('postura: la ausencia de SEG/ICES no la hunde', () => {
+    const authOk = (overrides = {}) => ({
+        spfRaw: 'v=spf1 -all',
+        spfEntries: [{ type: 'all', qualifier: '-', index: 1 }],
+        spfData: { multiple: false },
+        spfLookups: 2,
+        dmarcRaw: 'v=DMARC1; p=reject',
+        dmarcData: { multiple: false },
+        dmarcParsed: { v: 'DMARC1', p: 'reject' },
+        dmarcPolicy: 'reject',
+        dmarcRua: ['mailto:a@b.com'],
+        dmarcRuf: [],
+        dkimRecords: { records: [] },
+        mxRecords: [], daneRecords: {}, srvRecords: {},
+        segList: [], icesList: [],
+        ...overrides
+    });
+
+    it('un dominio bien autenticado sin SEG detectable no es "débil"', () => {
+        const { posture } = calculateScoreAndFindings(authOk());
+        expect(posture.key).not.toBe('weak');
+    });
+
+    it('pero sin DMARC aplicado sigue siendo "débil"', () => {
+        const { posture } = calculateScoreAndFindings(authOk({
+            dmarcParsed: { v: 'DMARC1', p: 'none' }, dmarcPolicy: 'none'
+        }));
+        expect(posture.key).toBe('weak');
     });
 });

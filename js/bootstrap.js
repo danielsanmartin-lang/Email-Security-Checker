@@ -319,24 +319,33 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const pattern = document.getElementById('kb-domain').value.trim();
         const name = document.getElementById('kb-name').value.trim();
-        const category = document.getElementById('kb-category').value;
         const selectEl = document.getElementById('kb-category');
-        const cat_label = selectEl.options[selectEl.selectedIndex].text;
+        const category = selectEl.value;
+        // selectedIndex es -1 si el valor no corresponde a ninguna opción: leer
+        // options[-1].text reventaba el guardado entero.
+        const selected = selectEl.options[selectEl.selectedIndex];
+        const cat_label = selected ? selected.text : category;
 
-        if (!pattern || !name) return;
+        if (!pattern || !name || !category) return;
 
-        const newEntry = { pattern, name, category, cat_label };
-        KB.spf.push(newEntry);
-        
+        // El diccionario tiene una lista por señal: un MX identificado no debe acabar
+        // en la de includes SPF, que es la que se consulta para otra cosa.
+        const list = document.getElementById('add-kb-modal').dataset.kbList === 'mx' ? 'mx' : 'spf';
+        const newEntry = list === 'mx'
+            ? { pattern, name, type: category }        // KB.mx usa `type` (provider/seg/ices)
+            : { pattern, name, category, cat_label };  // KB.spf usa `category` + etiqueta
+        KB[list].push(newEntry);
+
+        const storageKey = `custom_kb_${list}`;
         let customKB = [];
         try {
-            const existing = localStorage.getItem('custom_kb_spf');
+            const existing = localStorage.getItem(storageKey);
             if (existing) customKB = JSON.parse(existing);
         } catch (err) {
             /* localStorage corrupto o no disponible: se parte de una lista vacía */
         }
         customKB.push(newEntry);
-        localStorage.setItem('custom_kb_spf', JSON.stringify(customKB));
+        localStorage.setItem(storageKey, JSON.stringify(customKB));
 
         closeKbModal();
         

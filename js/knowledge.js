@@ -332,15 +332,19 @@ export const KB = {
 // Cargar entradas personalizadas guardadas por el usuario
 // (localStorage no existe fuera del navegador, p. ej. en tests con Node)
 if (typeof localStorage !== 'undefined') {
-    try {
-        const customKB = localStorage.getItem('custom_kb_spf');
-        if (customKB) {
+    // Las entradas propias van DELANTE de las de serie en KB.mx: el diccionario se
+    // recorre en orden y gana la primera coincidencia, así que una firma añadida por
+    // el usuario debe poder afinar (no quedar tapada por) un patrón genérico.
+    for (const list of ['spf', 'mx']) {
+        try {
+            const customKB = localStorage.getItem(`custom_kb_${list}`);
+            if (!customKB) continue;
             const entries = JSON.parse(customKB);
-            if (Array.isArray(entries)) {
-                KB.spf.push(...entries);
-            }
+            if (!Array.isArray(entries)) continue;
+            if (list === 'mx') KB.mx.unshift(...entries);
+            else KB.spf.push(...entries);
+        } catch (e) {
+            console.error(`Error loading custom KB (${list}) from localStorage`, e);
         }
-    } catch (e) {
-        console.error('Error loading custom KB from localStorage', e);
     }
 }
