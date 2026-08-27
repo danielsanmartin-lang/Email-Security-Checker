@@ -474,7 +474,11 @@ describe('comprobaciones nuevas del motor (v3)', () => {
         const sinMtaSts = calculateScoreAndFindings(base());
         expect(keys(unreachable)).toContain('finding_mta_sts_unreachable');
         expect(keys(unreachable)).not.toContain('finding_mta_sts_policy_invalid');
-        expect(unreachable.score).toBe(sinMtaSts.score);
+        // Sale del denominador: nunca puntúa peor que no tener MTA-STS.
+        expect(unreachable.score).toBeGreaterThanOrEqual(sinMtaSts.score);
+        const mtaStsCheck = unreachable.breakdown
+            .find(c => c.id === 'transport').checks.find(c => c.id === 'mtaSts');
+        expect(mtaStsCheck.unevaluable).toBe(true);
     });
 
     it('sigue penalizando una política descargada pero inválida', () => {
@@ -539,5 +543,113 @@ describe('comprobaciones nuevas del motor (v3)', () => {
             spfRaw: 'v=spf1 ' + 'ip4:1.2.3.4 '.repeat(30) + '-all'
         }));
         expect(keys(card)).toContain('finding_spf_too_long');
+    });
+});
+
+describe('scoring por categorías ponderadas', () => {
+    const strong = () => ({
+        spfRaw: 'v=spf1 include:x.com -all',
+        spfData: { multiple: false },
+        spfEntries: [{ type: 'v', index: 0 }, { type: 'include', value: 'x.com', index: 1 }, { type: 'all', qualifier: '-', index: 2 }],
+        spfLookups: 3,
+        spfTree: { domain: 'd.com', children: [] },
+        dmarcRaw: 'v=DMARC1; p=reject',
+        dmarcData: { multiple: false },
+        dmarcParsed: { v: 'DMARC1', p: 'reject', sp: 'reject' },
+        dmarcPolicy: 'reject',
+        dmarcRua: ['mailto:r@d.com'],
+        dmarcRuf: [],
+        dmarcExternalAuth: [],
+        dkimRecords: { records: [{ selector: 's1', record: 'v=DKIM1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=' }] },
+        bimiRecord: { record: 'v=BIMI1', logo: 'https://x/l.svg', vmc: 'https://x/v.pem' },
+        mtaSts: { policy: { valid: true, maxAge: 604800, parsed: { mx: ['*.d.com'] } } },
+        mxRecords: [{ host: 'mx.d.com' }],
+        tlsRpt: { record: 'v=TLSRPTv1', rua: ['mailto:t@d.com'] },
+        daneRecords: { 'mx.d.com': ['x'] },
+        dnssec: { signed: true },
+        srvRecords: {},
+        segList: [], icesList: []
+    });
+
+    it('un dominio completo llega a 100 / A+', () => {
+        const card = calculateScoreAndFindings(strong());
+        expect(card.score).toBe(100);
+        expect(card.grade).toBe('A+');
+    });
+
+    it('el desglose cuadra con los presupuestos de cada categoría', () => {
+        const card = calculateScoreAndFindings(strong());
+        expect(card.breakdown.map(c => c.id)).toEqual(['auth', 'transport', 'hygiene']);
+        expect(card.breakdown.find(c => c.id === 'auth').max).toBe(60);
+        expect(card.breakdown.find(c => c.id === 'transport').max).toBe(25);
+        expect(card.breakdown.find(c => c.id === 'hygiene').max).toBe(15);
+        expect(card.totalMax).toBe(100);
+    });
+
+    it('la autenticación acota la nota: sin transporte no hay A+', () => {
+        const card = calculateScoreAndFindings({
+            ...strong(), mtaSts: null, dnssec: { signed: false }, daneRecords: {}, bimiRecord: null, tlsRpt: null
+        });
+        expect(card.breakdown.find(c => c.id === 'auth').earned).toBe(60);
+        expect(card.grade).not.toBe('A+');
+    });
+
+    it('DMARC p=none no puede alcanzar A/A+ por muchos extras que tenga', () => {
+        const card = calculateScoreAndFindings({
+            ...strong(), dmarcParsed: { v: 'DMARC1', p: 'none' }, dmarcPolicy: 'none'
+        });
+        expect(card.authRatio).toBeLessThan(0.85);
+        expect(['B', 'C', 'D', 'F']).toContain(card.grade);
+    });
+
+    it('un PermError de SPF agota el presupuesto del control', () => {
+        const card = calculateScoreAndFindings({
+            ...strong(),
+            spfTree: { domain: 'd.com', children: [
+                { type: 'include', target: 'roto.com', tree: { domain: 'roto.com', error: 'no_spf_record', children: [] } }
+            ] }
+        });
+        const spfCheck = card.breakdown.find(c => c.id === 'auth').checks.find(c => c.id === 'spf');
+        expect(spfCheck.earned).toBeLessThanOrEqual(0);
+        expect(card.grade).not.toBe('A+');
+    });
+
+    it('un control no evaluable sale del denominador en vez de contar 0', () => {
+        const sinDkim = calculateScoreAndFindings({ ...strong(), dkimRecords: { records: [] } });
+        const dkimCheck = sinDkim.breakdown.find(c => c.id === 'auth').checks.find(c => c.id === 'dkim');
+        expect(dkimCheck.unevaluable).toBe(true);
+        expect(sinDkim.totalMax).toBe(85);
+        expect(sinDkim.score).toBe(100);
+    });
+
+    it('ningún check supera su presupuesto y ninguna categoría baja de 0', () => {
+        const card = calculateScoreAndFindings(strong());
+        for (const cat of card.breakdown) {
+            expect(cat.earned).toBeGreaterThanOrEqual(0);
+            expect(cat.earned).toBeLessThanOrEqual(cat.max);
+            for (const check of cat.checks) {
+                expect(check.earned).toBeLessThanOrEqual(check.max);
+            }
+        }
+    });
+
+    it('la nota se mantiene entre 0 y 100 en el peor caso', () => {
+        const card = calculateScoreAndFindings({
+            spfRaw: 'v=spf1 +all',
+            spfData: { multiple: true },
+            spfEntries: [{ type: 'all', qualifier: '+', index: 1 }],
+            spfLookups: 25,
+            dmarcRaw: 'v=DMARC2; p=nada',
+            dmarcData: { multiple: true },
+            dmarcParsed: { v: 'DMARC2', p: 'nada' },
+            dmarcPolicy: 'nada',
+            dmarcRua: [], dmarcRuf: [],
+            dkimRecords: { records: [{ selector: 'x', record: 'v=DKIM1; p=' }] },
+            mtaSts: { policy: { valid: false, validationReason: 'mode_not_enforce', httpStatus: 200 } },
+            mxRecords: [], daneRecords: {}, srvRecords: {}, segList: [], icesList: []
+        });
+        expect(card.score).toBeGreaterThanOrEqual(0);
+        expect(card.score).toBeLessThanOrEqual(100);
+        expect(card.grade).toBe('F');
     });
 });

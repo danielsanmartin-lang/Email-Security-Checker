@@ -476,48 +476,87 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     };
 }
 
-// ===== Scoring declarativo =====
-// Pesos centralizados (positivos = bonus, negativos = penalización).
-export const SCORE_WEIGHTS = {
-    spfPresent: 20,
-    spfMultiple: -10,
-    spfAllPass: -25,
-    spfAllNeutral: -15,
-    spfNoAll: -10,
-    spfPtr: -5,
-    spfLookupsOk: 10,
-    spfIncludePermError: -20,
-    spfVoidLookups: -10,
-    spfMultipleAll: -10,
-    spfTermsAfterAll: -5,
-    dmarcPresent: 20,
-    dmarcMultiple: -10,
-    dmarcReject: 30,
-    dmarcQuarantine: 20,
-    dmarcNone: 5,
-    dmarcVersionInvalid: -10,
-    dmarcPolicyInvalid: -25,
-    dmarcReporting: 5,
-    dmarcSpWeak: -10,
-    dmarcNpWeak: -10,
-    dmarcPctPartial: -5,
-    dmarcExternalUnauthorized: -10,
-    dkim: 10,
-    dkimWeakKey: -10,
-    dkimRevoked: -5,
-    bimi: 5,
-    bimiInsecureUrl: -5,
-    mtaStsValid: 5,
-    mtaStsInvalid: -15,
-    mtaStsMxMismatch: -10,
-    dane: 5,
-    dnssec: 5
+// ===== Scoring por categorías ponderadas =====
+// El modelo aditivo anterior saturaba: SPF + DMARC reject + DKIM ya sumaban 95/100,
+// así que MTA-STS, DNSSEC, DANE y BIMI no movían la nota. Ahora cada control tiene un
+// presupuesto dentro de una categoría y la nota final se normaliza sobre lo que se ha
+// podido EVALUAR (ver `unevaluable`), no sobre un máximo teórico.
+export const SCORE_CATEGORIES = {
+    auth: { max: 60, labelKey: 'score_cat_auth' },
+    transport: { max: 25, labelKey: 'score_cat_transport' },
+    hygiene: { max: 15, labelKey: 'score_cat_hygiene' }
 };
 
-// Suma teórica de los aportes positivos (máximo alcanzable antes de acotar).
-export const MAX_POSITIVE_SCORE = Object.values(SCORE_WEIGHTS)
-    .filter(w => w > 0)
-    .reduce((a, b) => a + b, 0);
+// Presupuesto de cada check. La suma por categoría cuadra con SCORE_CATEGORIES.
+// Un check sin entrada aquí (p. ej. `srv`) es puramente informativo: aporta findings
+// pero no puntúa.
+export const CHECK_BUDGETS = {
+    spf:            { category: 'auth', max: 22, labelKey: 'score_check_spf' },
+    dmarc:          { category: 'auth', max: 23, labelKey: 'score_check_dmarc' },
+    dkim:           { category: 'auth', max: 15, labelKey: 'score_check_dkim' },
+    mtaSts:         { category: 'transport', max: 10, labelKey: 'score_check_mta_sts' },
+    dnssec:         { category: 'transport', max: 8, labelKey: 'score_check_dnssec' },
+    dane:           { category: 'transport', max: 7, labelKey: 'score_check_dane' },
+    dmarcReporting: { category: 'hygiene', max: 8, labelKey: 'score_check_reporting' },
+    tlsRpt:         { category: 'hygiene', max: 4, labelKey: 'score_check_tls_rpt' },
+    bimi:           { category: 'hygiene', max: 3, labelKey: 'score_check_bimi' }
+};
+
+// Aportes de cada señal dentro del presupuesto de su check (positivos = suman,
+// negativos = restan). Un check nunca supera su `max`; la categoría no baja de 0.
+export const SCORE_WEIGHTS = {
+    // --- SPF (22) ---
+    spfPresent: 10,
+    spfAllHardfail: 8,
+    spfAllSoftfail: 6,
+    spfAllNeutral: -3,
+    spfAllPass: -12,
+    spfNoAll: -3,
+    spfMultiple: -6,
+    spfPtr: -2,
+    spfLookupsOk: 4,
+    spfIncludePermError: -22,
+    spfVoidLookups: -4,
+    spfMultipleAll: -3,
+    spfTermsAfterAll: -2,
+    // --- DMARC (23) ---
+    dmarcPresent: 8,
+    dmarcReject: 15,
+    dmarcQuarantine: 9,
+    dmarcNone: 0,
+    dmarcMultiple: -6,
+    dmarcVersionInvalid: -4,
+    dmarcPolicyInvalid: -8,
+    dmarcSpWeak: -3,
+    dmarcNpWeak: -3,
+    dmarcPctPartial: -2,
+    // --- DKIM (15) ---
+    dkim: 10,
+    dkimStrongKey: 5,
+    dkimKey1024: 2,
+    dkimWeakKey: -5,
+    dkimRevoked: -3,
+    dkimMalformed: -2,
+    // --- MTA-STS (10) ---
+    mtaStsValid: 8,
+    mtaStsMaxAgeOk: 2,
+    mtaStsInvalid: -5,
+    mtaStsMxMismatch: -8,
+    // --- Transporte ---
+    dane: 7,
+    dnssec: 8,
+    // --- Higiene: reporting (8) ---
+    dmarcReporting: 5,
+    dmarcExternalAuthorized: 3,
+    dmarcExternalUnauthorized: -3,
+    dmarcRuaTooMany: -1,
+    // --- Higiene: TLS-RPT (4) y BIMI (3) ---
+    tlsRptPresent: 4,
+    tlsRptRuaInvalid: -2,
+    bimi: 2,
+    bimiVmc: 1,
+    bimiInsecureUrl: -1
+};
 
 function dkimCountOf(result) {
     return result.dkimRecords && result.dkimRecords.records ? result.dkimRecords.records.length : 0;
@@ -535,9 +574,10 @@ const SCORE_CHECKS = [
         const findings = [];
         let points = 0;
         // La consulta falló (SERVFAIL/red): no penalizar como "sin SPF", solo informar.
+        // El control queda SIN EVALUAR y sale del denominador de la nota.
         if (result.spfUnavailable) {
             findings.push({ status: 'info', key: 'finding_spf_unavailable' });
-            return { points, findings };
+            return { points, findings, unevaluable: true };
         }
         if (!result.spfRaw) {
             findings.push({ status: 'error', key: 'finding_spf_err' });
@@ -560,8 +600,10 @@ const SCORE_CHECKS = [
                 points += SCORE_WEIGHTS.spfAllNeutral;
                 findings.push({ status: 'warning', key: 'finding_spf_all_neutral' });
             } else if (q === '~') {
+                points += SCORE_WEIGHTS.spfAllSoftfail;
                 findings.push({ status: 'success', key: 'finding_spf_all_softfail' });
             } else if (q === '-') {
+                points += SCORE_WEIGHTS.spfAllHardfail;
                 findings.push({ status: 'success', key: 'finding_spf_all_hardfail' });
             }
         } else {
@@ -637,9 +679,10 @@ const SCORE_CHECKS = [
         const findings = [];
         let points = 0;
         // La consulta falló (SERVFAIL/red): no penalizar como "sin DMARC", solo informar.
+        // El control queda SIN EVALUAR y sale del denominador de la nota.
         if (result.dmarcUnavailable) {
             findings.push({ status: 'info', key: 'finding_dmarc_unavailable' });
-            return { points, findings };
+            return { points, findings, unevaluable: true };
         }
         if (!result.dmarcRaw) {
             findings.push({ status: 'error', key: 'finding_dmarc_err' });
@@ -676,21 +719,6 @@ const SCORE_CHECKS = [
                 findings.push({ status: 'error', key: 'finding_dmarc_policy_invalid' });
             }
         }
-        // Reporting (rua/ruf)
-        const hasRua = result.dmarcRua && result.dmarcRua.length > 0;
-        const hasRuf = result.dmarcRuf && result.dmarcRuf.length > 0;
-        if (hasRua || hasRuf) {
-            points += SCORE_WEIGHTS.dmarcReporting;
-            findings.push({ status: 'success', key: 'finding_dmarc_reporting_ok' });
-        } else {
-            findings.push({ status: 'warning', key: 'finding_dmarc_reporting_err' });
-        }
-        // RFC 7489 §6.3: un receptor puede limitar el número de destinos a los que
-        // envía informes. Más de dos rua es habitual que acabe en informes perdidos.
-        if (result.dmarcRua && result.dmarcRua.length > 2) {
-            findings.push({ status: 'warning', key: 'finding_dmarc_rua_too_many', replacements: { '{count}': String(result.dmarcRua.length) } });
-        }
-
         // Política de subdominios (sp): un sp más débil que p abre un hueco en *.dominio
         if (result.dmarcParsed) {
             const p = (result.dmarcParsed.p || 'none').toLowerCase();
@@ -738,6 +766,33 @@ const SCORE_CHECKS = [
             }
         }
 
+        return { points, findings };
+    },
+
+    // Observabilidad: sin informes agregados no hay forma de saber quién envía en tu
+    // nombre, así que endurecer la política se vuelve un salto a ciegas. Va en su
+    // propia categoría (higiene) porque no protege por sí mismo: informa.
+    function dmarcReporting(result) {
+        const findings = [];
+        let points = 0;
+        if (result.dmarcUnavailable) {
+            return { points, findings, unevaluable: true };
+        }
+        const hasRua = result.dmarcRua && result.dmarcRua.length > 0;
+        const hasRuf = result.dmarcRuf && result.dmarcRuf.length > 0;
+        if (hasRua || hasRuf) {
+            points += SCORE_WEIGHTS.dmarcReporting;
+            findings.push({ status: 'success', key: 'finding_dmarc_reporting_ok' });
+        } else {
+            findings.push({ status: 'warning', key: 'finding_dmarc_reporting_err' });
+        }
+        // RFC 7489 §6.3: un receptor puede limitar el número de destinos a los que
+        // envía informes. Más de dos rua es habitual que acabe en informes perdidos.
+        if (result.dmarcRua && result.dmarcRua.length > 2) {
+            points += SCORE_WEIGHTS.dmarcRuaTooMany;
+            findings.push({ status: 'warning', key: 'finding_dmarc_rua_too_many', replacements: { '{count}': String(result.dmarcRua.length) } });
+        }
+
         // Autorización de destinos de informe EXTERNOS (RFC 7489 §7.1)
         if (Array.isArray(result.dmarcExternalAuth) && result.dmarcExternalAuth.length > 0) {
             const unauthorized = result.dmarcExternalAuth.filter(d => d.authorized === false);
@@ -746,8 +801,12 @@ const SCORE_CHECKS = [
                 points += SCORE_WEIGHTS.dmarcExternalUnauthorized;
                 findings.push({ status: 'error', key: 'finding_dmarc_rua_unauthorized', replacements: { '{dest}': unauthorized.map(d => d.destDomain).join(', ') } });
             } else if (unverifiable.length === 0) {
+                points += SCORE_WEIGHTS.dmarcExternalAuthorized;
                 findings.push({ status: 'success', key: 'finding_dmarc_rua_authorized' });
             }
+        } else if (hasRua || hasRuf) {
+            // Todos los destinos son del propio dominio: no requieren autorización.
+            points += SCORE_WEIGHTS.dmarcExternalAuthorized;
         }
         return { points, findings };
     },
@@ -756,9 +815,10 @@ const SCORE_CHECKS = [
         const records = (result.dkimRecords && result.dkimRecords.records) || [];
         const count = records.length;
         // Ausencia: NO penaliza. La detección prueba selectores comunes (best-effort);
-        // un selector personalizado válido no se detecta y no debe bajar la nota.
+        // un selector personalizado válido no se detecta y no debe bajar la nota, así
+        // que el control sale del denominador en vez de puntuar 0.
         if (count === 0) {
-            return { points: 0, findings: [{ status: 'info', key: 'finding_dkim_besteffort' }] };
+            return { points: 0, findings: [{ status: 'info', key: 'finding_dkim_besteffort' }], unevaluable: true };
         }
 
         let points = SCORE_WEIGHTS.dkim;
@@ -786,7 +846,14 @@ const SCORE_CHECKS = [
             findings.push({ status: 'error', key: 'finding_dkim_weak_key', replacements: { '{selector}': w.selector, '{bits}': String(w.keyBits) } });
         }
         if (deprecated.length > 0) {
+            points += SCORE_WEIGHTS.dkimKey1024;
             findings.push({ status: 'warning', key: 'finding_dkim_key_1024', replacements: { '{selectors}': deprecated.map(a => a.selector).join(', ') } });
+        } else if (weak.length === 0 && revoked.length === 0) {
+            // Todas las claves detectadas son fuertes: RSA ≥2048 o Ed25519.
+            points += SCORE_WEIGHTS.dkimStrongKey;
+        }
+        if (malformed.length > 0) {
+            points += SCORE_WEIGHTS.dkimMalformed;
         }
         if (ed25519.length > 0) {
             findings.push({ status: 'success', key: 'finding_dkim_ed25519', replacements: { '{selectors}': ed25519.map(a => a.selector).join(', ') } });
@@ -809,7 +876,7 @@ const SCORE_CHECKS = [
         // l= vacío es una declaración explícita de NO participar en BIMI (no un error):
         // publica el registro para bloquear el logo, así que no puntúa ni penaliza.
         if (bimiRecord.declined) {
-            return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_declined' }] };
+            return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_declined' }], unevaluable: true };
         }
 
         let points = SCORE_WEIGHTS.bimi;
@@ -823,6 +890,7 @@ const SCORE_CHECKS = [
         if (!bimiRecord.vmc) {
             findings.push({ status: 'warning', key: 'finding_bimi_no_vmc' });
         } else {
+            points += SCORE_WEIGHTS.bimiVmc;
             findings.push({ status: 'success', key: 'finding_bimi_vmc_ok' });
         }
         return { points, findings };
@@ -875,14 +943,17 @@ const SCORE_CHECKS = [
 
         if (result.mtaSts.policy?.valid) {
             const findings = [{ status: 'success', key: 'finding_mta_sts_ok' }];
+            let points = SCORE_WEIGHTS.mtaStsValid + mxCoveragePoints;
             const maxAge = result.mtaSts.policy.maxAge;
             // RFC 8461: max_age es obligatorio; se recomienda ≥ 604800 s (1 semana).
             if (maxAge == null || Number.isNaN(maxAge)) {
                 findings.push({ status: 'warning', key: 'finding_mta_sts_no_maxage' });
             } else if (maxAge < 604800) {
                 findings.push({ status: 'warning', key: 'finding_mta_sts_low_maxage', replacements: { '{maxage}': String(maxAge) } });
+            } else {
+                points += SCORE_WEIGHTS.mtaStsMaxAgeOk;
             }
-            return { points: SCORE_WEIGHTS.mtaStsValid + mxCoveragePoints, findings: [...findings, ...mxCoverageFindings] };
+            return { points, findings: [...findings, ...mxCoverageFindings] };
         }
         const policy = result.mtaSts.policy || {};
         const replacements = {};
@@ -909,17 +980,19 @@ const SCORE_CHECKS = [
             return { points: 0, findings: [{ status: 'info', key: 'finding_tls_rpt_err' }] };
         }
         const findings = [{ status: 'success', key: 'finding_tls_rpt_ok' }];
+        let points = SCORE_WEIGHTS.tlsRptPresent;
         // RFC 8460 §3: rua debe ser mailto: o https:. Con otro esquema los informes
         // de fallo TLS no llegan a ninguna parte y el registro solo aparenta cobertura.
         const { invalid } = validateTlsRptRua(result.tlsRpt.rua);
         if (invalid.length > 0) {
+            points += SCORE_WEIGHTS.tlsRptRuaInvalid;
             findings.push({
                 status: 'error',
                 key: 'finding_tls_rpt_rua_invalid',
                 replacements: { '{uris}': invalid.join(', ') }
             });
         }
-        return { points: 0, findings };
+        return { points, findings };
     },
 
     function dane(result) {
@@ -965,17 +1038,21 @@ function determinePosture(result) {
     return { key: 'moderate', grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' };
 }
 
-function determineGrade(score) {
-    if (score >= 95) return { grade: 'A+', cardClass: 'safe' };
-    if (score >= 90) return { grade: 'A', cardClass: 'safe' };
-    if (score >= 80) return { grade: 'B', cardClass: 'safe' };
-    if (score >= 70) return { grade: 'C', cardClass: 'warning' };
-    if (score >= 50) return { grade: 'D', cardClass: 'warning' };
+// Umbrales sobre la escala normalizada, ACOTADOS por la categoría de Autenticación.
+// Sin ese tope, un dominio suplantable (DMARC en p=none, SPF con PermError) alcanzaba
+// A+ a base de DNSSEC, DANE y BIMI: controles que no impiden que alguien envíe en su
+// nombre. Un A+ exige autenticación íntegra + transporte endurecido + observabilidad:
+// auth 60 + MTA-STS 10 + DNSSEC 8 + reporting 8 + TLS-RPT 4 = 90.
+function determineGrade(score, authRatio) {
+    if (score >= 90 && authRatio >= 0.95) return { grade: 'A+', cardClass: 'safe' };
+    if (score >= 80 && authRatio >= 0.85) return { grade: 'A', cardClass: 'safe' };
+    if (score >= 70 && authRatio >= 0.70) return { grade: 'B', cardClass: 'safe' };
+    if (score >= 60 && authRatio >= 0.50) return { grade: 'C', cardClass: 'warning' };
+    if (score >= 45) return { grade: 'D', cardClass: 'warning' };
     return { grade: 'F', cardClass: 'danger' };
 }
 
 export function calculateScoreAndFindings(result) {
-    let score = 0;
     const findings = [];
     // Null MX (RFC 7505): declarar que no se recibe correo es una buena práctica
     // para dominios sin uso de email; se informa como positivo, sin penalizar.
@@ -987,19 +1064,55 @@ export function calculateScoreAndFindings(result) {
     if (result.dmarcInherited && result.dmarcInheritedFrom) {
         findings.push({ status: 'info', key: 'finding_dmarc_inherited', replacements: { '{org}': result.dmarcInheritedFrom } });
     }
+
+    // Un check nunca supera su presupuesto, pero SÍ puede quedar en negativo: una
+    // política rota debe puntuar peor que su ausencia. El suelo se aplica al total de
+    // la categoría, no a cada check.
+    const checkResults = [];
     for (const check of SCORE_CHECKS) {
-        const { points, findings: sectionFindings } = check(result);
-        score += points;
+        const { points = 0, findings: sectionFindings = [], unevaluable = false } = check(result);
         findings.push(...sectionFindings);
+        const budget = CHECK_BUDGETS[check.name];
+        if (!budget) continue; // check informativo (p. ej. srv): no puntúa
+        checkResults.push({
+            id: check.name,
+            labelKey: budget.labelKey,
+            category: budget.category,
+            max: budget.max,
+            earned: unevaluable ? 0 : Math.min(points, budget.max),
+            unevaluable
+        });
     }
 
+    // Desglose por categoría: es lo que permite explicar la nota en vez de afirmarla.
+    const breakdown = Object.entries(SCORE_CATEGORIES).map(([id, cat]) => {
+        const checks = checkResults.filter(c => c.category === id);
+        const evaluable = checks.filter(c => !c.unevaluable);
+        const max = evaluable.reduce((sum, c) => sum + c.max, 0);
+        const raw = evaluable.reduce((sum, c) => sum + c.earned, 0);
+        return {
+            id,
+            labelKey: cat.labelKey,
+            max,
+            earned: Math.max(0, Math.min(max, raw)),
+            checks
+        };
+    });
+
+    // Normalización sobre lo EVALUABLE: si un control no se ha podido medir (DKIM no
+    // detectado, SPF/DMARC sin resolver, política MTA-STS inalcanzable), su presupuesto
+    // sale del denominador en vez de contar como cero.
+    const totalMax = breakdown.reduce((sum, c) => sum + c.max, 0);
+    const totalEarned = breakdown.reduce((sum, c) => sum + c.earned, 0);
+    const score = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
+
+    // Ratio de autenticación (SPF+DMARC+DKIM): es el tope de la nota. Si no hay nada
+    // evaluable en esa categoría no se puede afirmar que esté mal, así que no acota.
+    const auth = breakdown.find(c => c.id === 'auth');
+    const authRatio = auth && auth.max > 0 ? auth.earned / auth.max : 1;
+
     const posture = determinePosture(result);
+    const { grade, cardClass } = determineGrade(score, authRatio);
 
-    // Acotar la puntuación al rango 0–100 antes de derivar el grado.
-    score = Math.max(0, Math.min(100, score));
-    const { grade, cardClass } = determineGrade(score);
-
-    return { score, grade, cardClass, findings, posture };
+    return { score, grade, cardClass, findings, posture, breakdown, totalEarned, totalMax, authRatio };
 }
-
-
