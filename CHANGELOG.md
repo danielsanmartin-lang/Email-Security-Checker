@@ -3,6 +3,45 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.0.1] - 2026-08-28
+
+### Corregido
+
+- **Se veían etiquetas HTML como texto** en las notas del detector de awareness y en el panel
+  de DNS Avanzado (`…apunte a infra del vendor.</li><li>Solo…`). Al convertir los paneles al
+  helper `html``​` en 3.0.0 se transformaron los fragmentos exteriores, pero los que quedaban
+  **anidados** como plantilla plana siguen devolviendo un string y el helper los escapa.
+  Afectaba a más sitios de los visibles a simple vista: en DNS Avanzado se interpolaban cuatro
+  acumuladores enteros (TLS-RPT, proveedor DNS, SRV y DANE), así que esos bloques se veían
+  como marcado completo.
+- **Inyección de HTML en el panel de awareness.** Aquella misma conversión borró los
+  `escapeHtml()` del bloque, y `buildAwarenessCard` —que no llegó a convertirse— se quedó sin
+  escapar nada. Interpola valores del DNS del dominio auditado, incluido el contenido crudo de
+  un registro TXT vía la evidencia `generic_dkim_probe`. El CSP frenaba la ejecución de script,
+  pero no la inyección de marcado. La función pasa entera a `html``​`.
+- **Falso «destino externo no autorizado» en DMARC.** El RFC 7489 §7.1 exige verificar el
+  destino de `rua`/`ruf` solo cuando difiere el **dominio organizativo**; la implementación
+  comparaba cadenas exactas, así que a quien manda los informes a un subdominio propio
+  (`amazon.com` → `dmarc.amazon.com`, la práctica habitual) le salía un error rojo diciendo que
+  sus informes se descartarían, más una penalización. `extractRootDomain()` se traslada de
+  `analyzer.js` a `utils.js` —es una utilidad de nombres de dominio, no lógica de análisis— y
+  se re-exporta para no romper imports.
+- **DANE dejaba de castigarse dos veces.** DANE (RFC 7672) se apoya en DNSSEC: sin la zona
+  firmada no es desplegable, así que restar 7 puntos a un dominio que ya pierde 8 por no tener
+  DNSSEC cobraba dos veces la misma carencia (15 de los 25 de Transporte). Pasa a «no
+  evaluable» y sale del denominador; con DNSSEC activo se sigue exigiendo.
+
+### Calidad
+
+- Nuevo `escaping.dom.test.js`: renderiza cada panel y comprueba las dos caras de la misma
+  moneda —ninguna etiqueta visible como texto con datos limpios, ningún elemento ni manejador
+  inyectado con datos que traen marcado—. Verificado que falla si se reintroduce cualquiera de
+  los dos fallos. 307 tests en total.
+
+> Efecto medido en `amazon.com`: **56/D → 67/C**, sin errores rojos. Lo que le sigue bajando la
+> nota está comprobado por DNS y es correcto: `p=quarantine` en vez de `reject`, sin MTA-STS,
+> sin DNSSEC, sin TLS-RPT y clave DKIM de 1024 bits. Los pesos de las categorías no se tocan.
+
 ## [3.0.0] - 2026-08-27
 
 ### ⚠️ Cambio incompatible: nueva puntuación

@@ -770,3 +770,51 @@ describe('tokens TXT: solo son capa de seguridad si el producto es de CORREO', (
         expect(icesList.map(i => i.name)).toContain('Abnormal Security');
     });
 });
+
+describe('DANE no se penaliza dos veces cuando falta DNSSEC', () => {
+    const base = (over = {}) => ({
+        spfRaw: 'v=spf1 -all',
+        spfEntries: [{ type: 'all', qualifier: '-', index: 1 }],
+        spfData: { multiple: false },
+        spfLookups: 2,
+        dmarcRaw: 'v=DMARC1; p=reject',
+        dmarcData: { multiple: false },
+        dmarcParsed: { v: 'DMARC1', p: 'reject' },
+        dmarcPolicy: 'reject',
+        dmarcRua: ['mailto:a@b.com'], dmarcRuf: [],
+        dkimRecords: { records: [] },
+        mxRecords: [], daneRecords: {}, srvRecords: {},
+        segList: [], icesList: [],
+        ...over
+    });
+    const daneCheck = (card) => card.breakdown.find(c => c.id === 'transport').checks.find(c => c.id === 'dane');
+
+    it('sin DNSSEC, DANE queda sin evaluar y sale del denominador', () => {
+        const card = calculateScoreAndFindings(base({ dnssec: { signed: false } }));
+        expect(daneCheck(card).unevaluable).toBe(true);
+        expect(card.breakdown.find(c => c.id === 'transport').max).toBe(18);
+        expect(card.findings.map(f => f.key)).toContain('finding_dane_needs_dnssec');
+    });
+
+    it('con DNSSEC pero sin DANE, sí se exige y resta', () => {
+        const card = calculateScoreAndFindings(base({ dnssec: { signed: true } }));
+        expect(daneCheck(card).unevaluable).toBe(false);
+        expect(card.breakdown.find(c => c.id === 'transport').max).toBe(25);
+        expect(card.findings.map(f => f.key)).toContain('finding_dane_err');
+    });
+
+    it('con DNSSEC y DANE se puntúa entero', () => {
+        const card = calculateScoreAndFindings(base({
+            dnssec: { signed: true }, daneRecords: { 'mx.acme.com': ['3 1 1 abc'] }
+        }));
+        expect(daneCheck(card).earned).toBe(7);
+    });
+
+    it('un dominio sin DNSSEC no sale peor que antes por esta vía', () => {
+        const sinDnssec = calculateScoreAndFindings(base({ dnssec: { signed: false } }));
+        const conDnssecSinDane = calculateScoreAndFindings(base({ dnssec: { signed: true } }));
+        expect(sinDnssec.score).toBeGreaterThan(conDnssecSinDane.score - 100);
+        expect(sinDnssec.breakdown.find(c => c.id === 'transport').max).toBeLessThan(
+            conDnssecSinDane.breakdown.find(c => c.id === 'transport').max);
+    });
+});

@@ -7,7 +7,9 @@
  * la política MTA-STS van siempre a la red — un análisis servido desde caché daría
  * un diagnóstico de seguridad desactualizado, que es peor que no dar ninguno.
  */
-const SW_VERSION = 'v3.0.1';
+// Generación de la caché, no la versión de la app: se sube cada vez que cambia el
+// app shell para que los clientes descarten lo viejo.
+const SW_VERSION = 'v3.0.2';
 const CACHE = `esc-shell-${SW_VERSION}`;
 
 // Núcleo mínimo para arrancar sin red. El resto de módulos ES se cachea sobre la

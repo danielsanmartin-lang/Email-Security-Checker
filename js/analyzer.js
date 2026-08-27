@@ -1,4 +1,5 @@
 import { KB } from './knowledge.js';
+import { extractRootDomain } from './utils.js';
 import { parseSPF, parseDMARC, analyzeDKIMRecord, validateTlsRptRua, checkMtaStsMxCoverage } from './parsers.js';
 
 export function identifyMX(host, domain) {
@@ -64,76 +65,10 @@ export function isSameBrand(rootA, rootB) {
     return short.length >= 4 && long.startsWith(short);
 }
 
-export function extractRootDomain(hostname) {
-    if (!hostname) return '';
-    const parts = hostname.split('.');
-    if (parts.length <= 2) return hostname;
-    const tld = parts[parts.length - 1];
-    const sld = parts[parts.length - 2];
-    // Explicit list of known compound TLDs (second-level domains that act as TLD)
-    // Avoids the fragile length heuristic that breaks on e.g. ".info.tr", ".name.tr"
-    const COMPOUND_TLDS = new Set([
-        // United Kingdom
-        'co.uk', 'org.uk', 'me.uk', 'net.uk', 'ac.uk', 'gov.uk', 'ltd.uk', 'plc.uk',
-        // Australia
-        'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au', 'asn.au', 'id.au',
-        // Brazil
-        'com.br', 'net.br', 'org.br', 'edu.br', 'gov.br', 'mil.br',
-        // Spain
-        'com.es', 'org.es', 'nom.es', 'edu.es', 'gob.es',
-        // Argentina
-        'com.ar', 'net.ar', 'org.ar', 'edu.ar', 'gov.ar', 'mil.ar',
-        // Mexico
-        'com.mx', 'net.mx', 'org.mx', 'edu.mx', 'gob.mx',
-        // Colombia
-        'com.co', 'net.co', 'org.co', 'edu.co', 'gov.co', 'mil.co',
-        // Peru
-        'com.pe', 'net.pe', 'org.pe', 'edu.pe', 'gob.pe', 'mil.pe',
-        // New Zealand
-        'co.nz', 'net.nz', 'org.nz', 'geek.nz', 'gen.nz', 'ac.nz', 'govt.nz',
-        // Singapore
-        'com.sg', 'net.sg', 'org.sg', 'edu.sg', 'gov.sg',
-        // Hong Kong
-        'com.hk', 'net.hk', 'org.hk', 'edu.hk', 'gov.hk',
-        // Japan
-        'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp', 'ad.jp',
-        // South Africa
-        'co.za', 'org.za', 'net.za', 'edu.za', 'gov.za', 'ac.za',
-        // India
-        'co.in', 'net.in', 'org.in', 'edu.in', 'gov.in', 'ac.in', 'res.in',
-        // Israel
-        'co.il', 'net.il', 'org.il', 'ac.il', 'gov.il',
-        // South Korea
-        'co.kr', 'ne.kr', 'or.kr', 're.kr', 'pe.kr', 'ac.kr', 'go.kr',
-        // Turkey
-        'com.tr', 'net.tr', 'org.tr', 'edu.tr', 'gov.tr', 'info.tr', 'name.tr', 'biz.tr',
-        // Portugal
-        'com.pt', 'net.pt', 'org.pt', 'edu.pt', 'gov.pt',
-        // Poland
-        'com.pl', 'net.pl', 'org.pl', 'edu.pl', 'gov.pl',
-        // China
-        'com.cn', 'net.cn', 'org.cn', 'edu.cn', 'gov.cn', 'ac.cn',
-        // Russia
-        'com.ru', 'net.ru', 'org.ru', 'edu.ru', 'gov.ru',
-        // Ukraine
-        'com.ua', 'net.ua', 'org.ua', 'edu.ua', 'gov.ua',
-        // Romania
-        'com.ro', 'org.ro', 'net.ro', 'edu.ro', 'gov.ro',
-        // Chile
-        'com.cl', 'net.cl', 'org.cl', 'gov.cl',
-        // Venezuela
-        'com.ve', 'net.ve', 'org.ve', 'edu.ve', 'gov.ve',
-    ]);
-    const possibleCompound = `${sld}.${tld}`;
-    if (COMPOUND_TLDS.has(possibleCompound)) {
-        return parts.slice(-3).join('.');
-    }
-    // Fallback heuristic for unknown compound TLDs: short SLD (≤3 chars) + 2-char TLD
-    if (tld.length === 2 && sld.length <= 3) {
-        return parts.slice(-3).join('.');
-    }
-    return parts.slice(-2).join('.');
-}
+// extractRootDomain vive en utils.js junto a normalizeDomain/isValidDomain: es una
+// utilidad de nombres de dominio, no lógica de análisis, y api.js también la necesita
+// (para no depender del analizador). Se re-exporta para no romper los imports previos.
+export { extractRootDomain } from './utils.js';
 
 export function identifySPFService(value) {
     if (!value || value === '(self)') return null;
@@ -1034,6 +969,18 @@ const SCORE_CHECKS = [
     function dane(result) {
         if (hasDaneOf(result)) {
             return { points: SCORE_WEIGHTS.dane, findings: [{ status: 'success', key: 'finding_dane_ok' }] };
+        }
+        // DANE (RFC 7672) se APOYA en DNSSEC: sin la zona firmada los registros TLSA no
+        // son fiables y ningún MTA los usa, así que no es desplegable. Restarle puntos a
+        // un dominio sin DNSSEC sería cobrarle dos veces la misma carencia (8 por DNSSEC
+        // + 7 por DANE = 15 de los 25 de Transporte por una sola causa). Queda sin
+        // evaluar y sale del denominador; con DNSSEC activo sí se exige.
+        if (!result.dnssec || !result.dnssec.signed) {
+            return {
+                points: 0,
+                unevaluable: true,
+                findings: [{ status: 'info', key: 'finding_dane_needs_dnssec' }]
+            };
         }
         return { points: 0, findings: [{ status: 'info', key: 'finding_dane_err' }] };
     },
