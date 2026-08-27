@@ -1,6 +1,6 @@
 import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './parsers.js';
 import { getSettings, resolverChain } from './settings.js';
-import { isValidDomain } from './utils.js';
+import { isValidDomain, extractRootDomain } from './utils.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -742,12 +742,20 @@ export async function checkDMARCExternalAuth(domain, uris) {
     const results = [];
     if (!uris || uris.length === 0) return results;
     const analyzed = domain.toLowerCase().replace(/\.$/, '');
+    // El RFC compara DOMINIOS ORGANIZATIVOS, no cadenas exactas: «the Organizational
+    // Domain at which that record was discovered is not identical to the Organizational
+    // Domain of the host part [...] of a URI specified in the "rua" or "ruf" tag».
+    // Comparar literales acusaba de "destino externo no autorizado" a quien manda sus
+    // informes a un subdominio propio (rua=…@dmarc.suempresa.com), que es la práctica
+    // habitual: un error rojo y una penalización sobre una configuración correcta.
+    const analyzedOrg = extractRootDomain(analyzed);
     const seen = new Set();
     for (const uri of uris) {
         const m = String(uri).match(/mailto:[^@\s]+@([^\s!,;]+)/i);
         if (!m) continue;
         const destDomain = m[1].toLowerCase().replace(/\.$/, '');
-        if (destDomain === analyzed) continue; // mismo dominio: no requiere autorización
+        // Mismo dominio organizativo ⇒ no hace falta autorización.
+        if (extractRootDomain(destDomain) === analyzedOrg) continue;
         if (seen.has(destDomain)) continue;
         seen.add(destDomain);
         try {

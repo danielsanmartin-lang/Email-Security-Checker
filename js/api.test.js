@@ -424,3 +424,50 @@ describe('fetchMTASTSPolicyFile: validación del dominio en el punto del fetch',
         expect(global.fetch).not.toHaveBeenCalled();
     });
 });
+
+describe('checkDMARCExternalAuth: la comparación es por dominio ORGANIZATIVO (RFC 7489 §7.1)', () => {
+    // Sin limpiar la caché, la respuesta del test anterior para el mismo nombre se
+    // reutiliza y el siguiente caso mide lo que no es.
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    // El RFC exige verificación solo cuando difiere el dominio organizativo. Comparar
+    // cadenas exactas acusaba de "destino externo no autorizado" a quien manda los
+    // informes a un subdominio propio, que es la práctica habitual (amazon.com →
+    // dmarc.amazon.com): un error rojo sobre una configuración correcta.
+    const noDebeConsultar = async (domain, uris) => {
+        const fetchSpy = vi.fn();
+        global.fetch = fetchSpy;
+        const r = await checkDMARCExternalAuth(domain, uris);
+        expect(r).toEqual([]);
+        expect(fetchSpy).not.toHaveBeenCalled();
+    };
+
+    it('un subdominio propio no requiere autorización', async () => {
+        await noDebeConsultar('amazon.com', ['mailto:report@dmarc.amazon.com']);
+    });
+
+    it('tampoco al analizar un subdominio cuyo destino cuelga del dominio raíz', async () => {
+        await noDebeConsultar('news.acme.com', ['mailto:r@dmarc.acme.com']);
+    });
+
+    it('funciona con TLD compuestos', async () => {
+        await noDebeConsultar('acme.co.uk', ['mailto:r@dmarc.acme.co.uk']);
+    });
+
+    it('un destino realmente externo SÍ se verifica y se marca si falta el registro', async () => {
+        global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ Status: 3 }) }));
+        const r = await checkDMARCExternalAuth('acme.com', ['mailto:r@rua.proveedor.com']);
+        expect(r).toEqual([{ uri: 'mailto:r@rua.proveedor.com', destDomain: 'rua.proveedor.com', authorized: false }]);
+        expect(global.fetch).toHaveBeenCalled();
+    });
+
+    it('y se marca autorizado si el destino publica el registro', async () => {
+        global.fetch = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({ Status: 0, Answer: [{ type: 16, data: '"v=DMARC1"' }] })
+        }));
+        const r = await checkDMARCExternalAuth('acme.com', ['mailto:r@rua.proveedor.com']);
+        expect(r[0].authorized).toBe(true);
+    });
+});
