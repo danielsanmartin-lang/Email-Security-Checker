@@ -68,7 +68,10 @@
     --radius-md: 12px;
     --radius-lg: 16px;
     --radius-xl: 20px;
-    --font-sans: 'Inter', -apple-system, sans-serif;
+    /* El HTML cargaba Outfit desde Google Fonts pero esta variable pedía 'Inter',
+       que no se descargaba nunca: la app llevaba tiempo cayendo a la fuente del
+       sistema y bajando Outfit para nada. Ahora Outfit está autoalojada y se usa. */
+    --font-sans: 'Outfit', 'Inter', -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 }
 
