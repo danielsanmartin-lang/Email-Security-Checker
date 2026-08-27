@@ -40,6 +40,11 @@ A+. **Las notas de v3 no son comparables con las de v2.x.**
   con más de dos destinos `rua`.
 
 ### Nuevo
+- **Herramientas avanzadas apagadas por defecto**, con una casilla por herramienta en
+  Ajustes: el visor de informes DMARC, el selector DKIM y el analizador de cabeceras exigen
+  algo que solo tiene quien administra el correo del dominio (los informes agregados, el
+  nombre del selector, una muestra de correo). Se activan y aparecen al instante, sin
+  recargar. Un deep-link `?dkim=` se sigue honrando aunque el campo esté oculto.
 - **Visor de informes agregados DMARC (RUA)**: arrastra un `.xml`, `.xml.gz` o `.zip` y
   obtén remitentes por IP, volumen y tasas de paso SPF/DKIM/DMARC. Descompresión y parseo
   100% en el navegador, sin red (ni siquiera PTR sobre las IPs).
@@ -51,6 +56,20 @@ A+. **Las notas de v3 no son comparables con las de v2.x.**
   MTA-STS) **nunca** se cachea: un análisis servido de caché daría un diagnóstico viejo.
 
 ### Corregido
+- **`google.com` aparecía usando «Cisco Secure Email».** El disparador era el token TXT
+  `cisco-ci-domain-verification`, que es la verificación de dominio de **Webex Control Hub**
+  («CI» = Common Identity): prueba que alguien dio de alta el dominio en una organización de
+  Webex y la propia documentación de Cisco dice que se puede borrar del DNS una vez
+  verificado. No dice nada del correo — el MX de Google es suyo. Pasa a categoría
+  informativa, sigue visible entre los tokens TXT. Igual con `spycloud-domain-verification`
+  (monitorización de credenciales, no un filtro de correo). Regla nueva en el diccionario: un
+  token solo es `seg`/`ices` si el producto que verifica es de seguridad de CORREO.
+- **Las sospechas de awareness llegaban a confianza «alta» sin una sola prueba.** El score
+  era un noisy-OR de todas las señales, así que tres indirectas (0,5 · 0,4 · 0,3) daban 0,79
+  → badge «alta», con el aviso de «no confirmado» justo debajo contradiciéndolo. Ahora, sin
+  evidencia directa el score se acota a 0,4 («baja»), Certificate Transparency deja de sumar
+  y esos vendors salen de `detectedVendors` a una lista `indirectSignals` aparte, que la UI y
+  el informe pintan como «señales indirectas (no concluyentes)».
 - **Falso positivo sistemático de SEG**: cualquier MX cuyo dominio raíz no coincidiera con
   el analizado se anunciaba como capa de seguridad, con el dominio como "nombre de
   producto" (paypal.com → «paypalcorp.com», acme.com → «acmegroup.net», empresa.es →

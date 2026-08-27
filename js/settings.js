@@ -15,8 +15,23 @@ export const DEFAULT_SETTINGS = {
     // política que el navegador no pueda descargar queda "no evaluable" (no penaliza).
     allowCorsProxy: false,
     // URL de un JSON de fingerprints de awareness para mantener las firmas al día.
-    fingerprintsUrl: ''
+    fingerprintsUrl: '',
+
+    // Herramientas avanzadas, APAGADAS por defecto: las tres exigen algo que solo
+    // tiene quien administra la infra de correo del dominio (los informes agregados,
+    // el nombre del selector DKIM, una muestra de correo). Enseñárselas a todo el
+    // mundo solo añade ruido a la pantalla principal.
+    showDmarcReportViewer: false,  // visor de informes DMARC (RUA)
+    showDkimSelector: false,       // campo de selector DKIM en el buscador
+    showHeaderAnalyzer: false      // analizador de cabeceras de correo
 };
+
+// Herramienta → contenedores del DOM que se muestran u ocultan con ella.
+export const ADVANCED_TOOLS = [
+    { setting: 'showDmarcReportViewer', elements: ['rua-section'] },
+    { setting: 'showDkimSelector', elements: ['dkim-toggle-container', 'dkim-collapsible'] },
+    { setting: 'showHeaderAnalyzer', elements: ['awareness-header-tool'] }
+];
 
 // Resolvers conocidos. `headers` es lo que exige cada uno para responder en JSON.
 // Nota: los que se añadan aquí deben estar también en el connect-src del CSP de

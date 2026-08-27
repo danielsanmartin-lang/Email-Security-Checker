@@ -104,6 +104,21 @@ export function renderAwarenessVendors(result, lang, t) {
         </div>`;
     }
 
+    // --- Señales indirectas (sospechas, no detecciones) ---
+    // Van en bloque aparte y en tono secundario: un MX de Proofpoint o una mención en
+    // un log CT no prueban que el módulo de concienciación esté contratado. Mezclarlas
+    // con las detecciones hacía que una pista compitiera visualmente con una prueba.
+    if (result.indirectSignals && result.indirectSignals.length > 0) {
+        out += html`<div class="awareness-indirect">
+            <div class="awareness-indirect__title">${t.awareness_indirect_title}</div>
+            <p class="awareness-indirect__desc">${t.awareness_indirect_desc}</p>
+            <ul class="awareness-indirect__list">${result.indirectSignals.map(v => html`<li class="awareness-indirect__item">
+                <span class="awareness-indirect__vendor">${v.displayName}</span>
+                <span class="awareness-indirect__evidence">${v.evidence.map(e => `${t[`awareness_signal_${e.signal}`] || e.signal}: ${e.value}`).join(' · ')}</span>
+            </li>`)}</ul>
+        </div>`;
+    }
+
     // --- SPF PermError warning ---
     if (result.spfPermError) {
         out += html`<div class="awareness-alert awareness-alert--warning" style="margin-top:14px;">

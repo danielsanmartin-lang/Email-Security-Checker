@@ -1716,8 +1716,12 @@ body {
     color: var(--text-muted);
 }
 /* Casilla + texto en línea: sin esto hereda el `display:block` y el uppercase de
-   `.form-group label`, y el checkbox aparece suelto encima de la etiqueta. */
-.form-group label.form-check {
+   `.form-group label`, y el checkbox aparece suelto encima de la etiqueta.
+   El selector NO se acota a `.form-group` porque estas casillas también viven dentro
+   de `.form-fieldset`, donde si no heredan el `display:inline` y se apelotonan. */
+.form-group label.form-check,
+.form-fieldset label.form-check,
+label.form-check {
     display: flex;
     align-items: flex-start;
     gap: 9px;
@@ -1729,7 +1733,9 @@ body {
     font-size: 0.9rem;
     color: var(--text-primary);
 }
-.form-group label.form-check input[type="checkbox"] {
+.form-group label.form-check input[type="checkbox"],
+.form-fieldset label.form-check input[type="checkbox"],
+label.form-check input[type="checkbox"] {
     width: auto;
     display: inline-block;
     margin-top: 3px;
@@ -1919,3 +1925,52 @@ span.tooltip-trigger.spf-tree-error { cursor: help; text-decoration: underline d
     cursor: pointer;
 }
 .kb-add-btn:hover { color: var(--text-primary); border-color: var(--accent-violet); }
+
+/* ===== Grupo de casillas en Ajustes ===== */
+.form-fieldset {
+    margin: 0 0 20px;
+    padding: 14px 14px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 12px);
+}
+.form-fieldset legend {
+    padding: 0 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.form-fieldset .form-hint { margin: 0 0 12px; }
+.form-fieldset .form-check { margin-bottom: 10px; }
+
+/* ===== Awareness: señales indirectas (sospechas) ===== */
+.awareness-indirect {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    background: rgba(100, 116, 139, 0.05);
+}
+.awareness-indirect__title {
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+.awareness-indirect__desc {
+    margin: 6px 0 10px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+.awareness-indirect__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.awareness-indirect__item { display: flex; flex-direction: column; gap: 2px; }
+.awareness-indirect__vendor { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
+.awareness-indirect__evidence {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    word-break: break-word;
+}

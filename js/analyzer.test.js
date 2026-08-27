@@ -130,26 +130,22 @@ describe('detectSecurityLayers (multi-señal ponderado)', () => {
         expect(segList.some(s => s.level === 'alta' && s.evidence.some(e => e.signal === 'mx'))).toBe(true);
     });
 
-    it('el token cisco-ci-domain-verification NO produce un SEG; cae como ICES de baja confianza', () => {
-        // El token de propiedad del Cisco Security Cloud no prueba el gateway IronPort.
+    it('el token cisco-ci-domain-verification no produce NINGUNA capa de seguridad', () => {
+        // Es la verificación de dominio de Webex Control Hub (CI = Common Identity):
+        // prueba que el dominio se dio de alta en una organización de Webex, no por
+        // dónde pasa el correo. Un SEG de Cisco lo probaría el MX (*.iphmx.com).
         const txt = identifyTXTVerifications(['cisco-ci-domain-verification=1b256bd11daa486ba2fa405d2d5de70f75feb6757dd8993c']);
-        const cisco = txt.find(t => t.name.startsWith('Cisco Secure Email'));
+        const cisco = txt.find(t => t.name.includes('Webex'));
         expect(cisco).toBeTruthy();
-        expect(cisco.category).toBe('ices');
-        expect(cisco.weight).toBe(0.35);
+        expect(cisco.category).toBe('other');
 
         const { segList, icesList } = detectSecurityLayers({
             domain: 'amazon.com',
             mxRecords: [{ priority: 5, host: 'amazon-smtp.amazon.com' }],
             txtVerifications: txt
         });
-        // No debe aparecer ningún SEG de Cisco.
         expect(segList.some(s => s.name.toLowerCase().includes('cisco'))).toBe(false);
-        // Y como ICES debe quedar en confianza baja (0.35), no "media 70%".
-        const ices = icesList.find(i => i.name.startsWith('Cisco Secure Email'));
-        expect(ices).toBeTruthy();
-        expect(ices.score).toBe(0.35);
-        expect(ices.level).toBe('baja');
+        expect(icesList.some(i => i.name.toLowerCase().includes('cisco'))).toBe(false);
     });
 });
 
@@ -733,5 +729,44 @@ describe('postura: la ausencia de SEG/ICES no la hunde', () => {
             dmarcParsed: { v: 'DMARC1', p: 'none' }, dmarcPolicy: 'none'
         }));
         expect(posture.key).toBe('weak');
+    });
+});
+
+describe('tokens TXT: solo son capa de seguridad si el producto es de CORREO', () => {
+    // Los tokens reales que publica google.com en su TXT del ápex. Ninguno debe
+    // producir una capa de seguridad: el cisco-ci-domain-verification es la
+    // verificación de dominio de Webex Control Hub, no un gateway de correo.
+    const GOOGLE_TXT = [
+        'onetrust-domain-verification=6d685f1d41a94696ad7ef771f68993e0',
+        'google-site-verification=wD8N7i1JTNTkezJ49swvWW48f8_9xveREV4oB-0Hf5o',
+        'work-accounts-domain-verification=Tcj6JjIMZOw2KsSEw2Nt2rLae89tN6',
+        'facebook-domain-verification=22rm551cu4k0ab0bxsw536tlds4h95',
+        'apple-domain-verification=30afIBcvSuDV2PLX',
+        'cisco-ci-domain-verification=47c38bc8c4b74b7233e9053220c1bbe76bcc1cd33c7acf7acd36cd6a5332004b',
+        'v=spf1 include:_spf.google.com ~all'
+    ];
+
+    it('google.com no genera ninguna capa de seguridad a partir de sus tokens', () => {
+        const txtVerifications = identifyTXTVerifications(GOOGLE_TXT);
+        const { segList, icesList } = detectSecurityLayers({
+            domain: 'google.com',
+            mxRecords: [{ priority: 10, host: 'smtp.google.com' }],
+            txtVerifications
+        });
+        expect(segList).toEqual([]);
+        expect(icesList).toEqual([]);
+    });
+
+    it('el token de Cisco se sigue reconociendo, pero como Webex y sin categoría de seguridad', () => {
+        const found = identifyTXTVerifications(GOOGLE_TXT).find(v => v.name.includes('Webex'));
+        expect(found).toBeTruthy();
+        expect(found.category).toBe('other');
+        expect(found.name).not.toContain('Secure Email');
+    });
+
+    it('un token que SÍ es de seguridad de correo sigue contando como capa', () => {
+        const txtVerifications = identifyTXTVerifications(['abnormalsecurity-domain-verification=abc123']);
+        const { icesList } = detectSecurityLayers({ domain: 'acme.com', txtVerifications });
+        expect(icesList.map(i => i.name)).toContain('Abnormal Security');
     });
 });

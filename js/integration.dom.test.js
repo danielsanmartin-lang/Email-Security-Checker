@@ -100,6 +100,44 @@ describe('flujo completo (jsdom + DoH simulado)', () => {
         vi.resetModules();
     });
 
+    it('las herramientas avanzadas vienen ocultas', () => {
+        // Visor RUA, selector DKIM y analizador de cabeceras: los tres exigen algo que
+        // solo tiene quien administra el correo del dominio, así que no se enseñan por
+        // defecto.
+        expect(document.getElementById('rua-section').hidden).toBe(true);
+        expect(document.getElementById('dkim-toggle-container').hidden).toBe(true);
+        expect(document.getElementById('awareness-header-tool').hidden).toBe(true);
+    });
+
+    it('un análisis completo funciona con las tres herramientas ocultas', async () => {
+        await runFlow('acme.test');
+        expect(visible('results-section')).toBe(true);
+        expect(Number(document.getElementById('score-number').textContent)).toBeGreaterThan(0);
+    });
+
+    it('el deep-link ?dkim= se sigue honrando aunque el campo esté oculto', async () => {
+        // Un enlace compartido no debe dejar de funcionar porque el receptor no tenga
+        // la herramienta visible.
+        const { parseDkimSelectors } = await import('./utils.js');
+        expect(parseDkimSelectors('google,s1')).toEqual(['google', 's1']);
+        document.getElementById('dkim-input').value = 'google';
+        await runFlow('acme.test');
+        expect(visible('results-section')).toBe(true);
+    });
+
+    it('activarlas en Ajustes las muestra al instante, sin recargar', async () => {
+        const { saveSettings } = await import('./settings.js');
+        document.getElementById('settings-btn').click();
+        document.getElementById('settings-tool-rua').checked = true;
+        document.getElementById('settings-tool-dkim').checked = true;
+        document.getElementById('settings-tool-headers').checked = true;
+        document.getElementById('settings-form').dispatchEvent(new window.Event('submit', { cancelable: true, bubbles: true }));
+        expect(document.getElementById('rua-section').hidden).toBe(false);
+        expect(document.getElementById('dkim-toggle-container').hidden).toBe(false);
+        expect(document.getElementById('awareness-header-tool').hidden).toBe(false);
+        saveSettings({ showDmarcReportViewer: false, showDkimSelector: false, showHeaderAnalyzer: false });
+    });
+
     it('analiza un dominio y pinta la tarjeta de puntuación', async () => {
         await runFlow('acme.test');
         expect(visible('results-section')).toBe(true);

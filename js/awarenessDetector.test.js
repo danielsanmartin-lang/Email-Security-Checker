@@ -328,7 +328,9 @@ describe('detectAwarenessVendors — peso del MX hint (representatividad)', () =
             '_dmarc.m365only.com': { TXT: ['v=DMARC1; p=reject; rua=mailto:rua@m365only.com'] },
         });
         const result = await detectAwarenessVendors('m365only.com');
-        const ast = result.detectedVendors.find(v => v.vendor === 'msAttackSimulation');
+        // Solo hay señal de gateway: va a las sospechas, no a las detecciones.
+        expect(result.detectedVendors.some(v => v.vendor === 'msAttackSimulation')).toBe(false);
+        const ast = result.indirectSignals.find(v => v.vendor === 'msAttackSimulation');
         expect(ast).toBeDefined();
         expect(ast.level).toBe('baja');
         expect(ast.score).toBeLessThan(0.45);
@@ -343,7 +345,7 @@ describe('detectAwarenessVendors — peso del MX hint (representatividad)', () =
             '_dmarc.ppmx.com': { TXT: ['v=DMARC1; p=none;'] },
         });
         const result = await detectAwarenessVendors('ppmx.com');
-        const pp = result.detectedVendors.find(v => v.vendor === 'proofpointSat');
+        const pp = result.indirectSignals.find(v => v.vendor === 'proofpointSat');
         expect(pp).toBeDefined();
         const ppMx = pp.evidence.find(e => e.signal.startsWith('mx_hint'));
         expect(ppMx.weight).toBeGreaterThan(0.15); // 0.3 (Proofpoint) > 0.15 (Microsoft AST)
@@ -359,9 +361,13 @@ describe('detectAwarenessVendors — productConfirmed (gateway vs módulo)', () 
             '_dmarc.ppgw.com': { TXT: ['v=DMARC1; p=none;'] },
         });
         const result = await detectAwarenessVendors('ppgw.com');
-        const pp = result.detectedVendors.find(v => v.vendor === 'proofpointSat');
+        // No es una detección: es una sospecha, y como tal no puede pasar del techo.
+        expect(result.detectedVendors.some(v => v.vendor === 'proofpointSat')).toBe(false);
+        const pp = result.indirectSignals.find(v => v.vendor === 'proofpointSat');
         expect(pp).toBeDefined();
         expect(pp.productConfirmed).toBe(false); // solo mx_hint/correlated_seg → indirecto
+        expect(pp.score).toBeLessThanOrEqual(0.4);
+        expect(pp.level).toBe('baja');
     });
 
     it('marca productConfirmed=true con evidencia directa (SPF include de la infra)', async () => {
@@ -381,7 +387,7 @@ describe('detectAwarenessVendors — correlación DKIM estricta', () => {
             'psm._domainkey.dkweak.com': { TXT: ['v=DKIM1; k=rsa; p=MIGfMA0GENERICKEY'] },
         });
         const result = await detectAwarenessVendors('dkweak.com');
-        const kb4 = result.detectedVendors.find(v => v.vendor === 'knowbe4');
+        const kb4 = result.indirectSignals.find(v => v.vendor === 'knowbe4');
         expect(kb4).toBeDefined();
         expect(kb4.evidence.some(e => e.signal === 'dkim_selector_weak')).toBe(true);
         expect(kb4.evidence.some(e => e.signal === 'dkim_selector')).toBe(false);
@@ -547,5 +553,46 @@ describe('Nuevas lógicas de detección en awarenessDetector.js', () => {
         expect(hox).toBeDefined();
         expect(hox.evidence.some(e => e.signal === 'txt_verify')).toBe(true);
         expect(hox.score).toBeGreaterThanOrEqual(0.85);
+    });
+});
+
+describe('techo de las sospechas sin evidencia directa', () => {
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('varias señales indirectas no superan el 40% ni el nivel "baja"', async () => {
+        // MX de Proofpoint + correlación con el SEG: dos señales indirectas que antes
+        // se multiplicaban en el noisy-OR hasta "media"/"alta".
+        global.fetch = buildFetchMock({
+            'multi.com': { TXT: ['v=spf1 include:pphosted.com -all'], MX: ['10 mail.pphosted.com'] },
+            '_dmarc.multi.com': { TXT: ['v=DMARC1; p=none;'] },
+            'pphosted.com': { TXT: ['v=spf1 ip4:1.2.3.4 -all'] },
+        });
+        const result = await detectAwarenessVendors('multi.com');
+        for (const s of result.indirectSignals) {
+            expect(s.score).toBeLessThanOrEqual(0.4);
+            expect(s.level).toBe('baja');
+            expect(s.productConfirmed).toBe(false);
+        }
+        expect(result.indirectSignals.length).toBeGreaterThan(0);
+    });
+
+    it('una evidencia DIRECTA sí alcanza confianza alta', async () => {
+        // include:_spf.psm.knowbe4.com es el paso documentado de safelisting de
+        // KnowBe4: solo se publica para lanzar simulaciones.
+        const result = await detectAwarenessVendors('knowbe4domain.com');
+        const kb4 = result.detectedVendors.find(v => v.vendor === 'knowbe4');
+        expect(kb4).toBeDefined();
+        expect(kb4.productConfirmed).toBe(true);
+        expect(kb4.score).toBeGreaterThan(0.4);
+        expect(kb4.level).toBe('alta');
+    });
+
+    it('detectedVendors e indirectSignals son listas disjuntas', async () => {
+        const result = await detectAwarenessVendors('knowbe4domain.com');
+        const directos = result.detectedVendors.map(v => v.vendor);
+        const indirectos = result.indirectSignals.map(v => v.vendor);
+        expect(directos.every(v => !indirectos.includes(v))).toBe(true);
+        expect(result.detectedVendors.every(v => v.productConfirmed)).toBe(true);
+        expect(result.indirectSignals.every(v => !v.productConfirmed)).toBe(true);
     });
 });

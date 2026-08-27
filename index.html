@@ -859,6 +859,22 @@
                         </label>
                         <p class="form-hint" data-i18n="settings_cors_proxy_hint">Desactivado: el dominio auditado se enviaría a api.allorigins.win. Sin él, una política que el navegador no pueda descargar queda "no evaluable" y no penaliza la nota.</p>
                     </div>
+                    <fieldset class="form-fieldset">
+                        <legend data-i18n="settings_tools_title">Herramientas avanzadas</legend>
+                        <p class="form-hint" data-i18n="settings_tools_hint">Las tres necesitan algo que solo tiene quien administra el correo del dominio: los informes agregados, el nombre del selector DKIM o una muestra de correo. Vienen apagadas para no llenar la pantalla principal.</p>
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-tool-rua">
+                            <span data-i18n="settings_tool_rua">Visor de informes DMARC (RUA)</span>
+                        </label>
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-tool-dkim">
+                            <span data-i18n="settings_tool_dkim">Selector DKIM en el buscador</span>
+                        </label>
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-tool-headers">
+                            <span data-i18n="settings_tool_headers">Analizador de cabeceras de correo</span>
+                        </label>
+                    </fieldset>
                     <div class="form-group">
                         <label for="settings-fingerprints-url" data-i18n="settings_fingerprints">URL de firmas de awareness (JSON)</label>
                         <input type="url" id="settings-fingerprints-url" class="search-input-wrapper search-input"

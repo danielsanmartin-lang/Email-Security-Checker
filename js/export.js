@@ -177,10 +177,27 @@ export function generateReportHTML() {
             }
         }
         
+        // Señales indirectas: se listan como pista para quien siga la auditoría a mano,
+        // pero fuera del bloque de detecciones y diciendo expresamente que no confirman
+        // nada. Un MX del fabricante no prueba que el módulo esté contratado.
+        let indirectHtml = '';
+        if (ar.indirectSignals && ar.indirectSignals.length > 0) {
+            indirectHtml = `
+                <div style="margin-top: 15px; padding: 12px 14px; border: 1px dashed #cbd5e1; border-radius: 8px; background-color: #f8fafc; text-align: left;">
+                    <div style="font-family: sans-serif; font-size: 12.5px; font-weight: bold; color: #64748b; margin-bottom: 4px;">${t.awareness_indirect_title}</div>
+                    <p style="font-family: sans-serif; font-size: 11.5px; color: #64748b; line-height: 1.5; margin: 0 0 8px 0;">${t.awareness_indirect_desc}</p>
+                    <ul style="padding-left: 20px; font-family: sans-serif; font-size: 12px; color: #475569; line-height: 1.5; margin: 0;">
+                        ${ar.indirectSignals.map(v => `<li><strong>${escapeHtml(v.displayName)}</strong> — ${escapeHtml(v.evidence.map(e => `${t[`awareness_signal_${e.signal}`] || e.signal}: ${e.value}`).join(' · '))}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
         awarenessHtml = `
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">👥 ${panelTitle}</h2>
             <div style="margin-top: 15px;">
                 ${vendorsHtml}
+                ${indirectHtml}
                 ${warningsHtml}
                 ${generalNotesHtml}
             </div>

@@ -9,7 +9,7 @@ import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
 import { setLanguage } from './lang.js';
 import { normalizeDomain, parseDkimSelectors } from './utils.js';
-import { getSettings, saveSettings } from './settings.js';
+import { getSettings, saveSettings, ADVANCED_TOOLS } from './settings.js';
 import { initDmarcReportPanel } from './ui/dmarcReportPanel.js';
 import { clearDnsCache } from './api.js';
 import { loadFingerprintsFromUrl } from './awarenessDetector.js';
@@ -26,9 +26,26 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     });
 }
 
+/**
+ * Muestra u oculta las herramientas avanzadas según los ajustes. Se usa el atributo
+ * `hidden` y no la clase `.hidden` para no pelearse con los colapsables, que ya usan
+ * la clase para su propio abrir/cerrar.
+ */
+function applyToolVisibility() {
+    const settings = getSettings();
+    for (const tool of ADVANCED_TOOLS) {
+        const visible = !!settings[tool.setting];
+        for (const id of tool.elements) {
+            const el = document.getElementById(id);
+            if (el) el.hidden = !visible;
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize i18n
     translateDOM();
+    applyToolVisibility();
 
     // URL Params parsing
     const urlParams = new URLSearchParams(window.location.search);
@@ -211,6 +228,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const customUrl = document.getElementById('settings-custom-url');
         const corsProxy = document.getElementById('settings-cors-proxy');
         const fingerprintsUrl = document.getElementById('settings-fingerprints-url');
+        const toolInputs = {
+            showDmarcReportViewer: document.getElementById('settings-tool-rua'),
+            showDkimSelector: document.getElementById('settings-tool-dkim'),
+            showHeaderAnalyzer: document.getElementById('settings-tool-headers')
+        };
         const statusEl = document.getElementById('settings-status');
         const refreshBtn = document.getElementById('settings-refresh');
 
@@ -229,6 +251,9 @@ document.addEventListener('DOMContentLoaded', () => {
             customUrl.value = s.customResolverUrl;
             corsProxy.checked = s.allowCorsProxy;
             fingerprintsUrl.value = s.fingerprintsUrl;
+            for (const [key, input] of Object.entries(toolInputs)) {
+                if (input) input.checked = !!s[key];
+            }
             statusEl.textContent = '';
             syncCustomVisibility();
         };
@@ -249,8 +274,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 resolver: resolverSel.value,
                 customResolverUrl: customUrl.value.trim(),
                 allowCorsProxy: corsProxy.checked,
-                fingerprintsUrl: fingerprintsUrl.value.trim()
+                fingerprintsUrl: fingerprintsUrl.value.trim(),
+                showDmarcReportViewer: !!toolInputs.showDmarcReportViewer?.checked,
+                showDkimSelector: !!toolInputs.showDkimSelector?.checked,
+                showHeaderAnalyzer: !!toolInputs.showHeaderAnalyzer?.checked
             });
+            // Las herramientas aparecen o desaparecen al instante: sin recargar.
+            applyToolVisibility();
             // Cambiar de resolver invalida lo cacheado: se resolvió con otro servidor.
             clearDnsCache();
             say('settings_saved');
