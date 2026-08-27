@@ -840,10 +840,21 @@ async function _queryCrt(domain) {
 
 // Señales INDIRECTAS: indican el gateway de correo del vendor o co-ubicación, pero
 // NO confirman que el módulo de awareness esté contratado/desplegado.
+//   mx_hint_* / gateway_spf / correlated_seg → es su gateway de correo, no el módulo
+//   cert_transparency                        → una mención en un certificado
+//   dkim_selector_weak                       → hay clave, pero no firma como el vendor
+//   dmarc_rua                                → es su procesador de informes DMARC
 const INDIRECT_SIGNALS = new Set([
     'mx_hint_exact', 'mx_hint_substring', 'correlated_seg', 'gateway_spf',
-    'cert_transparency', 'dkim_selector_weak',
+    'cert_transparency', 'dkim_selector_weak', 'dmarc_rua',
 ]);
+
+// Techo del score cuando NO hay ninguna evidencia directa. Una sospecha sin prueba no
+// puede presentarse con la misma contundencia que una detección: antes, tres señales
+// indirectas (0,5 · 0,4 · 0,3) daban 1−(0,5·0,6·0,7) = 0,79 → badge "alta", con el
+// aviso de "no confirmado" justo debajo contradiciéndolo. Mismo criterio que el cap de
+// los SEG sin confirmar por MX en analyzer.js.
+const UNCONFIRMED_SCORE_CAP = 0.4;
 
 // ---------------------------------------------------------------------------
 // 7. DETECCIÓN PRINCIPAL
@@ -1116,14 +1127,22 @@ export async function detectAwarenessVendors(domain) {
         // requiere al menos una evidencia que no provenga de Certificate Transparency.
         const nonCrtEvidence = evidence.filter(e => e.signal !== 'cert_transparency');
         if (evidence.length > 0 && nonCrtEvidence.length > 0) {
-            // Score combinado: 1 - Π(1 - peso_i)  → nunca pasa de 1
-            const score = 1 - evidence.reduce((acc, e) => acc * (1 - e.weight), 1);
-            const rounded = Math.round(score * 100) / 100;
             // productConfirmed: ¿hay evidencia DIRECTA del módulo de awareness, o solo
             // señales indirectas (su gateway de correo / co-ubicación)? Un MX de
             // Proofpoint/Mimecast prueba su email security gateway, no que tengan
             // contratado el módulo de concienciación.
             const productConfirmed = evidence.some(e => !INDIRECT_SIGNALS.has(e.signal));
+
+            // Sin evidencia directa, Certificate Transparency tampoco suma: es la señal
+            // con más riesgo de falso positivo y no debe inflar el porcentaje de una
+            // sospecha que ya de por sí no está confirmada.
+            const scoring = productConfirmed ? evidence : nonCrtEvidence;
+            let score = scoring.length
+                ? 1 - scoring.reduce((acc, e) => acc * (1 - e.weight), 1)
+                : 0;
+            if (!productConfirmed) score = Math.min(score, UNCONFIRMED_SCORE_CAP);
+            const rounded = Math.round(score * 100) / 100;
+
             detected.push({
                 vendor: key,
                 displayName: fp.displayName,
@@ -1148,14 +1167,23 @@ export async function detectAwarenessVendors(domain) {
         }
     }
 
+    // Se separan las DETECCIONES (hay al menos una evidencia directa: el cliente tuvo
+    // que publicar algo en su propio DNS para ese vendor) de las SOSPECHAS (solo
+    // señales indirectas). Mezclarlas hacía que una pista compitiera visualmente con
+    // una detección real.
+    const detectedVendors = detected.filter(d => d.productConfirmed);
+    const indirectSignals = detected.filter(d => !d.productConfirmed);
+
     return {
         domain,
-        detectedVendors: detected,
+        detectedVendors,
+        indirectSignals,
         spfPermError: spf.permError,
         unresolvedSignals,
         notes: [
             'Microsoft Attack Simulation Training (Defender O365) y los allowlists por transport rule/Advanced Delivery NO dejan rastro DNS: no son detectables por este módulo.',
             'Para mejorar cobertura, se enriquece con Certificate Transparency (crt.sh) buscando subdominios cuyo CN/SAN apunte a infra del vendor.',
+            'Solo se confirma un vendor cuando el dominio publica algo suyo en SU PROPIO DNS (include SPF, CNAME a su infraestructura, token TXT o selector DKIM del vendor). El resto de señales apuntan al gateway de correo, no al módulo de concienciación.',
             spf.permError
                 ? 'SPF PermError detectado (>10 lookups): la cadena SPF no pudo resolverse completamente; algunas señales pueden estar ausentes.'
                 : null,

@@ -1,9 +1,8 @@
 import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists } from './api.js';
 import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT, extractRootDomain } from './analyzer.js';
-import { renderResults, renderAwarenessVendors, showSection, setStep, closeKbModal, translateDOM, analyzeHeaders } from './ui.js';
-import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
+import { renderResults, renderAwarenessVendors, showSection, setStep } from './ui.js';
 import { KB } from './knowledge.js';
-import { getLanguage, setLanguage } from './lang.js';
+import { getLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { detectAwarenessVendors } from './awarenessDetector.js';
 import { normalizeDomain, isValidDomain } from './utils.js';
@@ -191,7 +190,13 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     return { result, awarenessPromise };
 }
 
-async function runAnalysis(domain, dkimSelector = null) {
+// Token de la ejecución en curso. Si el usuario lanza un segundo análisis antes de
+// que termine el primero, el viejo sigue resolviéndose (no se abortan las peticiones
+// DNS en vuelo, sería un refactor desproporcionado) pero su resultado se DESCARTA:
+// sin esto, el análisis más lento gana la pintada y muestra datos de otro dominio.
+let _runId = 0;
+
+export async function runAnalysis(domain, dkimSelector = null) {
     domain = normalizeDomain(domain);
 
     const input = document.getElementById('domain-input');
@@ -209,14 +214,25 @@ async function runAnalysis(domain, dkimSelector = null) {
         return;
     }
 
+    const myRun = ++_runId;
+    const isStale = () => myRun !== _runId;
+
     const btn = document.getElementById('search-btn');
     btn.classList.add('loading');
+    btn.disabled = true;
+    const resultsSection = document.getElementById('results-section');
+    if (resultsSection) resultsSection.setAttribute('aria-busy', 'true');
     showSection('loading-section');
 
     ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis', 'step-awareness'].forEach(s => setStep(s, null));
 
     try {
-        const { result, awarenessPromise } = await performAnalysis(domain, dkimSelector, { onStep: setStep });
+        const { result, awarenessPromise } = await performAnalysis(domain, dkimSelector, {
+            // Los pasos de un análisis obsoleto no deben tocar el indicador de progreso
+            // del que está corriendo ahora.
+            onStep: (step, stepState) => { if (!isStale()) setStep(step, stepState); }
+        });
+        if (isStale()) return;
 
         state.currentDomain = domain;
         state.currentResult = result;
@@ -225,17 +241,19 @@ async function runAnalysis(domain, dkimSelector = null) {
         // principal; el panel de awareness aparece "escaneando" y se rellena solo
         // cuando la detección (lenta) termina, sin bloquear el resto.
         await new Promise(r => setTimeout(r, 300));
+        if (isStale()) return;
         renderResults(domain, result);
         showSection('results-section');
 
         awarenessPromise.then((awarenessResult) => {
             result.awarenessResult = awarenessResult;
             // Solo repinta si el usuario sigue viendo este mismo resultado.
-            if (state.currentResult === result) {
+            if (!isStale() && state.currentResult === result) {
                 renderAwarenessVendors(awarenessResult || null, getLanguage(), translations[getLanguage()]);
             }
         });
     } catch (err) {
+        if (isStale()) return;
         console.error(err);
         let message;
         if (err.code === 'nxdomain') {
@@ -250,216 +268,12 @@ async function runAnalysis(domain, dkimSelector = null) {
         document.getElementById('error-message').textContent = message;
         showSection('error-section');
     } finally {
-        btn.classList.remove('loading');
+        // Solo la ejecución vigente devuelve el botón a su estado normal: si un
+        // análisis viejo termina después, no debe reactivarlo a mitad del nuevo.
+        if (!isStale()) {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            if (resultsSection) resultsSection.setAttribute('aria-busy', 'false');
+        }
     }
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-    // Initialize i18n
-    translateDOM();
-
-    // URL Params parsing
-    const urlParams = new URLSearchParams(window.location.search);
-    const domainParam = urlParams.get('domain');
-
-    const form = document.getElementById('search-form');
-    const input = document.getElementById('domain-input');
-    const dkimInput = document.getElementById('dkim-input');
-
-    // Language Selector UI Logic
-    const langBtn = document.getElementById('lang-btn');
-    const langSelector = document.getElementById('lang-selector');
-    const langDropdown = document.getElementById('lang-dropdown');
-    
-    if (langBtn && langDropdown) {
-        langBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            langSelector.classList.toggle('open');
-            langDropdown.classList.toggle('hidden');
-            const isOpen = langSelector.classList.contains('open');
-            langBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        });
-        
-        document.querySelectorAll('.lang-dropdown__item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const newLang = item.getAttribute('data-lang');
-                setLanguage(newLang);
-                langSelector.classList.remove('open');
-                langDropdown.classList.add('hidden');
-                langBtn.setAttribute('aria-expanded', 'false');
-                
-                // Translate static page
-                translateDOM();
-                
-                // If results are currently showing, re-render them with new translations
-                if (state.currentResult && state.currentDomain) {
-                    renderResults(state.currentDomain, state.currentResult);
-                }
-            });
-        });
-        
-        document.addEventListener('click', () => {
-            if (langSelector) langSelector.classList.remove('open');
-            if (langDropdown) langDropdown.classList.add('hidden');
-            if (langBtn) langBtn.setAttribute('aria-expanded', 'false');
-        });
-    }
-
-    // ===== Accesibilidad de modales: cierre con Escape y trampa de foco =====
-    const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    document.addEventListener('keydown', (e) => {
-        const modal = document.querySelector('.modal:not(.hidden)');
-        if (!modal) return;
-        if (e.key === 'Escape') {
-            modal.classList.add('hidden');
-            return;
-        }
-        if (e.key === 'Tab') {
-            // Cicla el foco dentro del modal (no se escapa a la página de fondo).
-            const items = [...modal.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null);
-            if (!items.length) return;
-            const first = items[0];
-            const last = items[items.length - 1];
-            if (e.shiftKey && document.activeElement === first) {
-                e.preventDefault();
-                last.focus();
-            } else if (!e.shiftKey && document.activeElement === last) {
-                e.preventDefault();
-                first.focus();
-            }
-        }
-    });
-
-    // DKIM UI Logic
-    const dkimToggleBtn = document.getElementById('dkim-toggle-btn');
-    const dkimCollapsible = document.getElementById('dkim-collapsible');
-    const dkimInfoBtn = document.getElementById('dkim-info-btn');
-    const dkimInfoModal = document.getElementById('dkim-info-modal');
-    const dkimInfoClose = document.getElementById('dkim-info-close');
-    const dkimInfoOverlay = document.getElementById('dkim-info-overlay');
-
-    if (dkimToggleBtn) {
-        dkimToggleBtn.addEventListener('click', () => {
-            dkimCollapsible.classList.toggle('hidden');
-            if (!dkimCollapsible.classList.contains('hidden')) {
-                if (dkimInput) dkimInput.focus();
-            }
-        });
-    }
-
-    const closeDkimModal = () => { if (dkimInfoModal) dkimInfoModal.classList.add('hidden'); };
-    if (dkimInfoBtn) {
-        dkimInfoBtn.addEventListener('click', () => {
-            if (dkimInfoModal) dkimInfoModal.classList.remove('hidden');
-        });
-        if (dkimInfoClose) dkimInfoClose.addEventListener('click', closeDkimModal);
-        if (dkimInfoOverlay) dkimInfoOverlay.addEventListener('click', closeDkimModal);
-    }
-
-    if (domainParam) {
-        input.value = domainParam;
-        runAnalysis(domainParam, urlParams.get('dkim') || null);
-    }
-    
-    form.addEventListener('submit', e => {
-        e.preventDefault();
-        const domain = normalizeDomain(input.value);
-        input.value = domain;
-        let dkimSelector = null;
-        if (dkimInput) {
-            dkimSelector = dkimInput.value.trim().toLowerCase();
-        }
-
-        // Update URL to allow deep-linking
-        try {
-            if (history.pushState) {
-                const newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + `?domain=${domain}` + (dkimSelector ? `&dkim=${dkimSelector}` : '');
-                window.history.pushState({path:newurl}, '', newurl);
-            }
-        } catch (err) {
-            console.warn('history.pushState failed, usually because of file:// protocol', err);
-        }
-
-        if (domain) runAnalysis(domain, dkimSelector || null);
-    });
-
-    document.querySelectorAll('.search-hint').forEach(hint => {
-        hint.addEventListener('click', () => {
-            input.value = hint.dataset.domain;
-            form.dispatchEvent(new Event('submit'));
-        });
-    });
-
-    document.getElementById('new-scan-btn').addEventListener('click', () => {
-        showSection(null);
-        input.value = '';
-        if (dkimInput) dkimInput.value = '';
-        input.focus();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-
-    const googleBtn = document.getElementById('export-google-btn');
-    if (googleBtn) googleBtn.addEventListener('click', exportToGoogle);
-
-    const fileBtn = document.getElementById('export-file-btn');
-    if (fileBtn) fileBtn.addEventListener('click', exportToFile);
-
-    const pdfBtn = document.getElementById('export-pdf-btn');
-    if (pdfBtn) pdfBtn.addEventListener('click', exportToPDF);
-
-    // Analizador de cabeceras de correo (panel de Awareness) — se vincula una sola vez.
-    const headerBtn = document.getElementById('awareness-header-btn');
-    if (headerBtn) headerBtn.addEventListener('click', analyzeHeaders);
-
-    // La herramienta de cabeceras es un complemento opcional (solo aplica si tienes una
-    // muestra de correo en la mano), así que va colapsada y se despliega bajo demanda.
-    const headerToggle = document.getElementById('awareness-header-toggle');
-    const headerBody = document.getElementById('awareness-header-body');
-    if (headerToggle && headerBody) {
-        headerToggle.addEventListener('click', () => {
-            const expanded = headerToggle.getAttribute('aria-expanded') === 'true';
-            headerToggle.setAttribute('aria-expanded', String(!expanded));
-            headerBody.hidden = expanded;
-        });
-    }
-
-    document.getElementById('error-retry').addEventListener('click', () => {
-        const domain = input.value.trim().toLowerCase();
-        const dkimSelector = dkimInput ? dkimInput.value.trim().toLowerCase() : null;
-        if (domain) runAnalysis(domain, dkimSelector);
-    });
-
-    document.getElementById('add-kb-close').addEventListener('click', closeKbModal);
-    document.getElementById('add-kb-overlay').addEventListener('click', closeKbModal);
-    
-    document.getElementById('add-kb-form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const pattern = document.getElementById('kb-domain').value.trim();
-        const name = document.getElementById('kb-name').value.trim();
-        const category = document.getElementById('kb-category').value;
-        const selectEl = document.getElementById('kb-category');
-        const cat_label = selectEl.options[selectEl.selectedIndex].text;
-
-        if (!pattern || !name) return;
-
-        const newEntry = { pattern, name, category, cat_label };
-        KB.spf.push(newEntry);
-        
-        let customKB = [];
-        try {
-            const existing = localStorage.getItem('custom_kb_spf');
-            if (existing) customKB = JSON.parse(existing);
-        } catch (err) {
-            /* localStorage corrupto o no disponible: se parte de una lista vacía */
-        }
-        customKB.push(newEntry);
-        localStorage.setItem('custom_kb_spf', JSON.stringify(customKB));
-
-        closeKbModal();
-        
-        if (state.currentDomain) {
-            runAnalysis(state.currentDomain, dkimInput ? dkimInput.value.trim() : null);
-        }
-    });
-});

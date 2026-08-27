@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, detectSecurityLayers, identifyTXTVerifications } from './analyzer.js';
+import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, identifyTXTVerifications, identifyMX, isSameBrand } from './analyzer.js';
 
 describe('collectSpfDomains', () => {
     it('aplana includes/redirects de todo el árbol SPF', () => {
@@ -130,26 +130,22 @@ describe('detectSecurityLayers (multi-señal ponderado)', () => {
         expect(segList.some(s => s.level === 'alta' && s.evidence.some(e => e.signal === 'mx'))).toBe(true);
     });
 
-    it('el token cisco-ci-domain-verification NO produce un SEG; cae como ICES de baja confianza', () => {
-        // El token de propiedad del Cisco Security Cloud no prueba el gateway IronPort.
+    it('el token cisco-ci-domain-verification no produce NINGUNA capa de seguridad', () => {
+        // Es la verificación de dominio de Webex Control Hub (CI = Common Identity):
+        // prueba que el dominio se dio de alta en una organización de Webex, no por
+        // dónde pasa el correo. Un SEG de Cisco lo probaría el MX (*.iphmx.com).
         const txt = identifyTXTVerifications(['cisco-ci-domain-verification=1b256bd11daa486ba2fa405d2d5de70f75feb6757dd8993c']);
-        const cisco = txt.find(t => t.name.startsWith('Cisco Secure Email'));
+        const cisco = txt.find(t => t.name.includes('Webex'));
         expect(cisco).toBeTruthy();
-        expect(cisco.category).toBe('ices');
-        expect(cisco.weight).toBe(0.35);
+        expect(cisco.category).toBe('other');
 
         const { segList, icesList } = detectSecurityLayers({
             domain: 'amazon.com',
             mxRecords: [{ priority: 5, host: 'amazon-smtp.amazon.com' }],
             txtVerifications: txt
         });
-        // No debe aparecer ningún SEG de Cisco.
         expect(segList.some(s => s.name.toLowerCase().includes('cisco'))).toBe(false);
-        // Y como ICES debe quedar en confianza baja (0.35), no "media 70%".
-        const ices = icesList.find(i => i.name.startsWith('Cisco Secure Email'));
-        expect(ices).toBeTruthy();
-        expect(ices.score).toBe(0.35);
-        expect(ices.level).toBe('baja');
+        expect(icesList.some(i => i.name.toLowerCase().includes('cisco'))).toBe(false);
     });
 });
 
@@ -345,5 +341,432 @@ describe('calculateScoreAndFindings', () => {
             mtaSts: { policy: { valid: true, maxAge: 3600 } }
         }));
         expect(card.findings.some(f => f.key === 'finding_mta_sts_low_maxage')).toBe(true);
+    });
+});
+
+describe('collectSpfTreeIssues', () => {
+    const tree = {
+        domain: 'x.com', lookups: 3, children: [
+            { type: 'a', target: 'muerto.x.com', void: true },
+            { type: 'mx', target: 'vivo.x.com', void: false },
+            { type: 'include', target: 'roto.com', tree: { domain: 'roto.com', error: 'no_spf_record', children: [] } },
+            { type: 'include', target: 'ok.com', tree: { domain: 'ok.com', error: null, children: [
+                { type: 'exists', target: 'otro-muerto.com', void: true },
+                { type: 'include', target: 'x.com', tree: { domain: 'x.com', error: 'loop', children: [] } }
+            ] } }
+        ]
+    };
+
+    it('recoge includes sin registro SPF (PermError) en cualquier profundidad', () => {
+        expect(collectSpfTreeIssues(tree).noRecord).toEqual(['roto.com']);
+    });
+
+    it('recoge los mecanismos con consulta vacía (void lookups)', () => {
+        const { voids } = collectSpfTreeIssues(tree);
+        expect(voids).toContain('a:muerto.x.com');
+        expect(voids).toContain('exists:otro-muerto.com');
+        expect(voids).not.toContain('mx:vivo.x.com');
+    });
+
+    it('recoge los bucles', () => {
+        expect(collectSpfTreeIssues(tree).loops).toEqual(['x.com']);
+    });
+
+    it('tolera un árbol nulo', () => {
+        expect(collectSpfTreeIssues(null)).toEqual({ noRecord: [], voids: [], loops: [] });
+    });
+});
+
+describe('comprobaciones nuevas del motor (v3)', () => {
+    const base = (overrides = {}) => ({
+        spfRaw: 'v=spf1 -all',
+        spfData: { multiple: false },
+        spfEntries: [{ type: 'all', qualifier: '-', index: 1 }],
+        spfLookups: 3,
+        dmarcRaw: 'v=DMARC1; p=reject; rua=mailto:a@b.com',
+        dmarcData: { multiple: false },
+        dmarcParsed: { v: 'DMARC1', p: 'reject', rua: 'mailto:a@b.com' },
+        dmarcPolicy: 'reject',
+        dmarcRua: ['mailto:a@b.com'],
+        dmarcRuf: [],
+        dkimRecords: { records: [] },
+        bimiRecord: null,
+        mtaSts: null,
+        tlsRpt: null,
+        daneRecords: {},
+        srvRecords: {},
+        mxRecords: [],
+        segList: [],
+        icesList: [],
+        ...overrides
+    });
+    const keys = (card) => card.findings.map(f => f.key);
+
+    it('marca PermError cuando un include no publica SPF', () => {
+        const card = calculateScoreAndFindings(base({
+            spfTree: { domain: 'x.com', children: [
+                { type: 'include', target: 'roto.com', tree: { domain: 'roto.com', error: 'no_spf_record', children: [] } }
+            ] }
+        }));
+        expect(keys(card)).toContain('finding_spf_include_permerror');
+    });
+
+    it('avisa de más de 2 void lookups, pero no de 2', () => {
+        const voidChild = (n) => ({ type: 'a', target: `m${n}.com`, void: true });
+        const withVoids = (n) => calculateScoreAndFindings(base({
+            spfTree: { domain: 'x.com', children: Array.from({ length: n }, (_, i) => voidChild(i)) }
+        }));
+        expect(keys(withVoids(2))).not.toContain('finding_spf_void_lookups');
+        expect(keys(withVoids(3))).toContain('finding_spf_void_lookups');
+    });
+
+    it('detecta varios "all" y mecanismos inalcanzables tras el primero', () => {
+        const card = calculateScoreAndFindings(base({
+            spfRaw: 'v=spf1 -all include:tarde.com ~all',
+            spfEntries: [
+                { type: 'v', value: 'spf1', index: 0 },
+                { type: 'all', qualifier: '-', index: 1 },
+                { type: 'include', value: 'tarde.com', qualifier: '+', index: 2 },
+                { type: 'all', qualifier: '~', index: 3 }
+            ]
+        }));
+        expect(keys(card)).toContain('finding_spf_multiple_all');
+        expect(keys(card)).toContain('finding_spf_terms_after_all');
+    });
+
+    it('no marca términos inalcanzables cuando el "all" va el último', () => {
+        const card = calculateScoreAndFindings(base({
+            spfEntries: [
+                { type: 'v', value: 'spf1', index: 0 },
+                { type: 'include', value: 'ok.com', qualifier: '+', index: 1 },
+                { type: 'all', qualifier: '-', index: 2 }
+            ]
+        }));
+        expect(keys(card)).not.toContain('finding_spf_terms_after_all');
+        expect(keys(card)).not.toContain('finding_spf_multiple_all');
+    });
+
+    it('avisa si la política MTA-STS no cubre algún MX real', () => {
+        const card = calculateScoreAndFindings(base({
+            mxRecords: [{ host: 'mx1.nuevo.com' }],
+            mtaSts: { policy: { valid: true, parsed: { mx: ['*.viejo.net'] }, maxAge: 604800 } }
+        }));
+        expect(keys(card)).toContain('finding_mta_sts_mx_mismatch');
+    });
+
+    it('confirma la cobertura cuando la política sí lista los MX', () => {
+        const card = calculateScoreAndFindings(base({
+            mxRecords: [{ host: 'mx1.acme.com' }],
+            mtaSts: { policy: { valid: true, parsed: { mx: ['*.acme.com'] }, maxAge: 604800 } }
+        }));
+        expect(keys(card)).toContain('finding_mta_sts_mx_ok');
+        expect(keys(card)).not.toContain('finding_mta_sts_mx_mismatch');
+    });
+
+    it('no penaliza una política MTA-STS que no se pudo descargar', () => {
+        const unreachable = calculateScoreAndFindings(base({
+            mtaSts: { policy: { valid: false, validationReason: 'fetch_failed' } }
+        }));
+        const sinMtaSts = calculateScoreAndFindings(base());
+        expect(keys(unreachable)).toContain('finding_mta_sts_unreachable');
+        expect(keys(unreachable)).not.toContain('finding_mta_sts_policy_invalid');
+        // Sale del denominador: nunca puntúa peor que no tener MTA-STS.
+        expect(unreachable.score).toBeGreaterThanOrEqual(sinMtaSts.score);
+        const mtaStsCheck = unreachable.breakdown
+            .find(c => c.id === 'transport').checks.find(c => c.id === 'mtaSts');
+        expect(mtaStsCheck.unevaluable).toBe(true);
+    });
+
+    it('sigue penalizando una política descargada pero inválida', () => {
+        const card = calculateScoreAndFindings(base({
+            mtaSts: { policy: { valid: false, validationReason: 'mode_not_enforce', httpStatus: 200, mode: 'testing' } }
+        }));
+        expect(keys(card)).toContain('finding_mta_sts_policy_invalid');
+    });
+
+    it('valida los destinos TLS-RPT', () => {
+        const malo = calculateScoreAndFindings(base({ tlsRpt: { record: 'v=TLSRPTv1', rua: ['http://x.com'] } }));
+        const bueno = calculateScoreAndFindings(base({ tlsRpt: { record: 'v=TLSRPTv1', rua: ['mailto:t@x.com'] } }));
+        expect(keys(malo)).toContain('finding_tls_rpt_rua_invalid');
+        expect(keys(bueno)).not.toContain('finding_tls_rpt_rua_invalid');
+    });
+
+    it('distingue BIMI sin VMC, con VMC y declinado', () => {
+        const sinVmc = calculateScoreAndFindings(base({ bimiRecord: { record: 'v=BIMI1; l=https://x/l.svg', logo: 'https://x/l.svg', vmc: null } }));
+        const conVmc = calculateScoreAndFindings(base({ bimiRecord: { record: 'v=BIMI1; l=https://x/l.svg; a=https://x/v.pem', logo: 'https://x/l.svg', vmc: 'https://x/v.pem' } }));
+        const declinado = calculateScoreAndFindings(base({ bimiRecord: { record: 'v=BIMI1; l=', declined: true } }));
+        expect(keys(sinVmc)).toContain('finding_bimi_no_vmc');
+        expect(keys(conVmc)).toContain('finding_bimi_vmc_ok');
+        expect(keys(declinado)).toContain('finding_bimi_declined');
+        expect(declinado.score).toBeLessThan(conVmc.score);
+    });
+
+    it('penaliza una URL BIMI sin HTTPS', () => {
+        const card = calculateScoreAndFindings(base({
+            bimiRecord: { record: 'v=BIMI1; l=http://x/l.svg', logo: 'http://x/l.svg', logoInsecure: true }
+        }));
+        expect(keys(card)).toContain('finding_bimi_insecure_url');
+    });
+
+    it('no trata una clave Ed25519 de 256 bits como clave débil', () => {
+        const card = calculateScoreAndFindings(base({
+            dkimRecords: { records: [{ selector: 'ed', record: 'v=DKIM1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=' }] }
+        }));
+        expect(keys(card)).toContain('finding_dkim_ed25519');
+        expect(keys(card)).not.toContain('finding_dkim_weak_key');
+    });
+
+    it('avisa de np más débil que la política efectiva', () => {
+        const debil = calculateScoreAndFindings(base({
+            dmarcParsed: { v: 'DMARC1', p: 'reject', np: 'none', rua: 'mailto:a@b.com' }
+        }));
+        const fuerte = calculateScoreAndFindings(base({
+            dmarcParsed: { v: 'DMARC1', p: 'reject', np: 'reject', rua: 'mailto:a@b.com' }
+        }));
+        expect(keys(debil)).toContain('finding_dmarc_np_weak');
+        expect(keys(fuerte)).toContain('finding_dmarc_np_ok');
+    });
+
+    it('avisa de demasiados destinos rua', () => {
+        const card = calculateScoreAndFindings(base({
+            dmarcRua: ['mailto:a@b.com', 'mailto:c@d.com', 'mailto:e@f.com']
+        }));
+        expect(keys(card)).toContain('finding_dmarc_rua_too_many');
+    });
+
+    it('avisa de un registro SPF de más de 255 caracteres', () => {
+        const card = calculateScoreAndFindings(base({
+            spfRaw: 'v=spf1 ' + 'ip4:1.2.3.4 '.repeat(30) + '-all'
+        }));
+        expect(keys(card)).toContain('finding_spf_too_long');
+    });
+});
+
+describe('scoring por categorías ponderadas', () => {
+    const strong = () => ({
+        spfRaw: 'v=spf1 include:x.com -all',
+        spfData: { multiple: false },
+        spfEntries: [{ type: 'v', index: 0 }, { type: 'include', value: 'x.com', index: 1 }, { type: 'all', qualifier: '-', index: 2 }],
+        spfLookups: 3,
+        spfTree: { domain: 'd.com', children: [] },
+        dmarcRaw: 'v=DMARC1; p=reject',
+        dmarcData: { multiple: false },
+        dmarcParsed: { v: 'DMARC1', p: 'reject', sp: 'reject' },
+        dmarcPolicy: 'reject',
+        dmarcRua: ['mailto:r@d.com'],
+        dmarcRuf: [],
+        dmarcExternalAuth: [],
+        dkimRecords: { records: [{ selector: 's1', record: 'v=DKIM1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=' }] },
+        bimiRecord: { record: 'v=BIMI1', logo: 'https://x/l.svg', vmc: 'https://x/v.pem' },
+        mtaSts: { policy: { valid: true, maxAge: 604800, parsed: { mx: ['*.d.com'] } } },
+        mxRecords: [{ host: 'mx.d.com' }],
+        tlsRpt: { record: 'v=TLSRPTv1', rua: ['mailto:t@d.com'] },
+        daneRecords: { 'mx.d.com': ['x'] },
+        dnssec: { signed: true },
+        srvRecords: {},
+        segList: [], icesList: []
+    });
+
+    it('un dominio completo llega a 100 / A+', () => {
+        const card = calculateScoreAndFindings(strong());
+        expect(card.score).toBe(100);
+        expect(card.grade).toBe('A+');
+    });
+
+    it('el desglose cuadra con los presupuestos de cada categoría', () => {
+        const card = calculateScoreAndFindings(strong());
+        expect(card.breakdown.map(c => c.id)).toEqual(['auth', 'transport', 'hygiene']);
+        expect(card.breakdown.find(c => c.id === 'auth').max).toBe(60);
+        expect(card.breakdown.find(c => c.id === 'transport').max).toBe(25);
+        expect(card.breakdown.find(c => c.id === 'hygiene').max).toBe(15);
+        expect(card.totalMax).toBe(100);
+    });
+
+    it('la autenticación acota la nota: sin transporte no hay A+', () => {
+        const card = calculateScoreAndFindings({
+            ...strong(), mtaSts: null, dnssec: { signed: false }, daneRecords: {}, bimiRecord: null, tlsRpt: null
+        });
+        expect(card.breakdown.find(c => c.id === 'auth').earned).toBe(60);
+        expect(card.grade).not.toBe('A+');
+    });
+
+    it('DMARC p=none no puede alcanzar A/A+ por muchos extras que tenga', () => {
+        const card = calculateScoreAndFindings({
+            ...strong(), dmarcParsed: { v: 'DMARC1', p: 'none' }, dmarcPolicy: 'none'
+        });
+        expect(card.authRatio).toBeLessThan(0.85);
+        expect(['B', 'C', 'D', 'F']).toContain(card.grade);
+    });
+
+    it('un PermError de SPF agota el presupuesto del control', () => {
+        const card = calculateScoreAndFindings({
+            ...strong(),
+            spfTree: { domain: 'd.com', children: [
+                { type: 'include', target: 'roto.com', tree: { domain: 'roto.com', error: 'no_spf_record', children: [] } }
+            ] }
+        });
+        const spfCheck = card.breakdown.find(c => c.id === 'auth').checks.find(c => c.id === 'spf');
+        expect(spfCheck.earned).toBeLessThanOrEqual(0);
+        expect(card.grade).not.toBe('A+');
+    });
+
+    it('un control no evaluable sale del denominador en vez de contar 0', () => {
+        const sinDkim = calculateScoreAndFindings({ ...strong(), dkimRecords: { records: [] } });
+        const dkimCheck = sinDkim.breakdown.find(c => c.id === 'auth').checks.find(c => c.id === 'dkim');
+        expect(dkimCheck.unevaluable).toBe(true);
+        expect(sinDkim.totalMax).toBe(85);
+        expect(sinDkim.score).toBe(100);
+    });
+
+    it('ningún check supera su presupuesto y ninguna categoría baja de 0', () => {
+        const card = calculateScoreAndFindings(strong());
+        for (const cat of card.breakdown) {
+            expect(cat.earned).toBeGreaterThanOrEqual(0);
+            expect(cat.earned).toBeLessThanOrEqual(cat.max);
+            for (const check of cat.checks) {
+                expect(check.earned).toBeLessThanOrEqual(check.max);
+            }
+        }
+    });
+
+    it('la nota se mantiene entre 0 y 100 en el peor caso', () => {
+        const card = calculateScoreAndFindings({
+            spfRaw: 'v=spf1 +all',
+            spfData: { multiple: true },
+            spfEntries: [{ type: 'all', qualifier: '+', index: 1 }],
+            spfLookups: 25,
+            dmarcRaw: 'v=DMARC2; p=nada',
+            dmarcData: { multiple: true },
+            dmarcParsed: { v: 'DMARC2', p: 'nada' },
+            dmarcPolicy: 'nada',
+            dmarcRua: [], dmarcRuf: [],
+            dkimRecords: { records: [{ selector: 'x', record: 'v=DKIM1; p=' }] },
+            mtaSts: { policy: { valid: false, validationReason: 'mode_not_enforce', httpStatus: 200 } },
+            mxRecords: [], daneRecords: {}, srvRecords: {}, segList: [], icesList: []
+        });
+        expect(card.score).toBeGreaterThanOrEqual(0);
+        expect(card.score).toBeLessThanOrEqual(100);
+        expect(card.grade).toBe('F');
+    });
+});
+
+describe('identifyMX: un MX externo desconocido NO es una capa de seguridad', () => {
+    it('no inventa un SEG con el nombre del dominio hermano (paypal.com → paypalcorp.com)', () => {
+        const id = identifyMX('mx1.paypalcorp.com', 'paypal.com');
+        expect(id.type).toBe('unknown');
+        expect(id.type).not.toBe('seg');
+        expect(id.external).toBe(true);
+        expect(id.sameBrand).toBe(true);
+    });
+
+    it('tampoco con un hosting no catalogado', () => {
+        const id = identifyMX('mx.hosting-desconocido.net', 'acme.com');
+        expect(id.type).toBe('unknown');
+        expect(id.external).toBe(true);
+        expect(id.sameBrand).toBe(false);
+    });
+
+    it('sigue reconociendo los SEG reales del diccionario', () => {
+        expect(identifyMX('mx.mimecast.com', 'acme.com').type).toBe('seg');
+        expect(identifyMX('esa01.arquia.es', 'arquia.es').name).toContain('Cisco');
+        expect(identifyMX('acme-com.mail.protection.outlook.com', 'acme.com').type).toBe('provider');
+    });
+
+    it('un MX del propio dominio sigue siendo propio', () => {
+        expect(identifyMX('mx1.acme.com', 'acme.com').type).toBe('self');
+    });
+
+    it('un MX externo desconocido no llega a segList', () => {
+        const { segList, icesList } = detectSecurityLayers({
+            domain: 'paypal.com',
+            mxRecords: [{ priority: 10, host: 'mx1.paypalcorp.com' }]
+        });
+        expect(segList).toEqual([]);
+        expect(icesList).toEqual([]);
+    });
+});
+
+describe('isSameBrand', () => {
+    it('empareja marca compartida y variantes de TLD', () => {
+        expect(isSameBrand('paypalcorp.com', 'paypal.com')).toBe(true);
+        expect(isSameBrand('acmegroup.net', 'acme.com')).toBe(true);
+        expect(isSameBrand('empresa.com', 'empresa.es')).toBe(true);
+    });
+
+    it('no empareja por etiquetas cortas ni por dominios ajenos', () => {
+        expect(isSameBrand('mx.com', 'acme.com')).toBe(false);
+        expect(isSameBrand('srv.net', 'acme.com')).toBe(false);
+        expect(isSameBrand('proofpoint.com', 'acme.com')).toBe(false);
+        expect(isSameBrand('', 'acme.com')).toBe(false);
+    });
+});
+
+describe('postura: la ausencia de SEG/ICES no la hunde', () => {
+    const authOk = (overrides = {}) => ({
+        spfRaw: 'v=spf1 -all',
+        spfEntries: [{ type: 'all', qualifier: '-', index: 1 }],
+        spfData: { multiple: false },
+        spfLookups: 2,
+        dmarcRaw: 'v=DMARC1; p=reject',
+        dmarcData: { multiple: false },
+        dmarcParsed: { v: 'DMARC1', p: 'reject' },
+        dmarcPolicy: 'reject',
+        dmarcRua: ['mailto:a@b.com'],
+        dmarcRuf: [],
+        dkimRecords: { records: [] },
+        mxRecords: [], daneRecords: {}, srvRecords: {},
+        segList: [], icesList: [],
+        ...overrides
+    });
+
+    it('un dominio bien autenticado sin SEG detectable no es "débil"', () => {
+        const { posture } = calculateScoreAndFindings(authOk());
+        expect(posture.key).not.toBe('weak');
+    });
+
+    it('pero sin DMARC aplicado sigue siendo "débil"', () => {
+        const { posture } = calculateScoreAndFindings(authOk({
+            dmarcParsed: { v: 'DMARC1', p: 'none' }, dmarcPolicy: 'none'
+        }));
+        expect(posture.key).toBe('weak');
+    });
+});
+
+describe('tokens TXT: solo son capa de seguridad si el producto es de CORREO', () => {
+    // Los tokens reales que publica google.com en su TXT del ápex. Ninguno debe
+    // producir una capa de seguridad: el cisco-ci-domain-verification es la
+    // verificación de dominio de Webex Control Hub, no un gateway de correo.
+    const GOOGLE_TXT = [
+        'onetrust-domain-verification=6d685f1d41a94696ad7ef771f68993e0',
+        'google-site-verification=wD8N7i1JTNTkezJ49swvWW48f8_9xveREV4oB-0Hf5o',
+        'work-accounts-domain-verification=Tcj6JjIMZOw2KsSEw2Nt2rLae89tN6',
+        'facebook-domain-verification=22rm551cu4k0ab0bxsw536tlds4h95',
+        'apple-domain-verification=30afIBcvSuDV2PLX',
+        'cisco-ci-domain-verification=47c38bc8c4b74b7233e9053220c1bbe76bcc1cd33c7acf7acd36cd6a5332004b',
+        'v=spf1 include:_spf.google.com ~all'
+    ];
+
+    it('google.com no genera ninguna capa de seguridad a partir de sus tokens', () => {
+        const txtVerifications = identifyTXTVerifications(GOOGLE_TXT);
+        const { segList, icesList } = detectSecurityLayers({
+            domain: 'google.com',
+            mxRecords: [{ priority: 10, host: 'smtp.google.com' }],
+            txtVerifications
+        });
+        expect(segList).toEqual([]);
+        expect(icesList).toEqual([]);
+    });
+
+    it('el token de Cisco se sigue reconociendo, pero como Webex y sin categoría de seguridad', () => {
+        const found = identifyTXTVerifications(GOOGLE_TXT).find(v => v.name.includes('Webex'));
+        expect(found).toBeTruthy();
+        expect(found.category).toBe('other');
+        expect(found.name).not.toContain('Secure Email');
+    });
+
+    it('un token que SÍ es de seguridad de correo sigue contando como capa', () => {
+        const txtVerifications = identifyTXTVerifications(['abnormalsecurity-domain-verification=abc123']);
+        const { icesList } = detectSecurityLayers({ domain: 'acme.com', txtVerifications });
+        expect(icesList.map(i => i.name)).toContain('Abnormal Security');
     });
 });

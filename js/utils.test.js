@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDomain, isValidDomain, html, raw, SafeHtml } from './utils.js';
+import { normalizeDomain, isValidDomain, isValidDkimSelector, parseDkimSelectors, html, raw, SafeHtml } from './utils.js';
 import { escapeHtml } from './parsers.js';
 
 describe('normalizeDomain', () => {
@@ -80,5 +80,41 @@ describe('html`` tagged template', () => {
 
     it('devuelve un SafeHtml', () => {
         expect(html`<a>`).toBeInstanceOf(SafeHtml);
+    });
+});
+
+describe('isValidDkimSelector', () => {
+    it('acepta selectores habituales', () => {
+        expect(isValidDkimSelector('google')).toBe(true);
+        expect(isValidDkimSelector('s1')).toBe(true);
+        expect(isValidDkimSelector('mimecast20230101')).toBe(true);
+        expect(isValidDkimSelector('selector1')).toBe(true);
+        expect(isValidDkimSelector('k1._domainkey')).toBe(true);
+    });
+
+    it('rechaza entradas vacías, con separador al borde o con caracteres ilegales', () => {
+        expect(isValidDkimSelector('')).toBe(false);
+        expect(isValidDkimSelector(null)).toBe(false);
+        expect(isValidDkimSelector('-mal')).toBe(false);
+        expect(isValidDkimSelector('mal-')).toBe(false);
+        expect(isValidDkimSelector('con espacio')).toBe(false);
+        expect(isValidDkimSelector('a&b=1')).toBe(false);
+        expect(isValidDkimSelector('x'.repeat(64))).toBe(false);
+    });
+});
+
+describe('parseDkimSelectors', () => {
+    it('acepta varios selectores separados por coma o espacio', () => {
+        expect(parseDkimSelectors('google, s1  s2')).toEqual(['google', 's1', 's2']);
+    });
+
+    it('normaliza a minúsculas y deduplica', () => {
+        expect(parseDkimSelectors('Google,google , GOOGLE')).toEqual(['google']);
+    });
+
+    it('descarta los inválidos y devuelve [] si no queda ninguno', () => {
+        expect(parseDkimSelectors('google, b=1&c, -mal')).toEqual(['google']);
+        expect(parseDkimSelectors('  ')).toEqual([]);
+        expect(parseDkimSelectors(null)).toEqual([]);
     });
 });

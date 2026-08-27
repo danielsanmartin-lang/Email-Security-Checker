@@ -1,4 +1,6 @@
 import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './parsers.js';
+import { getSettings, resolverChain } from './settings.js';
+import { isValidDomain } from './utils.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -54,11 +56,12 @@ async function _fetchDoH(url, headers) {
     }
 }
 
+// Los valores que vienen del dominio auditado se pasan como ARGUMENTOS de console,
+// nunca interpolados en el primer parámetro: ese es la cadena de formato de la consola
+// y un dominio con un "%s" dentro descolocaría el resto del mensaje.
 async function _resolveDNS(name, type) {
-    const providers = [
-        { label: 'Google', url: `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}` },
-        { label: 'Cloudflare', url: `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`, headers: { 'Accept': 'application/dns-json' } }
-    ];
+    // El orden (y si hay respaldo) lo decide el usuario en el panel de ajustes.
+    const providers = resolverChain(name, type);
 
     let badStatus = null;
     for (const provider of providers) {
@@ -66,11 +69,11 @@ async function _resolveDNS(name, type) {
         try {
             candidate = await _fetchDoH(provider.url, provider.headers);
         } catch (e) {
-            console.warn(`${provider.label} DoH failed for ${name} (${type})`, e);
+            console.warn('%s DoH failed for %s (%s)', provider.label, name, type, e);
             continue;
         }
         if (typeof candidate.Status === 'number' && !DNS_CONCLUSIVE_STATUSES.includes(candidate.Status)) {
-            console.warn(`${provider.label} DoH returned Status ${candidate.Status} for ${name} (${type})`);
+            console.warn('%s DoH returned Status %s for %s (%s)', provider.label, candidate.Status, name, type);
             badStatus = candidate.Status;
             continue;
         }
@@ -220,12 +223,16 @@ export function discoverDKIMSelectors(spfRaw) {
     return [...new Set(selectors)];
 }
 
+// `customSelector` acepta un selector suelto o una lista (el campo de la UI admite
+// varios separados por coma). Si se indica alguno, se consulta SOLO esa lista: es una
+// elección explícita del usuario, no un complemento a la detección best-effort.
 export async function getDKIM(domain, customSelector = null, spfRaw = null, icesSelectors = []) {
-    let selectors = customSelector ? [customSelector] : COMMON_DKIM_SELECTORS;
-    if (!customSelector && spfRaw) {
+    const custom = (Array.isArray(customSelector) ? customSelector : [customSelector]).filter(Boolean);
+    let selectors = custom.length > 0 ? [...new Set(custom)] : COMMON_DKIM_SELECTORS;
+    if (custom.length === 0 && spfRaw) {
         const discovered = discoverDKIMSelectors(spfRaw);
         selectors = [...new Set([...discovered, ...COMMON_DKIM_SELECTORS, ...icesSelectors])];
-    } else if (!customSelector && icesSelectors.length > 0) {
+    } else if (custom.length === 0 && icesSelectors.length > 0) {
         selectors = [...new Set([...COMMON_DKIM_SELECTORS, ...icesSelectors])];
     }
     const results = [];
@@ -256,9 +263,27 @@ export async function getBIMI(domain) {
             for (const a of data.Answer) {
                 const txt = extractTxtValue(a.data);
                 if (txt.startsWith('v=BIMI1')) {
-                    const match = txt.match(/l=([^;]+)/);
-                    const logo = match ? match[1].trim() : null;
-                    return { record: txt, logo };
+                    // Parseo por etiquetas: un `l=;` VACÍO no es lo mismo que ausente
+                    // (declara explícitamente que el dominio declina participar en BIMI),
+                    // y la regex anterior no podía distinguirlos.
+                    const tags = {};
+                    for (const part of txt.split(';')) {
+                        const eq = part.indexOf('=');
+                        if (eq > 0) tags[part.substring(0, eq).trim().toLowerCase()] = part.substring(eq + 1).trim();
+                    }
+                    const logo = tags.l || null;
+                    // a= es el certificado VMC/CMC. Sin él, Gmail y Apple Mail no
+                    // muestran el logo aunque el SVG sea correcto.
+                    const vmc = tags.a || null;
+                    const isHttps = (u) => /^https:\/\//i.test(String(u || ''));
+                    return {
+                        record: txt,
+                        logo,
+                        vmc,
+                        declined: tags.l === '',
+                        logoInsecure: !!logo && !isHttps(logo),
+                        vmcInsecure: !!vmc && !isHttps(vmc)
+                    };
                 }
             }
         }
@@ -272,9 +297,42 @@ export async function getBIMI(domain) {
 // un lookup DNS. Acepta a, mx, ptr con :dominio y /IPv4-cidr y //IPv6-cidr.
 const SPF_LOOKUP_MECH = /^(a|mx|ptr)(:[^/\s]+)?(\/\d{1,2})?(\/\/\d{1,3})?$/;
 
-export async function getSPFLookupTree(domain, path = new Set(), depth = 0) {
-    // node.error es un CÓDIGO neutral de idioma ('depth_exceeded' | 'loop' | 'query_failed').
-    // node.errorDetail contiene el mensaje técnico original (si aplica).
+// Tope de mecanismos hoja (a/mx/exists) que se resuelven de verdad para detectar
+// "void lookups" (RFC 7208 §4.6.4: más de 2 consultas vacías ⇒ PermError). Cada sonda
+// es una consulta DNS extra; la caché y la deduplicación en vuelo amortizan las
+// repetidas, pero el tope evita que un SPF patológico dispare cientos de peticiones.
+const SPF_VOID_PROBE_BUDGET = 20;
+const SPF_VOID_PROBE_TYPES = new Set(['a', 'mx', 'exists']);
+
+// ¿La consulta de este mecanismo es "void"? (NXDOMAIN o cero respuestas)
+// Devuelve true | false | null (null = no se pudo determinar, no se cuenta).
+async function _probeVoidLookup(type, target) {
+    // Quita la máscara CIDR (`a:example.com/24`) antes de consultar.
+    const name = String(target).split('/')[0].replace(/\.$/, '');
+    if (!name || name === '(self)') return null;
+    const answersOf = async (qtype) => {
+        const data = await queryDNS(name, qtype);
+        if (data && data.Status === 3) return 0; // NXDOMAIN
+        return ((data && data.Answer) || []).length;
+    };
+    try {
+        if (type === 'mx') return (await answersOf('MX')) === 0;
+        // `a` resuelve A y AAAA: solo es void si NINGUNA devuelve datos.
+        // `exists:` se evalúa siempre contra A (RFC 7208 §5.7).
+        const a = await answersOf('A');
+        if (a > 0) return false;
+        if (type === 'exists') return true;
+        const aaaa = await answersOf('AAAA');
+        return aaaa === 0;
+    } catch {
+        return null;
+    }
+}
+
+export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx = { probeBudget: SPF_VOID_PROBE_BUDGET }) {
+    // node.error es un CÓDIGO neutral de idioma ('depth_exceeded' | 'loop' |
+    // 'query_failed' | 'no_spf_record'). node.errorDetail contiene el mensaje
+    // técnico original (si aplica).
     const node = { domain, lookups: 0, children: [], error: null, errorDetail: null, record: null };
     if (depth > 10) {
         node.error = 'depth_exceeded';
@@ -292,7 +350,14 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0) {
     try {
         const spfData = await getSPF(domain);
         const spf = spfData.record;
-        if (!spf) return node;
+        if (!spf) {
+            // Un include:/redirect= cuyo destino NO publica SPF es un PermError en la
+            // evaluación real (RFC 7208 §5.2): el mecanismo no puede resolverse y toda
+            // la comprobación falla. En el ápex (depth 0) significa simplemente que el
+            // dominio no tiene SPF, que ya se informa por otra vía.
+            if (depth > 0) node.error = 'no_spf_record';
+            return node;
+        }
         node.record = spf;
 
         // Primera pasada: contabiliza mecanismos hoja y recoge include/redirect.
@@ -317,9 +382,20 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0) {
             }
         }
 
+        // Sondeo de void lookups: resuelve los mecanismos hoja de este nivel para saber
+        // cuáles devuelven NXDOMAIN o cero respuestas. Se hace en paralelo y solo
+        // mientras quede presupuesto compartido con el resto del árbol.
+        const probes = node.children.filter(c => SPF_VOID_PROBE_TYPES.has(c.type) && c.target !== '(self)');
+        const budgeted = probes.slice(0, Math.max(0, ctx.probeBudget));
+        ctx.probeBudget -= budgeted.length;
+        await Promise.all(budgeted.map(async (child) => {
+            const isVoid = await _probeVoidLookup(child.type, child.target);
+            if (isVoid !== null) child.void = isVoid;
+        }));
+
         // Segunda pasada: resuelve todos los include/redirect del nivel EN PARALELO.
         const subtrees = await Promise.all(
-            nested.map(n => getSPFLookupTree(n.target, childPath, depth + 1))
+            nested.map(n => getSPFLookupTree(n.target, childPath, depth + 1, ctx))
         );
         subtrees.forEach((child, i) => {
             node.children.push({ type: nested[i].type, target: nested[i].target, tree: child });
@@ -352,7 +428,7 @@ export async function getIPAddresses(host) {
             }
         }
     } catch (e) {
-        console.warn(`Failed to resolve IPs for ${host}`, e);
+        console.warn('Failed to resolve IPs for %s', host, e);
     }
     return [...new Set(ips)];
 }
@@ -429,12 +505,22 @@ export async function getAllTXT(domain) {
             .filter(a => a.type === 16)
             .map(a => extractTxtValue(a.data));
     } catch (e) {
-        console.warn(`Failed to get all TXT for ${domain}`, e);
+        console.warn('Failed to get all TXT for %s', domain, e);
         return [];
     }
 }
 
 export async function fetchMTASTSPolicyFile(domain) {
+    // La URL se construye con el dominio auditado, que es justo lo que hace esta
+    // comprobación. Aun así se valida AQUÍ, en el punto del fetch: la función es
+    // exportada y no debe depender de que quien la llame haya validado antes.
+    if (!isValidDomain(domain)) {
+        return {
+            url: null, httpStatus: null, fetchOk: false, body: null, parsed: null,
+            mode: null, valid: false,
+            error: 'Invalid domain', validationReason: 'invalid_domain'
+        };
+    }
     const url = `https://mta-sts.${domain}/.well-known/mta-sts.txt`;
     const base = {
         url,
@@ -477,7 +563,18 @@ export async function fetchMTASTSPolicyFile(domain) {
         }
         body = await res.text();
     } catch (e) {
-        console.warn(`Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.`, e);
+        // El proxy CORS público es OPT-IN: manda el dominio auditado a un tercero.
+        // Sin él, la política simplemente queda sin evaluar (no penaliza la nota).
+        if (!getSettings().allowCorsProxy) {
+            return {
+                ...base,
+                error: e.name === 'AbortError'
+                    ? 'Policy fetch timed out'
+                    : 'Direct fetch failed (CORS/Network) and the public CORS proxy is disabled in settings',
+                validationReason: 'fetch_failed'
+            };
+        }
+        console.warn('Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.', e);
         try {
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
             const controller = new AbortController();
@@ -555,7 +652,7 @@ export async function getMTASTS(domain) {
             }
         }
     } catch (e) {
-        console.warn(`Failed to get MTA-STS for ${domain}`, e);
+        console.warn('Failed to get MTA-STS for %s', domain, e);
     }
     return null;
 }
@@ -573,7 +670,7 @@ export async function getTLSRPT(domain) {
             }
         }
     } catch (e) {
-        console.warn(`Failed to get TLS-RPT for ${domain}`, e);
+        console.warn('Failed to get TLS-RPT for %s', domain, e);
     }
     return null;
 }
@@ -586,7 +683,7 @@ export async function getNS(domain) {
             .filter(a => a.type === 2)
             .map(a => a.data.replace(/\.$/, ''));
     } catch (e) {
-        console.warn(`Failed to get NS for ${domain}`, e);
+        console.warn('Failed to get NS for %s', domain, e);
         return [];
     }
 }
@@ -616,7 +713,7 @@ export async function getSRV(domain) {
                     });
             }
         } catch (e) {
-            console.warn(`Failed to query SRV for ${check.record}`, e);
+            console.warn('Failed to query SRV for %s', check.record, e);
         }
     }));
     
@@ -681,7 +778,7 @@ export async function getDANE(mxHosts) {
                     .map(a => a.data);
             }
         } catch (e) {
-            console.warn(`Failed to query DANE for _25._tcp.${mx}`, e);
+            console.warn('Failed to query DANE for _25._tcp.%s', mx, e);
         }
     }));
     return daneRecords;

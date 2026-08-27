@@ -43,11 +43,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Prepare site (solo archivos de la app, sin tests ni artefactos)
         run: |
-          mkdir -p _site/js _site/css
-          cp index.html _site/
+          mkdir -p _site/js/ui _site/css/fonts
+          cp index.html manifest.webmanifest sw.js icon.svg _site/
           cp css/*.css _site/css/
+          cp css/fonts/*.woff2 _site/css/fonts/
           cp js/*.js _site/js/
+          cp js/ui/*.js _site/js/ui/
           rm -f _site/js/*.test.js
+          # Red de seguridad: si algo del shell falta, el service worker cachearía
+          # una app rota. Mejor romper el despliegue aquí.
+          test -f _site/js/bootstrap.js
+          test -f _site/js/ui/scorePanel.js
+          test -f _site/css/fonts/outfit-latin.woff2
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

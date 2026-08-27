@@ -5,11 +5,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Email Security Checker</title>
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
-        rel="stylesheet">
+    <meta name="description" content="Auditoría de seguridad de correo: analiza SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, DANE y DNSSEC de cualquier dominio e identifica su pila de email. Sin backend: todo ocurre en el navegador.">
+    <meta name="theme-color" content="#0f172a">
+
+    <!-- Política de seguridad de contenidos.
+         · 'unsafe-inline' en style-src es necesario mientras el informe exportado use
+           estilos en línea (Word no admite otra cosa) y por el iframe de impresión.
+         · img-src permite https: porque el logotipo BIMI se sirve desde el dominio
+           auditado, que no se conoce de antemano.
+         · connect-src lista los servicios externos documentados en el README. Un
+           resolver DoH propio (panel de Ajustes) hay que añadirlo aquí a mano.
+         · frame-ancestors NO se incluye: los navegadores lo ignoran cuando llega por
+           <meta> (solo vale como cabecera HTTP). Para impedir el embebido hace falta
+           configurarlo en el servidor que sirva la app. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https://dns.google https://cloudflare-dns.com https://dns.quad9.net:5053 https://crt.sh https://api.certspotter.com https://api.allorigins.win; base-uri 'none'; form-action 'none'">
+
+    <!-- Favicon: el mismo logotipo de la cabecera, en línea (sin peticiones extra) -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='8' fill='none' stroke='%236366f1' stroke-width='2.5'/%3E%3Cpath d='M10 16L14 20L22 12' fill='none' stroke='%2306b6d4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+    <!-- Open Graph / Twitter -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Email Security Checker">
+    <meta property="og:description" content="Auditoría de seguridad de correo (SPF, DMARC, DKIM, BIMI, MTA-STS, DANE, DNSSEC) directamente desde el navegador.">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Email Security Checker">
+    <meta name="twitter:description" content="Auditoría de seguridad de correo (SPF, DMARC, DKIM, BIMI, MTA-STS, DANE, DNSSEC) directamente desde el navegador.">
+
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icon.svg">
+
+    <!-- Tipografías autoalojadas: ver css/style.css (@font-face) -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 
@@ -44,6 +69,15 @@
             </div>
             
             <div class="header__actions" style="display: flex; align-items: center; gap: 16px;">
+                <!-- Ajustes -->
+                <button type="button" class="icon-btn" id="settings-btn" data-i18n-title="settings_title"
+                    data-i18n-aria-label="settings_title" title="Ajustes" aria-label="Ajustes">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
                 <!-- Language Selector -->
                 <div class="lang-selector" id="lang-selector">
                     <button class="lang-btn" id="lang-btn" aria-haspopup="true" aria-expanded="false">
@@ -88,6 +122,7 @@
                     <p class="search-card__desc" data-i18n="search_desc">Introduce un dominio para analizar sus registros MX, SPF, DMARC e identificar su pila tecnológica de email.</p>
                 </div>
                 <form class="search-form" id="search-form">
+                    <label class="sr-only" for="domain-input" data-i18n="domain_input_label">Dominio a analizar</label>
                     <div class="search-input-wrapper">
                         <div class="search-input-icon">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -108,15 +143,14 @@
                             </span>
                         </button>
                     </div>
-                    <div id="dkim-toggle-container" style="display: flex; justify-content: center; margin-top: 16px;">
-                        <button type="button" class="search-btn" id="dkim-toggle-btn" data-i18n="dkim_toggle_btn"
-                            style="width: auto; padding: 10px 20px; font-size: 14px; border-radius: 8px; background: #5e6eeb; box-shadow: none;">
+                    <div id="dkim-toggle-container" class="dkim-toggle-container">
+                        <button type="button" class="search-btn search-btn--pill" id="dkim-toggle-btn" data-i18n="dkim_toggle_btn">
                             Selector DKIM (opcional)
                         </button>
                     </div>
-                    <div id="dkim-collapsible" class="hidden"
-                        style="margin-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 12px;">
-                        <div class="search-input-wrapper" style="width: 100%;">
+                    <div id="dkim-collapsible" class="hidden dkim-collapsible">
+                        <label class="sr-only" for="dkim-input" data-i18n="dkim_input_label">Selector DKIM (opcional)</label>
+                        <div class="search-input-wrapper dkim-input-wrapper">
                             <div class="search-input-icon">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
@@ -143,6 +177,35 @@
         </section>
 
         <!-- Loading State -->
+        <!-- Visor de informes agregados DMARC (RUA) -->
+        <section class="rua-section" id="rua-section">
+            <div class="rua-card">
+                <button type="button" class="rua-toggle" id="rua-toggle" aria-expanded="false" aria-controls="rua-body">
+                    <svg class="rua-toggle__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    <span data-i18n="rua_title">Visor de informes DMARC (RUA)</span>
+                </button>
+                <div class="rua-body" id="rua-body" hidden>
+                    <p class="rua-desc" data-i18n="rua_desc">Suelta aquí un informe agregado DMARC para ver quién envía en nombre del dominio y si esos envíos autentican. El fichero se procesa en tu navegador: no se sube a ningún sitio.</p>
+                    <div class="rua-dropzone" id="rua-dropzone" role="button" tabindex="0"
+                        data-i18n-aria-label="rua_dropzone" aria-label="Seleccionar informe DMARC">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <span data-i18n="rua_dropzone">Arrastra el informe o haz clic para elegirlo (.xml, .xml.gz, .zip)</span>
+                    </div>
+                    <input type="file" id="rua-file" class="hidden" accept=".xml,.gz,.zip,text/xml,application/gzip,application/zip">
+                    <div class="rua-results" id="rua-results" aria-live="polite"></div>
+                </div>
+            </div>
+        </section>
+
         <section class="loading-section hidden" id="loading-section" role="status" aria-live="polite">
             <div class="loading-card">
                 <div class="loading-steps">
@@ -339,7 +402,7 @@
         </section>
 
         <!-- Results Section -->
-        <section class="results-section hidden" id="results-section" role="region" aria-live="polite" aria-label="Resultados del análisis">
+        <section class="results-section hidden" id="results-section" role="region" aria-live="polite" data-i18n-aria-label="results_region_label" aria-label="Resultados del análisis">
             <!-- Domain Header -->
             <div class="result-header" id="result-header">
                 <div class="result-header__info">
@@ -411,6 +474,22 @@
                     <div class="score-card__findings" id="score-findings">
                         <!-- Will be populated by JS -->
                     </div>
+                </div>
+            </div>
+
+            <!-- Desglose de la puntuación por categoría -->
+            <div class="score-breakdown" id="score-breakdown">
+                <button type="button" class="score-breakdown__toggle" id="score-breakdown-toggle"
+                    aria-expanded="false" aria-controls="score-breakdown-body">
+                    <svg class="score-breakdown__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    <span data-i18n="score_breakdown_toggle">Ver desglose</span>
+                </button>
+                <div class="score-breakdown__body" id="score-breakdown-body" hidden>
+                    <!-- Will be populated by JS -->
                 </div>
             </div>
 
@@ -741,6 +820,77 @@
     </div>
 
     <!-- Add to KB Modal -->
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal__overlay" id="settings-overlay"></div>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3 class="modal__title" id="settings-title" data-i18n="settings_title">Ajustes</h3>
+                <button class="modal__close" id="settings-close" data-i18n-aria-label="close" aria-label="Cerrar">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal__body">
+                <form id="settings-form">
+                    <div class="form-group">
+                        <label for="settings-resolver" data-i18n="settings_resolver">Resolver DNS-over-HTTPS</label>
+                        <select id="settings-resolver" class="search-input-wrapper search-input">
+                            <option value="google">Google (dns.google)</option>
+                            <option value="cloudflare">Cloudflare (cloudflare-dns.com)</option>
+                            <option value="quad9">Quad9 (dns.quad9.net)</option>
+                            <option value="custom" data-i18n="settings_resolver_custom">Propio (URL)</option>
+                        </select>
+                        <p class="form-hint" data-i18n="settings_resolver_hint">El dominio analizado se envía al resolver elegido. Con uno propio no se usa ningún resolver público de respaldo.</p>
+                    </div>
+                    <div class="form-group hidden" id="settings-custom-group">
+                        <label for="settings-custom-url" data-i18n="settings_custom_url">URL del resolver propio (API JSON)</label>
+                        <input type="url" id="settings-custom-url" class="search-input-wrapper search-input"
+                            placeholder="https://dns.midominio.com/resolve">
+                        <p class="form-hint" data-i18n="settings_custom_url_hint">Debe añadirse también al connect-src del CSP en index.html, o el navegador bloqueará la consulta.</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-cors-proxy">
+                            <span data-i18n="settings_cors_proxy">Permitir el proxy CORS público para MTA-STS</span>
+                        </label>
+                        <p class="form-hint" data-i18n="settings_cors_proxy_hint">Desactivado: el dominio auditado se enviaría a api.allorigins.win. Sin él, una política que el navegador no pueda descargar queda "no evaluable" y no penaliza la nota.</p>
+                    </div>
+                    <fieldset class="form-fieldset">
+                        <legend data-i18n="settings_tools_title">Herramientas avanzadas</legend>
+                        <p class="form-hint" data-i18n="settings_tools_hint">Las tres necesitan algo que solo tiene quien administra el correo del dominio: los informes agregados, el nombre del selector DKIM o una muestra de correo. Vienen apagadas para no llenar la pantalla principal.</p>
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-tool-rua">
+                            <span data-i18n="settings_tool_rua">Visor de informes DMARC (RUA)</span>
+                        </label>
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-tool-dkim">
+                            <span data-i18n="settings_tool_dkim">Selector DKIM en el buscador</span>
+                        </label>
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-tool-headers">
+                            <span data-i18n="settings_tool_headers">Analizador de cabeceras de correo</span>
+                        </label>
+                    </fieldset>
+                    <div class="form-group">
+                        <label for="settings-fingerprints-url" data-i18n="settings_fingerprints">URL de firmas de awareness (JSON)</label>
+                        <input type="url" id="settings-fingerprints-url" class="search-input-wrapper search-input"
+                            placeholder="https://ejemplo.com/fingerprints.json">
+                        <p class="form-hint" data-i18n="settings_fingerprints_hint">Permite mantener el diccionario de detección al día sin tocar el código.</p>
+                    </div>
+                    <p class="form-status" id="settings-status" role="status" aria-live="polite"></p>
+                    <div class="modal__actions modal__actions--split">
+                        <button type="button" class="search-btn search-btn--ghost" id="settings-refresh" data-i18n="settings_force_refresh">Forzar refresco</button>
+                        <button type="submit" class="search-btn" data-i18n="settings_save">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="add-kb-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-kb-title">
         <div class="modal__overlay" id="add-kb-overlay"></div>
         <div class="modal__content">
@@ -768,15 +918,16 @@
                     <div class="form-group">
                         <label for="kb-category" data-i18n="modal_kb_category">Categoría (Label)</label>
                         <select id="kb-category" class="search-input-wrapper search-input" required>
-                            <option value="marketing" data-i18n="cat_marketing">Marketing</option>
-                            <option value="transactional" data-i18n="cat_transactional">Transaccional</option>
-                            <option value="crm" data-i18n="cat_crm">CRM / ERP</option>
-                            <option value="support" data-i18n="cat_support">Soporte / Tickets</option>
-                            <option value="signatures" data-i18n="cat_signatures">Firmas Email</option>
-                            <option value="email" data-i18n="cat_email">Proveedor Email</option>
+                            <option value="provider" data-kb-for="mx" data-i18n="cat_provider">Proveedor de correo</option>
+                            <option value="marketing" data-kb-for="spf" data-i18n="cat_marketing">Marketing</option>
+                            <option value="transactional" data-kb-for="spf" data-i18n="cat_transactional">Transaccional</option>
+                            <option value="crm" data-kb-for="spf" data-i18n="cat_crm">CRM / ERP</option>
+                            <option value="support" data-kb-for="spf" data-i18n="cat_support">Soporte / Tickets</option>
+                            <option value="signatures" data-kb-for="spf" data-i18n="cat_signatures">Firmas Email</option>
+                            <option value="email" data-kb-for="spf" data-i18n="cat_email">Proveedor Email</option>
                             <option value="seg" data-i18n="cat_seg">SEG (Filtro perimetral)</option>
                             <option value="ices" data-i18n="cat_ices">ICES (Seguridad Integrada)</option>
-                            <option value="other" data-i18n="cat_other">Otro / Varios</option>
+                            <option value="other" data-kb-for="spf" data-i18n="cat_other">Otro / Varios</option>
                         </select>
                     </div>
                     <div class="modal__actions">
@@ -843,7 +994,7 @@
         </div>
     </div>
 
-    <script type="module" src="js/app.js"></script>
+    <script type="module" src="js/bootstrap.js"></script>
 </body>
 
 </html>

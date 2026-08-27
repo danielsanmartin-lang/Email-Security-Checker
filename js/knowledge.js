@@ -1,5 +1,14 @@
-// Knowledge base for identifying email services from DNS records
+// Knowledge base for identifying email services from DNS records.
+// `version` / `updatedAt` permiten saber con qué diccionario se hizo un análisis
+// (aparece en los informes) y detectar firmas obsoletas sin leer el diff.
+// Súbelos al añadir o corregir firmas. El test de esquema (knowledge.test.js)
+// valida la forma de cada entrada y la ausencia de duplicados.
+export const KB_VERSION = '3.0.0';
+export const KB_UPDATED_AT = '2026-08-27';
+
 export const KB = {
+    version: KB_VERSION,
+    updatedAt: KB_UPDATED_AT,
     mx: [
         { pattern: 'protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
         { pattern: 'mail.protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
@@ -159,17 +168,23 @@ export const KB = {
         { pattern: 'fideltour.com', name: 'Fideltour', category: 'other', cat_label: 'Turismo/CRM' },
         { pattern: 'managed-otrs.com', name: 'OTRS', category: 'support', cat_label: 'Soporte/ITSM' },
     ],
-    // TXT domain verification patterns that reveal security vendors
+    // Tokens TXT de verificación de dominio.
+    //
+    // REGLA: un token solo lleva categoría `seg` o `ices` si el producto que verifica es
+    // de seguridad de CORREO. Los tokens de identidad, colaboración o SSO van a `other`
+    // aunque los publique un fabricante de seguridad: prueban que alguien dio de alta el
+    // dominio en una plataforma, no por dónde pasa el correo. Saltarse esta regla es lo
+    // que hacía que google.com apareciera con "Cisco Secure Email" como capa de seguridad.
     txt_verification: [
         { pattern: 'proofpoint-verification', name: 'Proofpoint', category: 'seg' },
         { pattern: 'mimecast', name: 'Mimecast', category: 'seg' },
-        // Token de propiedad del Cisco Security Cloud (el "ci" es la identidad común
-        // de la nube de Cisco): es transversal a MUCHOS productos (Secure Email Threat
-        // Defense, Umbrella, XDR, Secure Access...). NO prueba un SEG en el flujo de
-        // correo entrante —eso lo probaría el MX *.iphmx.com / *.ess.cisco.com—, solo
-        // que el dominio se vinculó a un tenant de Cisco. Lo tratamos como ICES de baja
-        // confianza (Threat Defense es API-based y su único rastro DNS suele ser este TXT).
-        { pattern: 'cisco-ci-domain-verification', name: 'Cisco Secure Email (Threat Defense / Security Cloud)', category: 'ices', verificationOnly: true, weight: 0.35 },
+        // Verificación de dominio de Webex Control Hub ("CI" = Common Identity, la
+        // plataforma de identidad de Cisco tras Webex, Duo y Control Hub). Sirve para
+        // reclamar el dominio y sus usuarios dentro de una organización de Webex, y la
+        // documentación de Cisco dice que se puede BORRAR del DNS una vez verificado.
+        // No dice nada del correo: google.com lo publica y su MX es suyo (smtp.google.com).
+        // Un SEG de Cisco lo probaría el MX (*.iphmx.com / *.ess.cisco.com), no este token.
+        { pattern: 'cisco-ci-domain-verification', name: 'Cisco Webex / Control Hub (verificación de dominio)', category: 'other', verificationOnly: true },
         { pattern: 'sophos-domain-verification', name: 'Sophos Email', category: 'seg' },
         { pattern: 'ironscales-domain-verification', name: 'Ironscales', category: 'ices' },
         { pattern: 'abnormal-security', name: 'Abnormal Security', category: 'ices' },
@@ -189,7 +204,9 @@ export const KB = {
         { pattern: 'stripe-verification', name: 'Stripe', category: 'other' },
         { pattern: 'hubspot-developer-verification', name: 'HubSpot', category: 'crm' },
         { pattern: 'pardot', name: 'Pardot (Salesforce)', category: 'marketing' },
-        { pattern: 'spycloud-domain-verification', name: 'SpyCloud', category: 'ices' },
+        // SpyCloud es monitorización de credenciales expuestas (darknet/ATO), no un
+        // filtro de correo: no es un ICES.
+        { pattern: 'spycloud-domain-verification', name: 'SpyCloud (exposición de credenciales)', category: 'other' },
         { pattern: 'canva-site-verification', name: 'Canva', category: 'other' },
         { pattern: 'duo_sso_verification', name: 'Duo Security (Cisco)', category: 'other' },
         { pattern: 'cloudflare-verify', name: 'Cloudflare', category: 'other' },
@@ -323,15 +340,19 @@ export const KB = {
 // Cargar entradas personalizadas guardadas por el usuario
 // (localStorage no existe fuera del navegador, p. ej. en tests con Node)
 if (typeof localStorage !== 'undefined') {
-    try {
-        const customKB = localStorage.getItem('custom_kb_spf');
-        if (customKB) {
+    // Las entradas propias van DELANTE de las de serie en KB.mx: el diccionario se
+    // recorre en orden y gana la primera coincidencia, así que una firma añadida por
+    // el usuario debe poder afinar (no quedar tapada por) un patrón genérico.
+    for (const list of ['spf', 'mx']) {
+        try {
+            const customKB = localStorage.getItem(`custom_kb_${list}`);
+            if (!customKB) continue;
             const entries = JSON.parse(customKB);
-            if (Array.isArray(entries)) {
-                KB.spf.push(...entries);
-            }
+            if (!Array.isArray(entries)) continue;
+            if (list === 'mx') KB.mx.unshift(...entries);
+            else KB.spf.push(...entries);
+        } catch (e) {
+            console.error('Error loading custom KB (%s) from localStorage', list, e);
         }
-    } catch (e) {
-        console.error('Error loading custom KB from localStorage', e);
     }
 }

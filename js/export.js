@@ -3,6 +3,10 @@ import { identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { getLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { escapeHtml } from './parsers.js';
+import { html, raw } from './utils.js';
+
+// Icono de confirmación del botón "Exportar a Google Docs" (SVG propio, estático).
+const CHECK_ICON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
 import {
     getCategoryLabel,
     formatProviderSource,
@@ -173,10 +177,27 @@ export function generateReportHTML() {
             }
         }
         
+        // Señales indirectas: se listan como pista para quien siga la auditoría a mano,
+        // pero fuera del bloque de detecciones y diciendo expresamente que no confirman
+        // nada. Un MX del fabricante no prueba que el módulo esté contratado.
+        let indirectHtml = '';
+        if (ar.indirectSignals && ar.indirectSignals.length > 0) {
+            indirectHtml = `
+                <div style="margin-top: 15px; padding: 12px 14px; border: 1px dashed #cbd5e1; border-radius: 8px; background-color: #f8fafc; text-align: left;">
+                    <div style="font-family: sans-serif; font-size: 12.5px; font-weight: bold; color: #64748b; margin-bottom: 4px;">${t.awareness_indirect_title}</div>
+                    <p style="font-family: sans-serif; font-size: 11.5px; color: #64748b; line-height: 1.5; margin: 0 0 8px 0;">${t.awareness_indirect_desc}</p>
+                    <ul style="padding-left: 20px; font-family: sans-serif; font-size: 12px; color: #475569; line-height: 1.5; margin: 0;">
+                        ${ar.indirectSignals.map(v => `<li><strong>${escapeHtml(v.displayName)}</strong> — ${escapeHtml(v.evidence.map(e => `${t[`awareness_signal_${e.signal}`] || e.signal}: ${e.value}`).join(' · '))}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
         awarenessHtml = `
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">👥 ${panelTitle}</h2>
             <div style="margin-top: 15px;">
                 ${vendorsHtml}
+                ${indirectHtml}
                 ${warningsHtml}
                 ${generalNotesHtml}
             </div>
@@ -637,6 +658,12 @@ export function generateReportHTML() {
                         <div style="background-color: #f1f5f9; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; color: #334155; word-break: break-all; border: 1px solid #e2e8f0; text-align: left;">
                             ${escapeHtml(currentResult.bimiRecord.record)}
                         </div>
+                        <p style="font-family: sans-serif; font-size: 12.5px; color: #475569; margin: 8px 0 0 0; text-align: left;">
+                            <strong>${t.bimi_vmc_label}:</strong>
+                            ${currentResult.bimiRecord.vmc
+                                ? escapeHtml(currentResult.bimiRecord.vmc)
+                                : `<span style="color: #d97706; font-style: italic;">${t.bimi_vmc_missing}</span>`}
+                        </p>
                     </div>
                 ` : `
                     <p style="color: #64748b; font-style: italic; font-family: sans-serif; font-size: 13px; text-align: left;">${t.no_bimi_record}</p>
@@ -675,7 +702,7 @@ export async function exportToGoogle() {
         });
         await navigator.clipboard.write([clipboardItem]);
 
-        btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> ${t.msg_copied}`;
+        btn.innerHTML = html`${raw(CHECK_ICON_SVG)} ${t.msg_copied}`;
 
         setTimeout(() => { btn.innerHTML = originalHTML; }, 6000);
         window.open('https://docs.new', '_blank');
@@ -730,12 +757,20 @@ export function exportToPDF() {
         if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
     };
 
+    // El esqueleto se escribe SIN interpolar nada: el idioma y el título (que lleva el
+    // dominio auditado) se ponen después por API del DOM, donde son texto y no HTML.
+    // Así ningún dato del dominio analizado llega a document.write.
     const doc = iframe.contentWindow.document;
     doc.open();
-    doc.write(`<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><title>${fileTitle}</title>
-        <style>@page { margin: 16mm; } body { margin: 0; }</style>
-        </head><body>${reportHtml}</body></html>`);
+    doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
+        + '<style>@page { margin: 16mm; } body { margin: 0; }</style>'
+        + '</head><body></body></html>');
     doc.close();
+    doc.documentElement.lang = lang;
+    doc.title = fileTitle;
+    // reportHtml es el informe que genera esta misma app: todos los valores externos
+    // que contiene ya han pasado por escapeHtml en generateReportHTML().
+    doc.body.innerHTML = reportHtml;
 
     const printFrame = () => {
         try {
