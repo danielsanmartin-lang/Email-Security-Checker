@@ -88,3 +88,29 @@ export function isValidDomain(domain) {
     if (domain.length > 253) return false;
     return /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(domain);
 }
+
+/**
+ * Valida un selector DKIM. Es una etiqueta DNS (o varias separadas por puntos, p. ej.
+ * `mimecast20230101` o `s1024._dkim`), así que se admiten letras, dígitos, guion,
+ * guion bajo y punto, sin empezar ni acabar por separador.
+ * @param {string} selector
+ * @returns {boolean}
+ */
+export function isValidDkimSelector(selector) {
+    if (!selector || typeof selector !== 'string') return false;
+    if (selector.length > 63) return false;
+    return /^[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?$/i.test(selector);
+}
+
+/**
+ * Normaliza la entrada del campo DKIM: acepta uno o varios selectores separados por
+ * comas (o espacios) y devuelve solo los que tienen forma válida, en minúsculas y
+ * sin duplicados. Una entrada vacía o completamente inválida devuelve [].
+ * @param {string} input
+ * @returns {string[]}
+ */
+export function parseDkimSelectors(input) {
+    if (!input) return [];
+    const parts = String(input).split(/[,\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    return [...new Set(parts.filter(isValidDkimSelector))];
+}

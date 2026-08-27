@@ -6,7 +6,7 @@ import { KB } from './knowledge.js';
 import { getLanguage, setLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { detectAwarenessVendors } from './awarenessDetector.js';
-import { normalizeDomain, isValidDomain } from './utils.js';
+import { normalizeDomain, isValidDomain, parseDkimSelectors } from './utils.js';
 import { state } from './state.js';
 
 export { state };
@@ -191,7 +191,13 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     return { result, awarenessPromise };
 }
 
-async function runAnalysis(domain, dkimSelector = null) {
+// Token de la ejecución en curso. Si el usuario lanza un segundo análisis antes de
+// que termine el primero, el viejo sigue resolviéndose (no se abortan las peticiones
+// DNS en vuelo, sería un refactor desproporcionado) pero su resultado se DESCARTA:
+// sin esto, el análisis más lento gana la pintada y muestra datos de otro dominio.
+let _runId = 0;
+
+export async function runAnalysis(domain, dkimSelector = null) {
     domain = normalizeDomain(domain);
 
     const input = document.getElementById('domain-input');
@@ -209,14 +215,25 @@ async function runAnalysis(domain, dkimSelector = null) {
         return;
     }
 
+    const myRun = ++_runId;
+    const isStale = () => myRun !== _runId;
+
     const btn = document.getElementById('search-btn');
     btn.classList.add('loading');
+    btn.disabled = true;
+    const resultsSection = document.getElementById('results-section');
+    if (resultsSection) resultsSection.setAttribute('aria-busy', 'true');
     showSection('loading-section');
 
     ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis', 'step-awareness'].forEach(s => setStep(s, null));
 
     try {
-        const { result, awarenessPromise } = await performAnalysis(domain, dkimSelector, { onStep: setStep });
+        const { result, awarenessPromise } = await performAnalysis(domain, dkimSelector, {
+            // Los pasos de un análisis obsoleto no deben tocar el indicador de progreso
+            // del que está corriendo ahora.
+            onStep: (step, stepState) => { if (!isStale()) setStep(step, stepState); }
+        });
+        if (isStale()) return;
 
         state.currentDomain = domain;
         state.currentResult = result;
@@ -225,17 +242,19 @@ async function runAnalysis(domain, dkimSelector = null) {
         // principal; el panel de awareness aparece "escaneando" y se rellena solo
         // cuando la detección (lenta) termina, sin bloquear el resto.
         await new Promise(r => setTimeout(r, 300));
+        if (isStale()) return;
         renderResults(domain, result);
         showSection('results-section');
 
         awarenessPromise.then((awarenessResult) => {
             result.awarenessResult = awarenessResult;
             // Solo repinta si el usuario sigue viendo este mismo resultado.
-            if (state.currentResult === result) {
+            if (!isStale() && state.currentResult === result) {
                 renderAwarenessVendors(awarenessResult || null, getLanguage(), translations[getLanguage()]);
             }
         });
     } catch (err) {
+        if (isStale()) return;
         console.error(err);
         let message;
         if (err.code === 'nxdomain') {
@@ -250,7 +269,13 @@ async function runAnalysis(domain, dkimSelector = null) {
         document.getElementById('error-message').textContent = message;
         showSection('error-section');
     } finally {
-        btn.classList.remove('loading');
+        // Solo la ejecución vigente devuelve el botón a su estado normal: si un
+        // análisis viejo termina después, no debe reactivarlo a mitad del nuevo.
+        if (!isStale()) {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            if (resultsSection) resultsSection.setAttribute('aria-busy', 'false');
+        }
     }
 }
 
@@ -359,29 +384,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (domainParam) {
         input.value = domainParam;
-        runAnalysis(domainParam, urlParams.get('dkim') || null);
+        const dkimParam = parseDkimSelectors(urlParams.get('dkim'));
+        if (dkimInput && dkimParam.length) dkimInput.value = dkimParam.join(', ');
+        runAnalysis(domainParam, dkimParam.length ? dkimParam : null);
     }
-    
+
     form.addEventListener('submit', e => {
         e.preventDefault();
         const domain = normalizeDomain(input.value);
         input.value = domain;
-        let dkimSelector = null;
-        if (dkimInput) {
-            dkimSelector = dkimInput.value.trim().toLowerCase();
-        }
+        // Acepta varios selectores separados por coma y descarta los que no tienen
+        // forma de etiqueta DNS válida.
+        const dkimSelectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
 
-        // Update URL to allow deep-linking
+        // Update URL to allow deep-linking. URLSearchParams escapa los valores: sin
+        // ello un selector o dominio con '&' o '#' rompería el enlace.
         try {
             if (history.pushState) {
-                const newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + `?domain=${domain}` + (dkimSelector ? `&dkim=${dkimSelector}` : '');
+                const params = new URLSearchParams({ domain });
+                if (dkimSelectors.length) params.set('dkim', dkimSelectors.join(','));
+                const newurl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?${params.toString()}`;
                 window.history.pushState({path:newurl}, '', newurl);
             }
         } catch (err) {
             console.warn('history.pushState failed, usually because of file:// protocol', err);
         }
 
-        if (domain) runAnalysis(domain, dkimSelector || null);
+        if (domain) runAnalysis(domain, dkimSelectors.length ? dkimSelectors : null);
     });
 
     document.querySelectorAll('.search-hint').forEach(hint => {
@@ -426,8 +455,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('error-retry').addEventListener('click', () => {
         const domain = input.value.trim().toLowerCase();
-        const dkimSelector = dkimInput ? dkimInput.value.trim().toLowerCase() : null;
-        if (domain) runAnalysis(domain, dkimSelector);
+        const dkimSelectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
+        if (domain) runAnalysis(domain, dkimSelectors.length ? dkimSelectors : null);
     });
 
     document.getElementById('add-kb-close').addEventListener('click', closeKbModal);
@@ -459,7 +488,8 @@ document.addEventListener('DOMContentLoaded', () => {
         closeKbModal();
         
         if (state.currentDomain) {
-            runAnalysis(state.currentDomain, dkimInput ? dkimInput.value.trim() : null);
+            const selectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
+            runAnalysis(state.currentDomain, selectors.length ? selectors : null);
         }
     });
 });

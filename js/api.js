@@ -220,12 +220,16 @@ export function discoverDKIMSelectors(spfRaw) {
     return [...new Set(selectors)];
 }
 
+// `customSelector` acepta un selector suelto o una lista (el campo de la UI admite
+// varios separados por coma). Si se indica alguno, se consulta SOLO esa lista: es una
+// elección explícita del usuario, no un complemento a la detección best-effort.
 export async function getDKIM(domain, customSelector = null, spfRaw = null, icesSelectors = []) {
-    let selectors = customSelector ? [customSelector] : COMMON_DKIM_SELECTORS;
-    if (!customSelector && spfRaw) {
+    const custom = (Array.isArray(customSelector) ? customSelector : [customSelector]).filter(Boolean);
+    let selectors = custom.length > 0 ? [...new Set(custom)] : COMMON_DKIM_SELECTORS;
+    if (custom.length === 0 && spfRaw) {
         const discovered = discoverDKIMSelectors(spfRaw);
         selectors = [...new Set([...discovered, ...COMMON_DKIM_SELECTORS, ...icesSelectors])];
-    } else if (!customSelector && icesSelectors.length > 0) {
+    } else if (custom.length === 0 && icesSelectors.length > 0) {
         selectors = [...new Set([...COMMON_DKIM_SELECTORS, ...icesSelectors])];
     }
     const results = [];
