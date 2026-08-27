@@ -1507,3 +1507,20 @@ body {
 .awareness-header-btn:hover {
     filter: brightness(1.08);
 }
+
+/* ===== BIMI (panel) ===== */
+.bimi-error { color: var(--accent-rose, #ef4444); }
+.bimi-vmc-missing { color: var(--accent-amber, #d97706); font-style: italic; }
+.bimi-logo-wrap { margin-top: 16px; }
+.bimi-logo {
+    max-width: 120px;
+    max-height: 120px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.info-block__value--mono {
+    word-break: break-all;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+}

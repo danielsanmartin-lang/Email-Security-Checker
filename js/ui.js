@@ -108,7 +108,11 @@ export function renderSPFTree(tree) {
             const tooltipText = t.spf_loop_error_tooltip || '';
             errorSpan = html`<span class="tooltip-trigger" data-tooltip="${tooltipText}" style="color:#ef4444; margin-left: 8px; cursor: help; text-decoration: underline dotted;">[Error: ${t.spf_error_loop}]</span>`;
         } else {
-            const errMap = { depth_exceeded: t.spf_error_depth, query_failed: t.spf_error_query };
+            const errMap = {
+                depth_exceeded: t.spf_error_depth,
+                query_failed: t.spf_error_query,
+                no_spf_record: t.spf_error_no_record
+            };
             const errLabel = errMap[tree.error] || tree.errorDetail || tree.error;
             errorSpan = html`<span style="color:#ef4444; margin-left: 8px;">[Error: ${errLabel}]</span>`;
         }
@@ -599,23 +603,41 @@ export function renderResults(domain, result) {
     dkimBody.innerHTML = dkimHtml;
 
     const bimiBody = document.getElementById('bimi-body');
-    if (result.bimiRecord) {
-        if (result.bimiRecord.error) {
-            bimiBody.innerHTML = `<p class="no-data" style="color:#ef4444">${escapeHtml(t.bimi_error)}: ${escapeHtml(result.bimiRecord.error)}</p>`;
-        } else {
-            let logoHtml = '';
-            if (result.bimiRecord.logo) {
-                logoHtml = `<div style="margin-top: 16px;"><img src="${escapeHtml(result.bimiRecord.logo)}" alt="BIMI Logo" style="max-width: 120px; max-height: 120px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>`;
-            }
-            bimiBody.innerHTML = `
-                <div class="info-block">
-                    <div class="info-block__label">${escapeHtml(t.bimi_record_found)}</div>
-                    <div class="info-block__value" style="word-break:break-all; font-size:13px; font-family:monospace; margin-top:4px;">${escapeHtml(result.bimiRecord.record)}</div>
-                    ${logoHtml}
-                </div>`;
-        }
+    const bimi = result.bimiRecord;
+    if (!bimi) {
+        bimiBody.innerHTML = html`<p class="no-data">${t.no_bimi_record}</p>`;
+    } else if (bimi.error) {
+        bimiBody.innerHTML = html`<p class="no-data bimi-error">${t.bimi_error}: ${bimi.error}</p>`;
     } else {
-        bimiBody.innerHTML = `<p class="no-data">${t.no_bimi_record}</p>`;
+        // El VMC (a=) es lo que separa "registro BIMI publicado" de "logotipo visible":
+        // sin él los principales buzones ignoran el SVG.
+        const vmcHtml = bimi.declined
+            ? html`<div class="info-block__detail">${t.bimi_declined_label}</div>`
+            : html`<div class="info-block__detail">${t.bimi_vmc_label}: ${bimi.vmc
+                ? bimi.vmc
+                : html`<span class="bimi-vmc-missing">${t.bimi_vmc_missing}</span>`}</div>`;
+        const logoHtml = bimi.logo
+            ? html`<div class="bimi-logo-wrap"><img class="bimi-logo" src="${bimi.logo}" alt="BIMI Logo"></div>`
+            : raw('');
+        bimiBody.innerHTML = html`
+            <div class="info-block">
+                <div class="info-block__label">${t.bimi_record_found}</div>
+                <div class="info-block__value info-block__value--mono">${bimi.record}</div>
+                ${vmcHtml}
+                ${logoHtml}
+            </div>`;
+        // El logo se comprueba dejando que el navegador lo cargue: un fetch() previo
+        // lo bloquearía CORS en la mayoría de dominios y daría un falso negativo.
+        const img = bimiBody.querySelector('img.bimi-logo');
+        if (img) {
+            img.addEventListener('error', () => {
+                img.remove();
+                const warn = document.createElement('div');
+                warn.className = 'info-block__detail bimi-vmc-missing';
+                warn.textContent = t.bimi_logo_unreachable;
+                bimiBody.querySelector('.info-block').appendChild(warn);
+            });
+        }
     }
 
     // Render RBL reputation panel

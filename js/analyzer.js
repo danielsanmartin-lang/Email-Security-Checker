@@ -1,5 +1,5 @@
 import { KB } from './knowledge.js';
-import { parseSPF, parseDMARC, analyzeDKIMRecord } from './parsers.js';
+import { parseSPF, parseDMARC, analyzeDKIMRecord, validateTlsRptRua, checkMtaStsMxCoverage } from './parsers.js';
 
 export function identifyMX(host, domain) {
     const h = host.toLowerCase();
@@ -191,6 +191,29 @@ export function analyzeTLSRPT(tlsrpt) {
 
 // Recorre el árbol SPF (getSPFLookupTree) y devuelve TODOS los dominios objetivo
 // de include/redirect en cualquier profundidad (cadena SPF aplanada).
+/**
+ * Recorre el árbol SPF y recoge los problemas que SOLO se ven resolviéndolo:
+ *   - noRecord: destino de include/redirect que no publica SPF ⇒ PermError (RFC 7208 §5.2).
+ *               Es el fallo silencioso más común: el registro "parece" correcto pero
+ *               ningún receptor puede evaluarlo.
+ *   - voids:    mecanismos a/mx/exists cuya consulta devuelve NXDOMAIN o vacío.
+ *               Más de 2 ⇒ PermError (RFC 7208 §4.6.4).
+ *   - loops:    include/redirect que vuelve sobre un antepasado de su propia cadena.
+ * @returns {{ noRecord: string[], voids: string[], loops: string[] }}
+ */
+export function collectSpfTreeIssues(tree, acc = { noRecord: [], voids: [], loops: [] }) {
+    if (!tree || !tree.children) return acc;
+    for (const child of tree.children) {
+        if (child.void === true) acc.voids.push(`${child.type}:${child.target}`);
+        if (child.tree) {
+            if (child.tree.error === 'no_spf_record') acc.noRecord.push(child.target);
+            else if (child.tree.error === 'loop') acc.loops.push(child.target);
+            collectSpfTreeIssues(child.tree, acc);
+        }
+    }
+    return acc;
+}
+
 export function collectSpfDomains(tree, acc = []) {
     if (!tree || !tree.children) return acc;
     for (const child of tree.children) {
@@ -463,6 +486,10 @@ export const SCORE_WEIGHTS = {
     spfNoAll: -10,
     spfPtr: -5,
     spfLookupsOk: 10,
+    spfIncludePermError: -20,
+    spfVoidLookups: -10,
+    spfMultipleAll: -10,
+    spfTermsAfterAll: -5,
     dmarcPresent: 20,
     dmarcMultiple: -10,
     dmarcReject: 30,
@@ -472,14 +499,17 @@ export const SCORE_WEIGHTS = {
     dmarcPolicyInvalid: -25,
     dmarcReporting: 5,
     dmarcSpWeak: -10,
+    dmarcNpWeak: -10,
     dmarcPctPartial: -5,
     dmarcExternalUnauthorized: -10,
     dkim: 10,
     dkimWeakKey: -10,
     dkimRevoked: -5,
     bimi: 5,
+    bimiInsecureUrl: -5,
     mtaStsValid: 5,
     mtaStsInvalid: -15,
+    mtaStsMxMismatch: -10,
     dane: 5,
     dnssec: 5
 };
@@ -544,6 +574,55 @@ const SCORE_CHECKS = [
             points += SCORE_WEIGHTS.spfPtr;
             findings.push({ status: 'warning', key: 'finding_spf_ptr' });
         }
+
+        // Varios 'all' (solo cuenta el primero) y mecanismos DESPUÉS del 'all'
+        // (inalcanzables: la evaluación para en el primer match, RFC 7208 §5.1).
+        const entries = result.spfEntries || [];
+        const allEntries = entries.filter(e => e.type === 'all');
+        if (allEntries.length > 1) {
+            points += SCORE_WEIGHTS.spfMultipleAll;
+            findings.push({ status: 'error', key: 'finding_spf_multiple_all', replacements: { '{count}': String(allEntries.length) } });
+        }
+        if (allEntries.length > 0) {
+            const firstAllIndex = allEntries[0].index;
+            // 'redirect'/'exp' son modificadores: su posición es irrelevante.
+            const unreachable = entries.filter(e => e.index > firstAllIndex && e.type !== 'all' && e.type !== 'redirect');
+            if (unreachable.length > 0) {
+                points += SCORE_WEIGHTS.spfTermsAfterAll;
+                findings.push({
+                    status: 'warning',
+                    key: 'finding_spf_terms_after_all',
+                    replacements: { '{terms}': unreachable.map(e => e.value ? `${e.type}:${e.value}` : e.type).join(', ') }
+                });
+            }
+        }
+
+        // Un registro de más de 255 caracteres no cabe en una sola cadena TXT: debe
+        // publicarse partido en varias (el DNS las concatena) o algunos resolvers lo truncan.
+        if (result.spfRaw.length > 255) {
+            findings.push({ status: 'info', key: 'finding_spf_too_long', replacements: { '{len}': String(result.spfRaw.length) } });
+        }
+
+        // Problemas que solo se ven resolviendo el árbol: PermError por include sin
+        // registro y exceso de void lookups.
+        const issues = collectSpfTreeIssues(result.spfTree);
+        if (issues.noRecord.length > 0) {
+            points += SCORE_WEIGHTS.spfIncludePermError;
+            findings.push({
+                status: 'error',
+                key: 'finding_spf_include_permerror',
+                replacements: { '{targets}': [...new Set(issues.noRecord)].join(', ') }
+            });
+        }
+        if (issues.voids.length > 2) {
+            points += SCORE_WEIGHTS.spfVoidLookups;
+            findings.push({
+                status: 'error',
+                key: 'finding_spf_void_lookups',
+                replacements: { '{count}': String(issues.voids.length), '{mechs}': [...new Set(issues.voids)].join(', ') }
+            });
+        }
+
         const spfLookups = result.spfLookups || 0;
         if (spfLookups <= 10) {
             points += SCORE_WEIGHTS.spfLookupsOk;
@@ -606,6 +685,11 @@ const SCORE_CHECKS = [
         } else {
             findings.push({ status: 'warning', key: 'finding_dmarc_reporting_err' });
         }
+        // RFC 7489 §6.3: un receptor puede limitar el número de destinos a los que
+        // envía informes. Más de dos rua es habitual que acabe en informes perdidos.
+        if (result.dmarcRua && result.dmarcRua.length > 2) {
+            findings.push({ status: 'warning', key: 'finding_dmarc_rua_too_many', replacements: { '{count}': String(result.dmarcRua.length) } });
+        }
 
         // Política de subdominios (sp): un sp más débil que p abre un hueco en *.dominio
         if (result.dmarcParsed) {
@@ -616,11 +700,35 @@ const SCORE_CHECKS = [
                 points += SCORE_WEIGHTS.dmarcSpWeak;
                 findings.push({ status: 'warning', key: 'finding_dmarc_sp_weak', replacements: { '{sp}': sp.toUpperCase(), '{p}': p.toUpperCase() } });
             }
+            // np (DMARCbis): política para SUBDOMINIOS INEXISTENTES, el vector habitual
+            // de suplantación (nadie vigila lo que no existe). Un np más débil que p
+            // deja ese hueco abierto; si falta, se hereda sp/p y no se penaliza.
+            const np = result.dmarcParsed.np ? result.dmarcParsed.np.toLowerCase() : null;
+            if (np && rank[np] != null) {
+                const effective = sp && rank[sp] != null ? sp : p;
+                if (rank[np] < rank[effective]) {
+                    points += SCORE_WEIGHTS.dmarcNpWeak;
+                    findings.push({ status: 'warning', key: 'finding_dmarc_np_weak', replacements: { '{np}': np.toUpperCase(), '{p}': effective.toUpperCase() } });
+                } else {
+                    findings.push({ status: 'success', key: 'finding_dmarc_np_ok', replacements: { '{np}': np.toUpperCase() } });
+                }
+            }
             // pct < 100: la política solo se aplica a una fracción del correo
             const pct = result.dmarcParsed.pct != null ? parseInt(result.dmarcParsed.pct, 10) : 100;
             if (Number.isFinite(pct) && pct < 100) {
                 points += SCORE_WEIGHTS.dmarcPctPartial;
                 findings.push({ status: 'warning', key: 'finding_dmarc_pct_partial', replacements: { '{pct}': String(pct) } });
+            } else if (result.dmarcParsed.pct != null) {
+                // pct= está marcado como obsoleto en DMARCbis: sigue siendo válido pero
+                // conviene retirarlo del registro una vez completado el despliegue.
+                findings.push({ status: 'info', key: 'finding_dmarc_pct_deprecated' });
+            }
+            // Opciones de informe forense (fo) e intervalo de agregados (ri): informativo.
+            if (result.dmarcParsed.fo) {
+                findings.push({ status: 'info', key: 'finding_dmarc_fo', replacements: { '{fo}': String(result.dmarcParsed.fo) } });
+            }
+            if (result.dmarcParsed.ri) {
+                findings.push({ status: 'info', key: 'finding_dmarc_ri', replacements: { '{ri}': String(result.dmarcParsed.ri) } });
             }
             // Alineación estricta (adkim/aspf = s) — informativo
             const adkim = (result.dmarcParsed.adkim || 'r').toLowerCase();
@@ -658,8 +766,14 @@ const SCORE_CHECKS = [
 
         const analyses = records.map(r => ({ selector: r.selector, ...analyzeDKIMRecord(r.record) }));
         const revoked = analyses.filter(a => a.revoked);
-        const weak = analyses.filter(a => !a.revoked && a.keyBits != null && a.keyBits < 1024);
-        const deprecated = analyses.filter(a => !a.revoked && a.keyBits === 1024);
+        // El umbral de bits SOLO aplica a RSA: una clave Ed25519 son 256 bits y
+        // equivale a ~3000 de RSA, así que compararla con 1024 la marcaría como débil
+        // siendo la opción más fuerte de las dos (RFC 8463).
+        const rsaKeys = analyses.filter(a => !a.revoked && a.algorithm === 'rsa');
+        const weak = rsaKeys.filter(a => a.keyBits != null && a.keyBits < 1024);
+        const deprecated = rsaKeys.filter(a => a.keyBits === 1024);
+        const ed25519 = analyses.filter(a => !a.revoked && a.algorithm === 'ed25519' && !a.malformed);
+        const malformed = analyses.filter(a => !a.revoked && a.malformed);
         const testing = analyses.filter(a => a.testing);
 
         if (revoked.length > 0) {
@@ -674,6 +788,12 @@ const SCORE_CHECKS = [
         if (deprecated.length > 0) {
             findings.push({ status: 'warning', key: 'finding_dkim_key_1024', replacements: { '{selectors}': deprecated.map(a => a.selector).join(', ') } });
         }
+        if (ed25519.length > 0) {
+            findings.push({ status: 'success', key: 'finding_dkim_ed25519', replacements: { '{selectors}': ed25519.map(a => a.selector).join(', ') } });
+        }
+        if (malformed.length > 0) {
+            findings.push({ status: 'warning', key: 'finding_dkim_malformed_key', replacements: { '{selectors}': malformed.map(a => a.selector).join(', ') } });
+        }
         if (testing.length > 0) {
             findings.push({ status: 'info', key: 'finding_dkim_testing', replacements: { '{selectors}': testing.map(a => a.selector).join(', ') } });
         }
@@ -681,17 +801,78 @@ const SCORE_CHECKS = [
     },
 
     function bimi(result) {
-        const hasBimi = result.bimiRecord && !result.bimiRecord.error && result.bimiRecord.record;
-        if (hasBimi) {
-            return { points: SCORE_WEIGHTS.bimi, findings: [{ status: 'success', key: 'finding_bimi_ok' }] };
+        const bimiRecord = result.bimiRecord;
+        const hasBimi = bimiRecord && !bimiRecord.error && bimiRecord.record;
+        if (!hasBimi) {
+            return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_err' }] };
         }
-        return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_err' }] };
+        // l= vacío es una declaración explícita de NO participar en BIMI (no un error):
+        // publica el registro para bloquear el logo, así que no puntúa ni penaliza.
+        if (bimiRecord.declined) {
+            return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_declined' }] };
+        }
+
+        let points = SCORE_WEIGHTS.bimi;
+        const findings = [{ status: 'success', key: 'finding_bimi_ok' }];
+        if (bimiRecord.logoInsecure || bimiRecord.vmcInsecure) {
+            points += SCORE_WEIGHTS.bimiInsecureUrl;
+            findings.push({ status: 'error', key: 'finding_bimi_insecure_url' });
+        }
+        // Sin a= (VMC/CMC) los principales buzones —Gmail, Apple Mail— no pintan el
+        // logo aunque el SVG sea correcto: el registro queda a medias.
+        if (!bimiRecord.vmc) {
+            findings.push({ status: 'warning', key: 'finding_bimi_no_vmc' });
+        } else {
+            findings.push({ status: 'success', key: 'finding_bimi_vmc_ok' });
+        }
+        return { points, findings };
     },
 
     function mtaSts(result) {
         if (!result.mtaSts) {
             return { points: 0, findings: [{ status: 'info', key: 'finding_mta_sts_err' }] };
         }
+        const policyFetch = result.mtaSts.policy || {};
+
+        // Cobertura de los MX reales por la lista `mx:` de la política (RFC 8461 §4.1).
+        // Si un MX no está listado, los MTA que aplican la política RECHAZAN la entrega
+        // a ese host: es el fallo más común y el más caro (correo entrante perdido).
+        const mxCoverageFindings = [];
+        let mxCoveragePoints = 0;
+        const policyMx = policyFetch.parsed?.mx || [];
+        const mxHosts = (result.mxRecords || []).map(r => r.host);
+        if (policyMx.length > 0 && mxHosts.length > 0) {
+            const { uncovered, unused } = checkMtaStsMxCoverage(policyMx, mxHosts);
+            if (uncovered.length > 0) {
+                mxCoveragePoints += SCORE_WEIGHTS.mtaStsMxMismatch;
+                mxCoverageFindings.push({
+                    status: 'error',
+                    key: 'finding_mta_sts_mx_mismatch',
+                    replacements: { '{hosts}': uncovered.join(', ') }
+                });
+            } else {
+                mxCoverageFindings.push({ status: 'success', key: 'finding_mta_sts_mx_ok' });
+            }
+            if (unused.length > 0) {
+                mxCoverageFindings.push({
+                    status: 'info',
+                    key: 'finding_mta_sts_mx_unused',
+                    replacements: { '{patterns}': unused.join(', ') }
+                });
+            }
+        }
+
+        // La política no se pudo DESCARGAR (CORS sin proxy, red, timeout): no sabemos
+        // si es válida. Informar, nunca penalizar — lo contrario castigaría a dominios
+        // correctamente configurados por una limitación del navegador.
+        if (policyFetch.validationReason === 'fetch_failed') {
+            return {
+                points: 0,
+                unevaluable: true,
+                findings: [{ status: 'info', key: 'finding_mta_sts_unreachable' }, ...mxCoverageFindings]
+            };
+        }
+
         if (result.mtaSts.policy?.valid) {
             const findings = [{ status: 'success', key: 'finding_mta_sts_ok' }];
             const maxAge = result.mtaSts.policy.maxAge;
@@ -701,7 +882,7 @@ const SCORE_CHECKS = [
             } else if (maxAge < 604800) {
                 findings.push({ status: 'warning', key: 'finding_mta_sts_low_maxage', replacements: { '{maxage}': String(maxAge) } });
             }
-            return { points: SCORE_WEIGHTS.mtaStsValid, findings };
+            return { points: SCORE_WEIGHTS.mtaStsValid + mxCoveragePoints, findings: [...findings, ...mxCoverageFindings] };
         }
         const policy = result.mtaSts.policy || {};
         const replacements = {};
@@ -711,7 +892,7 @@ const SCORE_CHECKS = [
             replacements['{mode}'] = policy.mode;
         }
         return {
-            points: SCORE_WEIGHTS.mtaStsInvalid,
+            points: SCORE_WEIGHTS.mtaStsInvalid + mxCoveragePoints,
             findings: [{
                 status: 'error',
                 id: 'MTA_STS_POLICY_INVALID',
@@ -719,15 +900,26 @@ const SCORE_CHECKS = [
                 key: 'finding_mta_sts_policy_invalid',
                 message: 'MTA-STS TXT record exists but the HTTPS policy file is missing, invalid, or not set to enforce.',
                 replacements: Object.keys(replacements).length ? replacements : undefined
-            }]
+            }, ...mxCoverageFindings]
         };
     },
 
     function tlsRpt(result) {
-        if (result.tlsRpt) {
-            return { points: 0, findings: [{ status: 'success', key: 'finding_tls_rpt_ok' }] };
+        if (!result.tlsRpt) {
+            return { points: 0, findings: [{ status: 'info', key: 'finding_tls_rpt_err' }] };
         }
-        return { points: 0, findings: [{ status: 'info', key: 'finding_tls_rpt_err' }] };
+        const findings = [{ status: 'success', key: 'finding_tls_rpt_ok' }];
+        // RFC 8460 §3: rua debe ser mailto: o https:. Con otro esquema los informes
+        // de fallo TLS no llegan a ninguna parte y el registro solo aparenta cobertura.
+        const { invalid } = validateTlsRptRua(result.tlsRpt.rua);
+        if (invalid.length > 0) {
+            findings.push({
+                status: 'error',
+                key: 'finding_tls_rpt_rua_invalid',
+                replacements: { '{uris}': invalid.join(', ') }
+            });
+        }
+        return { points: 0, findings };
     },
 
     function dane(result) {

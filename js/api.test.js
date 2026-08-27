@@ -126,6 +126,58 @@ describe('getSPFLookupTree', () => {
         return rec ? { Status: 0, Answer: [{ type: 16, data: `"${rec}"` }] } : { Status: 0 };
     });
 
+    // Mock que además responde a las sondas de void lookup (A/AAAA/MX).
+    const spfMockWithHosts = (spfMap, hostMap = {}) => fetchMock((name, type) => {
+        if (type === 'TXT') {
+            const rec = spfMap[name];
+            return rec ? { Status: 0, Answer: [{ type: 16, data: `"${rec}"` }] } : { Status: 0 };
+        }
+        const answers = (hostMap[name] || {})[type];
+        if (answers === 'nxdomain') return { Status: 3 };
+        return answers ? { Status: 0, Answer: answers } : { Status: 0 };
+    });
+
+    it('marca no_spf_record cuando el destino de un include no publica SPF', async () => {
+        global.fetch = spfMock({ 'ex.com': 'v=spf1 include:roto.com -all' });
+        const tree = await getSPFLookupTree('ex.com');
+        const child = tree.children.find(c => c.target === 'roto.com');
+        expect(child.tree.error).toBe('no_spf_record');
+    });
+
+    it('no marca no_spf_record en el ápex (el dominio simplemente no tiene SPF)', async () => {
+        global.fetch = spfMock({});
+        const tree = await getSPFLookupTree('sin-spf.com');
+        expect(tree.error).toBeNull();
+        expect(tree.record).toBeNull();
+    });
+
+    it('marca void los mecanismos a/mx/exists cuya consulta vuelve vacía o NXDOMAIN', async () => {
+        global.fetch = spfMockWithHosts(
+            { 'ex.com': 'v=spf1 a:vivo.com a:muerto.com mx:sinmx.com exists:no.com -all' },
+            {
+                'vivo.com': { A: [{ type: 1, data: '1.2.3.4' }] },
+                'muerto.com': { A: 'nxdomain', AAAA: 'nxdomain' },
+                'sinmx.com': { MX: null },
+                'no.com': { A: 'nxdomain' }
+            }
+        );
+        const tree = await getSPFLookupTree('ex.com');
+        const voidOf = (target) => tree.children.find(c => c.target === target).void;
+        expect(voidOf('vivo.com')).toBe(false);
+        expect(voidOf('muerto.com')).toBe(true);
+        expect(voidOf('sinmx.com')).toBe(true);
+        expect(voidOf('no.com')).toBe(true);
+    });
+
+    it('un host con solo AAAA no cuenta como void', async () => {
+        global.fetch = spfMockWithHosts(
+            { 'ex.com': 'v=spf1 a:solo-v6.com -all' },
+            { 'solo-v6.com': { A: null, AAAA: [{ type: 28, data: '::1' }] } }
+        );
+        const tree = await getSPFLookupTree('ex.com');
+        expect(tree.children.find(c => c.target === 'solo-v6.com').void).toBe(false);
+    });
+
     it('cuenta los mecanismos con máscara CIDR (a/24, mx/24)', async () => {
         global.fetch = spfMock({ 'ex.com': 'v=spf1 a/24 mx/24 -all' });
         const tree = await getSPFLookupTree('ex.com');

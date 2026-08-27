@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSPF, parseDMARC, parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, analyzeDKIMRecord, parseMaxAge } from './parsers.js';
+import { parseSPF, parseDMARC, parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, analyzeDKIMRecord, parseMaxAge, validateTlsRptRua, checkMtaStsMxCoverage } from './parsers.js';
 
 // Claves públicas RSA reales (SPKI DER en base64 = valor del tag p= de un registro DKIM)
 const RSA_1024 = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDHKI9Hv9UXFuaCMiUm4ByPZYWK4CySUGGnMLiUksN5v0eN7MlEbY1C3O8tU4yvGMGGrtJ279KC1EJi8twRn1bqVt5TsffmluZ6r5wZUndUHOLUmNubZdcaG8jW0uXy9w2pOJhr8sz+UAvXvthBnok0Ld8NL37wHC7lNePzrMYwGQIDAQAB';
@@ -151,9 +151,61 @@ describe('analyzeDKIMRecord', () => {
         expect(a.testing).toBe(true);
     });
 
-    it('no calcula bits RSA para claves ed25519', () => {
+    // Clave del ejemplo de la RFC 8463: 32 bytes en crudo, no un SPKI DER.
+    it('reconoce claves ed25519 como 256 bits (no las mide con la regla de RSA)', () => {
         const a = analyzeDKIMRecord('v=DKIM1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=');
         expect(a.algorithm).toBe('ed25519');
+        expect(a.keyBits).toBe(256);
+        expect(a.malformed).toBe(false);
+    });
+
+    it('marca como malformada una ed25519 que no mide 32 bytes', () => {
+        const a = analyzeDKIMRecord('v=DKIM1; k=ed25519; p=AAAA');
+        expect(a.algorithm).toBe('ed25519');
         expect(a.keyBits).toBeNull();
+        expect(a.malformed).toBe(true);
+    });
+});
+
+describe('validateTlsRptRua', () => {
+    it('acepta mailto: y https:', () => {
+        const r = validateTlsRptRua(['mailto:tls@example.com', 'https://tls.example.com/report']);
+        expect(r.invalid).toEqual([]);
+        expect(r.valid).toHaveLength(2);
+    });
+
+    it('rechaza otros esquemas y mailto sin dirección', () => {
+        const r = validateTlsRptRua(['http://example.com', 'mailto:sin-arroba', 'tls@example.com']);
+        expect(r.invalid).toHaveLength(3);
+        expect(r.valid).toEqual([]);
+    });
+
+    it('tolera lista vacía o nula', () => {
+        expect(validateTlsRptRua([]).invalid).toEqual([]);
+        expect(validateTlsRptRua(null).valid).toEqual([]);
+    });
+});
+
+describe('checkMtaStsMxCoverage', () => {
+    it('cubre hostnames exactos', () => {
+        const r = checkMtaStsMxCoverage(['mx1.example.com', 'mx2.example.com'], ['mx1.example.com']);
+        expect(r.uncovered).toEqual([]);
+        expect(r.unused).toEqual(['mx2.example.com']);
+    });
+
+    it('el comodín cubre exactamente una etiqueta', () => {
+        const r = checkMtaStsMxCoverage(['*.example.com'], ['mx.example.com', 'a.mx.example.com', 'example.com']);
+        expect(r.covered).toEqual(['mx.example.com']);
+        expect(r.uncovered).toEqual(['a.mx.example.com', 'example.com']);
+    });
+
+    it('detecta el MX no cubierto por una política obsoleta', () => {
+        const r = checkMtaStsMxCoverage(['*.old-provider.net'], ['mx1.nuevo.com', 'mx2.nuevo.com']);
+        expect(r.uncovered).toEqual(['mx1.nuevo.com', 'mx2.nuevo.com']);
+    });
+
+    it('normaliza mayúsculas y el punto final del FQDN', () => {
+        const r = checkMtaStsMxCoverage(['MX1.Example.com.'], ['mx1.example.com.']);
+        expect(r.uncovered).toEqual([]);
     });
 });

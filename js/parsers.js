@@ -25,13 +25,17 @@ export function extractTxtValue(data) {
     return data.replace(/"/g, '');
 }
 
+// Cada entry lleva `index` = su posición dentro del registro. Sin él no se puede
+// detectar que hay mecanismos DESPUÉS de `all` (inalcanzables: el evaluador para en
+// el primer match, RFC 7208 §5.1) ni distinguir el primer `all` de los siguientes.
 export function parseSPF(raw) {
     if (!raw) return [];
     const tokens = raw.split(/\s+/);
     const entries = [];
+    const push = (entry) => entries.push({ ...entry, index: entries.length });
     for (const token of tokens) {
         if (token === 'v=spf1') {
-            entries.push({ prefix: '', type: 'v', value: 'spf1', qualifier: '' });
+            push({ prefix: '', type: 'v', value: 'spf1', qualifier: '' });
             continue;
         }
         let qualifier = '+';
@@ -39,29 +43,29 @@ export function parseSPF(raw) {
         if (/^[+\-~?]/.test(t)) { qualifier = t[0]; t = t.substring(1); }
         
         if (t.startsWith('include:')) {
-            entries.push({ prefix: qualifier, type: 'include', value: t.substring(8), qualifier });
+            push({ prefix: qualifier, type: 'include', value: t.substring(8), qualifier });
         } else if (t.startsWith('a:')) {
-            entries.push({ prefix: qualifier, type: 'a', value: t.substring(2), qualifier });
+            push({ prefix: qualifier, type: 'a', value: t.substring(2), qualifier });
         } else if (t.startsWith('mx:')) {
-            entries.push({ prefix: qualifier, type: 'mx', value: t.substring(3), qualifier });
+            push({ prefix: qualifier, type: 'mx', value: t.substring(3), qualifier });
         } else if (t.startsWith('ip4:')) {
-            entries.push({ prefix: qualifier, type: 'ip4', value: t.substring(4), qualifier });
+            push({ prefix: qualifier, type: 'ip4', value: t.substring(4), qualifier });
         } else if (t.startsWith('ip6:')) {
-            entries.push({ prefix: qualifier, type: 'ip6', value: t.substring(4), qualifier });
+            push({ prefix: qualifier, type: 'ip6', value: t.substring(4), qualifier });
         } else if (t.startsWith('redirect=')) {
-            entries.push({ prefix: qualifier, type: 'redirect', value: t.substring(9), qualifier });
+            push({ prefix: qualifier, type: 'redirect', value: t.substring(9), qualifier });
         } else if (t.startsWith('exists:')) {
-            entries.push({ prefix: qualifier, type: 'exists', value: t.substring(7), qualifier });
+            push({ prefix: qualifier, type: 'exists', value: t.substring(7), qualifier });
         } else if (t === 'a') {
-            entries.push({ prefix: qualifier, type: 'a', value: '(self)', qualifier });
+            push({ prefix: qualifier, type: 'a', value: '(self)', qualifier });
         } else if (t === 'mx') {
-            entries.push({ prefix: qualifier, type: 'mx', value: '(self)', qualifier });
+            push({ prefix: qualifier, type: 'mx', value: '(self)', qualifier });
         } else if (t === 'all') {
-            entries.push({ prefix: qualifier, type: 'all', value: '', qualifier });
+            push({ prefix: qualifier, type: 'all', value: '', qualifier });
         } else if (t === 'ptr') {
-            entries.push({ prefix: qualifier, type: 'ptr', value: '', qualifier });
+            push({ prefix: qualifier, type: 'ptr', value: '', qualifier });
         } else if (t.startsWith('ptr:')) {
-            entries.push({ prefix: qualifier, type: 'ptr', value: t.substring(4), qualifier });
+            push({ prefix: qualifier, type: 'ptr', value: t.substring(4), qualifier });
         }
     }
     return entries;
@@ -230,12 +234,76 @@ export function analyzeDKIMRecord(record) {
 
     // p= vacío ⇒ clave revocada (RFC 6376 §3.6.1)
     if (p === '') {
-        return { revoked: true, algorithm, keyBits: null, testing };
+        return { revoked: true, algorithm, keyBits: null, testing, malformed: false };
     }
 
     let keyBits = null;
+    let malformed = false;
     if (p && algorithm === 'rsa') {
         keyBits = rsaModulusBits(_b64ToBytes(p));
+    } else if (p && algorithm === 'ed25519') {
+        // Ed25519 (RFC 8463): p= es la clave pública EN CRUDO (32 bytes), no un
+        // SubjectPublicKeyInfo DER como en RSA. Su fuerza equivale a ~3000 bits de
+        // RSA, así que no se le puede aplicar el umbral de "clave débil <1024".
+        const bytes = _b64ToBytes(p);
+        if (bytes.length === 32) {
+            keyBits = 256;
+        } else {
+            malformed = true;
+        }
     }
-    return { revoked: false, algorithm, keyBits, testing };
+    return { revoked: false, algorithm, keyBits, testing, malformed };
+}
+
+/**
+ * Valida los destinos de informe TLS-RPT (RFC 8460 §3): cada URI de `rua` debe ser
+ * `mailto:` o `https://`. Un destino con otro esquema (o vacío) hace que los
+ * informes de fallo TLS no lleguen a ninguna parte.
+ * @param {string[]} ruaList
+ * @returns {{ valid: string[], invalid: string[] }}
+ */
+export function validateTlsRptRua(ruaList) {
+    const valid = [];
+    const invalid = [];
+    for (const raw of ruaList || []) {
+        const uri = String(raw || '').trim();
+        if (!uri) continue;
+        if (/^mailto:[^@\s]+@[^\s]+$/i.test(uri) || /^https:\/\/\S+$/i.test(uri)) {
+            valid.push(uri);
+        } else {
+            invalid.push(uri);
+        }
+    }
+    return { valid, invalid };
+}
+
+/**
+ * Comprueba que cada MX real está cubierto por la lista `mx:` de la política MTA-STS
+ * (RFC 8461 §4.1). Un patrón puede ser un hostname exacto o un comodín `*.dominio`,
+ * donde `*` sustituye EXACTAMENTE a una etiqueta.
+ * Es el fallo más común de MTA-STS: la política se queda obsoleta tras un cambio de
+ * proveedor y el correo entrante empieza a rebotar en los MTA que la aplican.
+ * @param {string[]} policyMx  entradas `mx:` de la política
+ * @param {string[]} mxHosts   hostnames MX reales publicados en DNS
+ * @returns {{ uncovered: string[], covered: string[], unused: string[] }}
+ */
+export function checkMtaStsMxCoverage(policyMx, mxHosts) {
+    const patterns = (policyMx || []).map(p => String(p).trim().toLowerCase().replace(/\.$/, '')).filter(Boolean);
+    const hosts = (mxHosts || []).map(h => String(h).trim().toLowerCase().replace(/\.$/, '')).filter(Boolean);
+
+    const matches = (pattern, host) => {
+        if (pattern === host) return true;
+        if (!pattern.startsWith('*.')) return false;
+        const suffix = pattern.slice(1); // ".dominio"
+        if (!host.endsWith(suffix)) return false;
+        const label = host.slice(0, host.length - suffix.length);
+        // El comodín cubre una sola etiqueta: "*.example.com" casa con "mx.example.com"
+        // pero no con "a.mx.example.com" ni con "example.com".
+        return label.length > 0 && !label.includes('.');
+    };
+
+    const covered = hosts.filter(h => patterns.some(p => matches(p, h)));
+    const uncovered = hosts.filter(h => !patterns.some(p => matches(p, h)));
+    const unused = patterns.filter(p => !hosts.some(h => matches(p, h)));
+    return { uncovered, covered, unused };
 }

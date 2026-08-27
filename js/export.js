@@ -637,6 +637,12 @@ export function generateReportHTML() {
                         <div style="background-color: #f1f5f9; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; color: #334155; word-break: break-all; border: 1px solid #e2e8f0; text-align: left;">
                             ${escapeHtml(currentResult.bimiRecord.record)}
                         </div>
+                        <p style="font-family: sans-serif; font-size: 12.5px; color: #475569; margin: 8px 0 0 0; text-align: left;">
+                            <strong>${t.bimi_vmc_label}:</strong>
+                            ${currentResult.bimiRecord.vmc
+                                ? escapeHtml(currentResult.bimiRecord.vmc)
+                                : `<span style="color: #d97706; font-style: italic;">${t.bimi_vmc_missing}</span>`}
+                        </p>
                     </div>
                 ` : `
                     <p style="color: #64748b; font-style: italic; font-family: sans-serif; font-size: 13px; text-align: left;">${t.no_bimi_record}</p>

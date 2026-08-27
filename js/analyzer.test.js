@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, detectSecurityLayers, identifyTXTVerifications } from './analyzer.js';
+import { extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, identifyTXTVerifications } from './analyzer.js';
 
 describe('collectSpfDomains', () => {
     it('aplana includes/redirects de todo el árbol SPF', () => {
@@ -345,5 +345,199 @@ describe('calculateScoreAndFindings', () => {
             mtaSts: { policy: { valid: true, maxAge: 3600 } }
         }));
         expect(card.findings.some(f => f.key === 'finding_mta_sts_low_maxage')).toBe(true);
+    });
+});
+
+describe('collectSpfTreeIssues', () => {
+    const tree = {
+        domain: 'x.com', lookups: 3, children: [
+            { type: 'a', target: 'muerto.x.com', void: true },
+            { type: 'mx', target: 'vivo.x.com', void: false },
+            { type: 'include', target: 'roto.com', tree: { domain: 'roto.com', error: 'no_spf_record', children: [] } },
+            { type: 'include', target: 'ok.com', tree: { domain: 'ok.com', error: null, children: [
+                { type: 'exists', target: 'otro-muerto.com', void: true },
+                { type: 'include', target: 'x.com', tree: { domain: 'x.com', error: 'loop', children: [] } }
+            ] } }
+        ]
+    };
+
+    it('recoge includes sin registro SPF (PermError) en cualquier profundidad', () => {
+        expect(collectSpfTreeIssues(tree).noRecord).toEqual(['roto.com']);
+    });
+
+    it('recoge los mecanismos con consulta vacía (void lookups)', () => {
+        const { voids } = collectSpfTreeIssues(tree);
+        expect(voids).toContain('a:muerto.x.com');
+        expect(voids).toContain('exists:otro-muerto.com');
+        expect(voids).not.toContain('mx:vivo.x.com');
+    });
+
+    it('recoge los bucles', () => {
+        expect(collectSpfTreeIssues(tree).loops).toEqual(['x.com']);
+    });
+
+    it('tolera un árbol nulo', () => {
+        expect(collectSpfTreeIssues(null)).toEqual({ noRecord: [], voids: [], loops: [] });
+    });
+});
+
+describe('comprobaciones nuevas del motor (v3)', () => {
+    const base = (overrides = {}) => ({
+        spfRaw: 'v=spf1 -all',
+        spfData: { multiple: false },
+        spfEntries: [{ type: 'all', qualifier: '-', index: 1 }],
+        spfLookups: 3,
+        dmarcRaw: 'v=DMARC1; p=reject; rua=mailto:a@b.com',
+        dmarcData: { multiple: false },
+        dmarcParsed: { v: 'DMARC1', p: 'reject', rua: 'mailto:a@b.com' },
+        dmarcPolicy: 'reject',
+        dmarcRua: ['mailto:a@b.com'],
+        dmarcRuf: [],
+        dkimRecords: { records: [] },
+        bimiRecord: null,
+        mtaSts: null,
+        tlsRpt: null,
+        daneRecords: {},
+        srvRecords: {},
+        mxRecords: [],
+        segList: [],
+        icesList: [],
+        ...overrides
+    });
+    const keys = (card) => card.findings.map(f => f.key);
+
+    it('marca PermError cuando un include no publica SPF', () => {
+        const card = calculateScoreAndFindings(base({
+            spfTree: { domain: 'x.com', children: [
+                { type: 'include', target: 'roto.com', tree: { domain: 'roto.com', error: 'no_spf_record', children: [] } }
+            ] }
+        }));
+        expect(keys(card)).toContain('finding_spf_include_permerror');
+    });
+
+    it('avisa de más de 2 void lookups, pero no de 2', () => {
+        const voidChild = (n) => ({ type: 'a', target: `m${n}.com`, void: true });
+        const withVoids = (n) => calculateScoreAndFindings(base({
+            spfTree: { domain: 'x.com', children: Array.from({ length: n }, (_, i) => voidChild(i)) }
+        }));
+        expect(keys(withVoids(2))).not.toContain('finding_spf_void_lookups');
+        expect(keys(withVoids(3))).toContain('finding_spf_void_lookups');
+    });
+
+    it('detecta varios "all" y mecanismos inalcanzables tras el primero', () => {
+        const card = calculateScoreAndFindings(base({
+            spfRaw: 'v=spf1 -all include:tarde.com ~all',
+            spfEntries: [
+                { type: 'v', value: 'spf1', index: 0 },
+                { type: 'all', qualifier: '-', index: 1 },
+                { type: 'include', value: 'tarde.com', qualifier: '+', index: 2 },
+                { type: 'all', qualifier: '~', index: 3 }
+            ]
+        }));
+        expect(keys(card)).toContain('finding_spf_multiple_all');
+        expect(keys(card)).toContain('finding_spf_terms_after_all');
+    });
+
+    it('no marca términos inalcanzables cuando el "all" va el último', () => {
+        const card = calculateScoreAndFindings(base({
+            spfEntries: [
+                { type: 'v', value: 'spf1', index: 0 },
+                { type: 'include', value: 'ok.com', qualifier: '+', index: 1 },
+                { type: 'all', qualifier: '-', index: 2 }
+            ]
+        }));
+        expect(keys(card)).not.toContain('finding_spf_terms_after_all');
+        expect(keys(card)).not.toContain('finding_spf_multiple_all');
+    });
+
+    it('avisa si la política MTA-STS no cubre algún MX real', () => {
+        const card = calculateScoreAndFindings(base({
+            mxRecords: [{ host: 'mx1.nuevo.com' }],
+            mtaSts: { policy: { valid: true, parsed: { mx: ['*.viejo.net'] }, maxAge: 604800 } }
+        }));
+        expect(keys(card)).toContain('finding_mta_sts_mx_mismatch');
+    });
+
+    it('confirma la cobertura cuando la política sí lista los MX', () => {
+        const card = calculateScoreAndFindings(base({
+            mxRecords: [{ host: 'mx1.acme.com' }],
+            mtaSts: { policy: { valid: true, parsed: { mx: ['*.acme.com'] }, maxAge: 604800 } }
+        }));
+        expect(keys(card)).toContain('finding_mta_sts_mx_ok');
+        expect(keys(card)).not.toContain('finding_mta_sts_mx_mismatch');
+    });
+
+    it('no penaliza una política MTA-STS que no se pudo descargar', () => {
+        const unreachable = calculateScoreAndFindings(base({
+            mtaSts: { policy: { valid: false, validationReason: 'fetch_failed' } }
+        }));
+        const sinMtaSts = calculateScoreAndFindings(base());
+        expect(keys(unreachable)).toContain('finding_mta_sts_unreachable');
+        expect(keys(unreachable)).not.toContain('finding_mta_sts_policy_invalid');
+        expect(unreachable.score).toBe(sinMtaSts.score);
+    });
+
+    it('sigue penalizando una política descargada pero inválida', () => {
+        const card = calculateScoreAndFindings(base({
+            mtaSts: { policy: { valid: false, validationReason: 'mode_not_enforce', httpStatus: 200, mode: 'testing' } }
+        }));
+        expect(keys(card)).toContain('finding_mta_sts_policy_invalid');
+    });
+
+    it('valida los destinos TLS-RPT', () => {
+        const malo = calculateScoreAndFindings(base({ tlsRpt: { record: 'v=TLSRPTv1', rua: ['http://x.com'] } }));
+        const bueno = calculateScoreAndFindings(base({ tlsRpt: { record: 'v=TLSRPTv1', rua: ['mailto:t@x.com'] } }));
+        expect(keys(malo)).toContain('finding_tls_rpt_rua_invalid');
+        expect(keys(bueno)).not.toContain('finding_tls_rpt_rua_invalid');
+    });
+
+    it('distingue BIMI sin VMC, con VMC y declinado', () => {
+        const sinVmc = calculateScoreAndFindings(base({ bimiRecord: { record: 'v=BIMI1; l=https://x/l.svg', logo: 'https://x/l.svg', vmc: null } }));
+        const conVmc = calculateScoreAndFindings(base({ bimiRecord: { record: 'v=BIMI1; l=https://x/l.svg; a=https://x/v.pem', logo: 'https://x/l.svg', vmc: 'https://x/v.pem' } }));
+        const declinado = calculateScoreAndFindings(base({ bimiRecord: { record: 'v=BIMI1; l=', declined: true } }));
+        expect(keys(sinVmc)).toContain('finding_bimi_no_vmc');
+        expect(keys(conVmc)).toContain('finding_bimi_vmc_ok');
+        expect(keys(declinado)).toContain('finding_bimi_declined');
+        expect(declinado.score).toBeLessThan(conVmc.score);
+    });
+
+    it('penaliza una URL BIMI sin HTTPS', () => {
+        const card = calculateScoreAndFindings(base({
+            bimiRecord: { record: 'v=BIMI1; l=http://x/l.svg', logo: 'http://x/l.svg', logoInsecure: true }
+        }));
+        expect(keys(card)).toContain('finding_bimi_insecure_url');
+    });
+
+    it('no trata una clave Ed25519 de 256 bits como clave débil', () => {
+        const card = calculateScoreAndFindings(base({
+            dkimRecords: { records: [{ selector: 'ed', record: 'v=DKIM1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=' }] }
+        }));
+        expect(keys(card)).toContain('finding_dkim_ed25519');
+        expect(keys(card)).not.toContain('finding_dkim_weak_key');
+    });
+
+    it('avisa de np más débil que la política efectiva', () => {
+        const debil = calculateScoreAndFindings(base({
+            dmarcParsed: { v: 'DMARC1', p: 'reject', np: 'none', rua: 'mailto:a@b.com' }
+        }));
+        const fuerte = calculateScoreAndFindings(base({
+            dmarcParsed: { v: 'DMARC1', p: 'reject', np: 'reject', rua: 'mailto:a@b.com' }
+        }));
+        expect(keys(debil)).toContain('finding_dmarc_np_weak');
+        expect(keys(fuerte)).toContain('finding_dmarc_np_ok');
+    });
+
+    it('avisa de demasiados destinos rua', () => {
+        const card = calculateScoreAndFindings(base({
+            dmarcRua: ['mailto:a@b.com', 'mailto:c@d.com', 'mailto:e@f.com']
+        }));
+        expect(keys(card)).toContain('finding_dmarc_rua_too_many');
+    });
+
+    it('avisa de un registro SPF de más de 255 caracteres', () => {
+        const card = calculateScoreAndFindings(base({
+            spfRaw: 'v=spf1 ' + 'ip4:1.2.3.4 '.repeat(30) + '-all'
+        }));
+        expect(keys(card)).toContain('finding_spf_too_long');
     });
 });

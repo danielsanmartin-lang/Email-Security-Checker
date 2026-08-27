@@ -260,9 +260,27 @@ export async function getBIMI(domain) {
             for (const a of data.Answer) {
                 const txt = extractTxtValue(a.data);
                 if (txt.startsWith('v=BIMI1')) {
-                    const match = txt.match(/l=([^;]+)/);
-                    const logo = match ? match[1].trim() : null;
-                    return { record: txt, logo };
+                    // Parseo por etiquetas: un `l=;` VACÍO no es lo mismo que ausente
+                    // (declara explícitamente que el dominio declina participar en BIMI),
+                    // y la regex anterior no podía distinguirlos.
+                    const tags = {};
+                    for (const part of txt.split(';')) {
+                        const eq = part.indexOf('=');
+                        if (eq > 0) tags[part.substring(0, eq).trim().toLowerCase()] = part.substring(eq + 1).trim();
+                    }
+                    const logo = tags.l || null;
+                    // a= es el certificado VMC/CMC. Sin él, Gmail y Apple Mail no
+                    // muestran el logo aunque el SVG sea correcto.
+                    const vmc = tags.a || null;
+                    const isHttps = (u) => /^https:\/\//i.test(String(u || ''));
+                    return {
+                        record: txt,
+                        logo,
+                        vmc,
+                        declined: tags.l === '',
+                        logoInsecure: !!logo && !isHttps(logo),
+                        vmcInsecure: !!vmc && !isHttps(vmc)
+                    };
                 }
             }
         }
@@ -276,9 +294,42 @@ export async function getBIMI(domain) {
 // un lookup DNS. Acepta a, mx, ptr con :dominio y /IPv4-cidr y //IPv6-cidr.
 const SPF_LOOKUP_MECH = /^(a|mx|ptr)(:[^/\s]+)?(\/\d{1,2})?(\/\/\d{1,3})?$/;
 
-export async function getSPFLookupTree(domain, path = new Set(), depth = 0) {
-    // node.error es un CÓDIGO neutral de idioma ('depth_exceeded' | 'loop' | 'query_failed').
-    // node.errorDetail contiene el mensaje técnico original (si aplica).
+// Tope de mecanismos hoja (a/mx/exists) que se resuelven de verdad para detectar
+// "void lookups" (RFC 7208 §4.6.4: más de 2 consultas vacías ⇒ PermError). Cada sonda
+// es una consulta DNS extra; la caché y la deduplicación en vuelo amortizan las
+// repetidas, pero el tope evita que un SPF patológico dispare cientos de peticiones.
+const SPF_VOID_PROBE_BUDGET = 20;
+const SPF_VOID_PROBE_TYPES = new Set(['a', 'mx', 'exists']);
+
+// ¿La consulta de este mecanismo es "void"? (NXDOMAIN o cero respuestas)
+// Devuelve true | false | null (null = no se pudo determinar, no se cuenta).
+async function _probeVoidLookup(type, target) {
+    // Quita la máscara CIDR (`a:example.com/24`) antes de consultar.
+    const name = String(target).split('/')[0].replace(/\.$/, '');
+    if (!name || name === '(self)') return null;
+    const answersOf = async (qtype) => {
+        const data = await queryDNS(name, qtype);
+        if (data && data.Status === 3) return 0; // NXDOMAIN
+        return ((data && data.Answer) || []).length;
+    };
+    try {
+        if (type === 'mx') return (await answersOf('MX')) === 0;
+        // `a` resuelve A y AAAA: solo es void si NINGUNA devuelve datos.
+        // `exists:` se evalúa siempre contra A (RFC 7208 §5.7).
+        const a = await answersOf('A');
+        if (a > 0) return false;
+        if (type === 'exists') return true;
+        const aaaa = await answersOf('AAAA');
+        return aaaa === 0;
+    } catch {
+        return null;
+    }
+}
+
+export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx = { probeBudget: SPF_VOID_PROBE_BUDGET }) {
+    // node.error es un CÓDIGO neutral de idioma ('depth_exceeded' | 'loop' |
+    // 'query_failed' | 'no_spf_record'). node.errorDetail contiene el mensaje
+    // técnico original (si aplica).
     const node = { domain, lookups: 0, children: [], error: null, errorDetail: null, record: null };
     if (depth > 10) {
         node.error = 'depth_exceeded';
@@ -296,7 +347,14 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0) {
     try {
         const spfData = await getSPF(domain);
         const spf = spfData.record;
-        if (!spf) return node;
+        if (!spf) {
+            // Un include:/redirect= cuyo destino NO publica SPF es un PermError en la
+            // evaluación real (RFC 7208 §5.2): el mecanismo no puede resolverse y toda
+            // la comprobación falla. En el ápex (depth 0) significa simplemente que el
+            // dominio no tiene SPF, que ya se informa por otra vía.
+            if (depth > 0) node.error = 'no_spf_record';
+            return node;
+        }
         node.record = spf;
 
         // Primera pasada: contabiliza mecanismos hoja y recoge include/redirect.
@@ -321,9 +379,20 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0) {
             }
         }
 
+        // Sondeo de void lookups: resuelve los mecanismos hoja de este nivel para saber
+        // cuáles devuelven NXDOMAIN o cero respuestas. Se hace en paralelo y solo
+        // mientras quede presupuesto compartido con el resto del árbol.
+        const probes = node.children.filter(c => SPF_VOID_PROBE_TYPES.has(c.type) && c.target !== '(self)');
+        const budgeted = probes.slice(0, Math.max(0, ctx.probeBudget));
+        ctx.probeBudget -= budgeted.length;
+        await Promise.all(budgeted.map(async (child) => {
+            const isVoid = await _probeVoidLookup(child.type, child.target);
+            if (isVoid !== null) child.void = isVoid;
+        }));
+
         // Segunda pasada: resuelve todos los include/redirect del nivel EN PARALELO.
         const subtrees = await Promise.all(
-            nested.map(n => getSPFLookupTree(n.target, childPath, depth + 1))
+            nested.map(n => getSPFLookupTree(n.target, childPath, depth + 1, ctx))
         );
         subtrees.forEach((child, i) => {
             node.children.push({ type: nested[i].type, target: nested[i].target, tree: child });
