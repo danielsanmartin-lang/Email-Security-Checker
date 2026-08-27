@@ -152,6 +152,35 @@
         </section>
 
         <!-- Loading State -->
+        <!-- Visor de informes agregados DMARC (RUA) -->
+        <section class="rua-section" id="rua-section">
+            <div class="rua-card">
+                <button type="button" class="rua-toggle" id="rua-toggle" aria-expanded="false" aria-controls="rua-body">
+                    <svg class="rua-toggle__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    <span data-i18n="rua_title">Visor de informes DMARC (RUA)</span>
+                </button>
+                <div class="rua-body" id="rua-body" hidden>
+                    <p class="rua-desc" data-i18n="rua_desc">Suelta aquí un informe agregado DMARC para ver quién envía en nombre del dominio y si esos envíos autentican. El fichero se procesa en tu navegador: no se sube a ningún sitio.</p>
+                    <div class="rua-dropzone" id="rua-dropzone" role="button" tabindex="0"
+                        data-i18n-aria-label="rua_dropzone" aria-label="Seleccionar informe DMARC">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <span data-i18n="rua_dropzone">Arrastra el informe o haz clic para elegirlo (.xml, .xml.gz, .zip)</span>
+                    </div>
+                    <input type="file" id="rua-file" class="hidden" accept=".xml,.gz,.zip,text/xml,application/gzip,application/zip">
+                    <div class="rua-results" id="rua-results" aria-live="polite"></div>
+                </div>
+            </div>
+        </section>
+
         <section class="loading-section hidden" id="loading-section" role="status" aria-live="polite">
             <div class="loading-card">
                 <div class="loading-steps">

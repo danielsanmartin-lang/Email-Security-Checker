@@ -10,6 +10,7 @@ import { KB } from './knowledge.js';
 import { setLanguage } from './lang.js';
 import { normalizeDomain, parseDkimSelectors } from './utils.js';
 import { getSettings, saveSettings } from './settings.js';
+import { initDmarcReportPanel } from './ui/dmarcReportPanel.js';
 import { clearDnsCache } from './api.js';
 import { loadFingerprintsFromUrl } from './awarenessDetector.js';
 import { translations } from './i18n.js';
@@ -172,6 +173,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pdfBtn = document.getElementById('export-pdf-btn');
     if (pdfBtn) pdfBtn.addEventListener('click', exportToPDF);
+
+    // Visor de informes agregados DMARC (RUA): colapsado, es una herramienta aparte
+    // del análisis DNS y no todo el mundo tiene un informe a mano.
+    const ruaToggle = document.getElementById('rua-toggle');
+    const ruaBody = document.getElementById('rua-body');
+    if (ruaToggle && ruaBody) {
+        ruaToggle.addEventListener('click', () => {
+            const expanded = ruaToggle.getAttribute('aria-expanded') === 'true';
+            ruaToggle.setAttribute('aria-expanded', String(!expanded));
+            ruaBody.hidden = expanded;
+        });
+        initDmarcReportPanel();
+    }
 
     // ===== Panel de ajustes =====
     // Resolver DoH, proxy CORS (opt-in) y firmas de awareness. Todo se guarda en
