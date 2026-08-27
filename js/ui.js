@@ -35,43 +35,92 @@ document.addEventListener('click', (e) => {
     if (btn) openKbModal(btn.dataset.kbDomain);
 });
 
-// ===== Global Tooltip System =====
+// ===== Tooltips accesibles =====
+// El sistema original solo respondía al ratón: quien navega con teclado o desde un
+// móvil nunca veía la ayuda didáctica, que es media gracia de la herramienta. Ahora
+// también se muestra al enfocar (focusin), se cierra con Escape y se anuncia a los
+// lectores de pantalla vía aria-describedby.
 let _tooltipEl = null;
+const TOOLTIP_ID = 'tooltip-helper';
+let _describedTrigger = null;
+
+function hideTooltip() {
+    if (!_tooltipEl) return;
+    _tooltipEl.classList.add('hidden');
+    if (_describedTrigger) {
+        _describedTrigger.removeAttribute('aria-describedby');
+        _describedTrigger = null;
+    }
+}
+
+function showTooltip(trigger, position) {
+    const text = trigger.getAttribute('data-tooltip');
+    // Un data-tooltip vacío (atributo presente pero sin texto) tiene que OCULTAR el
+    // tooltip: si solo se retornara, quedaría visible el del elemento anterior.
+    if (!text) { hideTooltip(); return; }
+    const el = getTooltipEl();
+    el.textContent = text;
+    el.classList.remove('hidden');
+    if (_describedTrigger && _describedTrigger !== trigger) _describedTrigger.removeAttribute('aria-describedby');
+    trigger.setAttribute('aria-describedby', TOOLTIP_ID);
+    _describedTrigger = trigger;
+    if (position) {
+        placeTooltip(position.x, position.y);
+    } else {
+        // Con el foco no hay puntero: se ancla justo debajo del elemento.
+        const r = trigger.getBoundingClientRect();
+        placeTooltip(r.left, r.bottom + 4, { noFlip: true });
+    }
+}
+
+function placeTooltip(clientX, clientY, { noFlip = false } = {}) {
+    const margin = 12;
+    const rect = _tooltipEl.getBoundingClientRect();
+    let x = noFlip ? clientX : clientX + margin;
+    let y = noFlip ? clientY : clientY + margin;
+    if (x + rect.width > window.innerWidth - margin) x = Math.max(margin, window.innerWidth - rect.width - margin);
+    if (y + rect.height > window.innerHeight - margin) y = clientY - rect.height - margin;
+    _tooltipEl.style.left = `${x + window.scrollX}px`;
+    _tooltipEl.style.top = `${y + window.scrollY}px`;
+}
 
 function getTooltipEl() {
     if (!_tooltipEl) {
         _tooltipEl = document.createElement('div');
         _tooltipEl.className = 'tooltip-helper hidden';
+        _tooltipEl.id = TOOLTIP_ID;
+        _tooltipEl.setAttribute('role', 'tooltip');
         document.body.appendChild(_tooltipEl);
 
         document.addEventListener('mouseover', (e) => {
             const trigger = e.target.closest('[data-tooltip]');
-            if (!trigger) { _tooltipEl.classList.add('hidden'); return; }
-            const text = trigger.getAttribute('data-tooltip');
-            // Un data-tooltip vacío (atributo presente pero sin texto) tiene que
-            // OCULTAR el tooltip: si solo se retornara, quedaría visible el del
-            // elemento anterior mientras el puntero pasa por encima de este.
-            if (!text) { _tooltipEl.classList.add('hidden'); return; }
-            _tooltipEl.textContent = text;
-            _tooltipEl.classList.remove('hidden');
+            if (!trigger) { hideTooltip(); return; }
+            showTooltip(trigger, { x: e.clientX, y: e.clientY });
         });
 
         document.addEventListener('mousemove', (e) => {
             if (_tooltipEl.classList.contains('hidden')) return;
-            const margin = 12;
-            let x = e.clientX + margin;
-            let y = e.clientY + margin;
-            const rect = _tooltipEl.getBoundingClientRect();
-            if (x + rect.width > window.innerWidth - margin) x = e.clientX - rect.width - margin;
-            if (y + rect.height > window.innerHeight - margin) y = e.clientY - rect.height - margin;
-            _tooltipEl.style.left = `${x + window.scrollX}px`;
-            _tooltipEl.style.top  = `${y + window.scrollY}px`;
+            placeTooltip(e.clientX, e.clientY);
         });
 
         document.addEventListener('mouseout', (e) => {
-            if (!e.relatedTarget || !e.relatedTarget.closest('[data-tooltip]')) {
-                _tooltipEl.classList.add('hidden');
-            }
+            if (!e.relatedTarget || !e.relatedTarget.closest('[data-tooltip]')) hideTooltip();
+        });
+
+        // Teclado: el foco muestra el tooltip y Escape lo cierra sin salir del campo.
+        document.addEventListener('focusin', (e) => {
+            const trigger = e.target.closest('[data-tooltip]');
+            if (trigger) showTooltip(trigger, null);
+            else hideTooltip();
+        });
+        document.addEventListener('focusout', hideTooltip);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') hideTooltip();
+        });
+        // Táctil: sin hover, un toque en el disparador lo muestra.
+        document.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-tooltip]');
+            if (trigger) showTooltip(trigger, null);
         });
     }
     return _tooltipEl;

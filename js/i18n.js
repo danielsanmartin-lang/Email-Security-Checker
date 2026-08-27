@@ -55,6 +55,9 @@ export const translations = {
 
         // Score Card Findings (ES)
         score_title_panel: "Puntuación de Seguridad",
+        domain_input_label: "Dominio a analizar",
+        dkim_input_label: "Selector DKIM (opcional)",
+        results_region_label: "Resultados del análisis",
         // ===== Visor de informes DMARC (RUA) =====
         rua_title: "Visor de informes DMARC (RUA)",
         rua_desc: "Suelta aquí un informe agregado DMARC para ver quién envía en nombre del dominio y si esos envíos autentican. El fichero se procesa en tu navegador: no se sube a ningún sitio.",
@@ -614,6 +617,9 @@ export const translations = {
 
         // Score Card Findings (EN)
         score_title_panel: "Security Score",
+        domain_input_label: "Domain to analyze",
+        dkim_input_label: "DKIM selector (optional)",
+        results_region_label: "Analysis results",
         // ===== DMARC aggregate report viewer =====
         rua_title: "DMARC report viewer (RUA)",
         rua_desc: "Drop a DMARC aggregate report here to see who is sending on behalf of the domain and whether those sends authenticate. The file is processed in your browser: it is never uploaded.",

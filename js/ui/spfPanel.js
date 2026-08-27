@@ -18,7 +18,7 @@ export function renderSPFTree(tree) {
     if (tree.error) {
         if (tree.error === 'loop') {
             const tooltipText = t.spf_loop_error_tooltip || '';
-            errorSpan = html`<span class="tooltip-trigger" data-tooltip="${tooltipText}" style="color:#ef4444; margin-left: 8px; cursor: help; text-decoration: underline dotted;">[Error: ${t.spf_error_loop}]</span>`;
+            errorSpan = html`<span class="tooltip-trigger spf-tree-error" data-tooltip="${tooltipText}" tabindex="0">[Error: ${t.spf_error_loop}]</span>`;
         } else {
             const errMap = {
                 depth_exceeded: t.spf_error_depth,
@@ -26,7 +26,7 @@ export function renderSPFTree(tree) {
                 no_spf_record: t.spf_error_no_record
             };
             const errLabel = errMap[tree.error] || tree.errorDetail || tree.error;
-            errorSpan = html`<span style="color:#ef4444; margin-left: 8px;">[Error: ${errLabel}]</span>`;
+            errorSpan = html`<span class="spf-tree-error">[Error: ${errLabel}]</span>`;
         }
     }
 
@@ -36,7 +36,7 @@ export function renderSPFTree(tree) {
             : html`<li><span class="spf-tree-type tag tag--unknown">${child.type}</span>: ${child.target}</li>`)}</ul>`
         : raw('');
 
-    return html`<ul class="spf-tree"><li><strong>${tree.domain}</strong> <span style="color:var(--text-muted)">(${tree.lookups} lookups)</span> ${errorSpan}${children}</li></ul>`;
+    return html`<ul class="spf-tree"><li><strong>${tree.domain}</strong> <span class="spf-tree-lookups">(${tree.lookups} lookups)</span> ${errorSpan}${children}</li></ul>`;
 }
 
 export function renderSpfPanel(result) {
@@ -93,8 +93,8 @@ export function renderSpfPanel(result) {
 
         const row = document.createElement('tr');
         row.innerHTML = html`
-            <td><span class="spf-prefix ${raw(prefixClass)}${raw(qualifierTooltip ? ' tooltip-trigger' : '')}" data-tooltip="${qualifierTooltip}">${prefixDisplay || ''}</span></td>
-            <td><span class="spf-type${raw(typeTooltip ? ' tooltip-trigger' : '')}" data-tooltip="${typeTooltip}">${entry.type}</span></td>
+            <td><span class="spf-prefix ${raw(prefixClass)}${raw(qualifierTooltip ? ' tooltip-trigger' : '')}" data-tooltip="${qualifierTooltip}"${raw(qualifierTooltip ? ' tabindex="0"' : '')}>${prefixDisplay || ''}</span></td>
+            <td><span class="spf-type${raw(typeTooltip ? ' tooltip-trigger' : '')}" data-tooltip="${typeTooltip}"${raw(typeTooltip ? ' tabindex="0"' : '')}>${entry.type}</span></td>
             <td><span class="spf-value">${entry.value || '—'}</span></td>
             <td><span class="spf-result ${raw(resultClass)}">${resultText}</span></td>
             <td>${svcHTML}</td>`;
