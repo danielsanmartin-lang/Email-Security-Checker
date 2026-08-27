@@ -9,6 +9,11 @@ import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
 import { KB } from './knowledge.js';
 import { setLanguage } from './lang.js';
 import { normalizeDomain, parseDkimSelectors } from './utils.js';
+import { getSettings, saveSettings } from './settings.js';
+import { clearDnsCache } from './api.js';
+import { loadFingerprintsFromUrl } from './awarenessDetector.js';
+import { translations } from './i18n.js';
+import { getLanguage } from './lang.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize i18n
@@ -167,6 +172,99 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pdfBtn = document.getElementById('export-pdf-btn');
     if (pdfBtn) pdfBtn.addEventListener('click', exportToPDF);
+
+    // ===== Panel de ajustes =====
+    // Resolver DoH, proxy CORS (opt-in) y firmas de awareness. Todo se guarda en
+    // localStorage y lo lee api.js en la siguiente consulta.
+    const settingsModal = document.getElementById('settings-modal');
+    if (settingsModal) {
+        const openBtn = document.getElementById('settings-btn');
+        const closeBtn = document.getElementById('settings-close');
+        const overlay = document.getElementById('settings-overlay');
+        const form = document.getElementById('settings-form');
+        const resolverSel = document.getElementById('settings-resolver');
+        const customGroup = document.getElementById('settings-custom-group');
+        const customUrl = document.getElementById('settings-custom-url');
+        const corsProxy = document.getElementById('settings-cors-proxy');
+        const fingerprintsUrl = document.getElementById('settings-fingerprints-url');
+        const statusEl = document.getElementById('settings-status');
+        const refreshBtn = document.getElementById('settings-refresh');
+
+        const say = (key, replacements = {}) => {
+            const t = translations[getLanguage()];
+            let text = t[key] || '';
+            for (const [k, v] of Object.entries(replacements)) text = text.split(k).join(v);
+            statusEl.textContent = text;
+        };
+        const syncCustomVisibility = () => {
+            customGroup.classList.toggle('hidden', resolverSel.value !== 'custom');
+        };
+        const loadIntoForm = () => {
+            const s = getSettings();
+            resolverSel.value = s.resolver;
+            customUrl.value = s.customResolverUrl;
+            corsProxy.checked = s.allowCorsProxy;
+            fingerprintsUrl.value = s.fingerprintsUrl;
+            statusEl.textContent = '';
+            syncCustomVisibility();
+        };
+        const close = () => settingsModal.classList.add('hidden');
+
+        openBtn.addEventListener('click', () => {
+            loadIntoForm();
+            settingsModal.classList.remove('hidden');
+            resolverSel.focus();
+        });
+        closeBtn.addEventListener('click', close);
+        overlay.addEventListener('click', close);
+        resolverSel.addEventListener('change', syncCustomVisibility);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            saveSettings({
+                resolver: resolverSel.value,
+                customResolverUrl: customUrl.value.trim(),
+                allowCorsProxy: corsProxy.checked,
+                fingerprintsUrl: fingerprintsUrl.value.trim()
+            });
+            // Cambiar de resolver invalida lo cacheado: se resolvió con otro servidor.
+            clearDnsCache();
+            say('settings_saved');
+            const url = fingerprintsUrl.value.trim();
+            if (url) {
+                try {
+                    await loadFingerprintsFromUrl(url);
+                    say('settings_fingerprints_ok');
+                } catch (err) {
+                    say('settings_fingerprints_err', { '{error}': err.message });
+                }
+            }
+        });
+
+        refreshBtn.addEventListener('click', () => {
+            clearDnsCache();
+            if (state.currentDomain) {
+                say('settings_refresh_done');
+                close();
+                const selectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
+                runAnalysis(state.currentDomain, selectors.length ? selectors : null);
+            } else {
+                say('settings_refresh_empty');
+            }
+        });
+    }
+
+    // Desglose de la puntuación: colapsado por defecto (la nota se lee de un vistazo;
+    // el desglose es para cuando hay que justificarla).
+    const breakdownToggle = document.getElementById('score-breakdown-toggle');
+    const breakdownBody = document.getElementById('score-breakdown-body');
+    if (breakdownToggle && breakdownBody) {
+        breakdownToggle.addEventListener('click', () => {
+            const expanded = breakdownToggle.getAttribute('aria-expanded') === 'true';
+            breakdownToggle.setAttribute('aria-expanded', String(!expanded));
+            breakdownBody.hidden = expanded;
+        });
+    }
 
     // Analizador de cabeceras de correo (panel de Awareness) — se vincula una sola vez.
     const headerBtn = document.getElementById('awareness-header-btn');

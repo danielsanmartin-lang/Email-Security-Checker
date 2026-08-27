@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache } from './api.js';
+import { saveSettings, resetSettingsCache, DEFAULT_SETTINGS } from './settings.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
 function fetchMock(handler) {
@@ -86,6 +87,7 @@ describe('fetchMTASTSPolicyFile', () => {
     });
 
     it('usa el código HTTP real del proxy allorigins (404 → fetch_failed)', async () => {
+        saveSettings({ allowCorsProxy: true });
         global.fetch = vi.fn(async (url) => {
             if (String(url).includes('allorigins')) {
                 return { ok: true, status: 200, json: async () => ({ contents: 'Not Found', status: { http_code: 404 } }) };
@@ -96,6 +98,58 @@ describe('fetchMTASTSPolicyFile', () => {
         const r = await fetchMTASTSPolicyFile('ex.com');
         expect(r.httpStatus).toBe(404);
         expect(r.validationReason).toBe('fetch_failed');
+        saveSettings({ allowCorsProxy: DEFAULT_SETTINGS.allowCorsProxy });
+    });
+
+    it('sin el proxy activado no envía el dominio a un tercero', async () => {
+        resetSettingsCache();
+        const calls = [];
+        global.fetch = vi.fn(async (url) => {
+            calls.push(String(url));
+            throw new TypeError('Failed to fetch');
+        });
+        const r = await fetchMTASTSPolicyFile('ex.com');
+        expect(r.validationReason).toBe('fetch_failed');
+        expect(calls.some(u => u.includes('allorigins'))).toBe(false);
+    });
+});
+
+describe('resolver DoH configurable', () => {
+    beforeEach(() => { clearDnsCache(); resetSettingsCache(); });
+    afterEach(() => { vi.restoreAllMocks(); saveSettings({ ...DEFAULT_SETTINGS }); resetSettingsCache(); });
+
+    it('usa Google por defecto y cae a los demás si falla', async () => {
+        const hosts = [];
+        global.fetch = vi.fn(async (url) => {
+            hosts.push(new URL(String(url)).host);
+            if (hosts.length === 1) throw new TypeError('boom');
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        await queryDNS('ex.com', 'TXT');
+        expect(hosts[0]).toBe('dns.google');
+        expect(hosts.length).toBeGreaterThan(1);
+    });
+
+    it('respeta el resolver elegido como primario', async () => {
+        saveSettings({ resolver: 'quad9' });
+        const hosts = [];
+        global.fetch = vi.fn(async (url) => {
+            hosts.push(new URL(String(url)).host);
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        await queryDNS('ex.com', 'TXT');
+        expect(hosts[0]).toContain('quad9');
+    });
+
+    it('un resolver propio no cae a resolvers públicos (el dominio no sale de tu red)', async () => {
+        saveSettings({ resolver: 'custom', customResolverUrl: 'https://dns.interno.local/resolve' });
+        const hosts = [];
+        global.fetch = vi.fn(async (url) => {
+            hosts.push(new URL(String(url)).host);
+            throw new TypeError('boom');
+        });
+        await expect(queryDNS('ex.com', 'TXT')).rejects.toMatchObject({ code: 'network' });
+        expect(hosts).toEqual(['dns.interno.local']);
     });
 });
 

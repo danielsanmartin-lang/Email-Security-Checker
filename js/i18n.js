@@ -55,6 +55,25 @@ export const translations = {
 
         // Score Card Findings (ES)
         score_title_panel: "Puntuación de Seguridad",
+        // ===== Ajustes (v3) =====
+        settings_title: "Ajustes",
+        settings_resolver: "Resolver DNS-over-HTTPS",
+        settings_resolver_custom: "Propio (URL)",
+        settings_resolver_hint: "El dominio analizado se envía al resolver elegido. Con uno propio no se usa ningún resolver público de respaldo.",
+        settings_custom_url: "URL del resolver propio (API JSON)",
+        settings_custom_url_hint: "Debe añadirse también al connect-src del CSP en index.html, o el navegador bloqueará la consulta.",
+        settings_cors_proxy: "Permitir el proxy CORS público para MTA-STS",
+        settings_cors_proxy_hint: "Desactivado: el dominio auditado se enviaría a api.allorigins.win. Sin él, una política que el navegador no pueda descargar queda «no evaluable» y no penaliza la nota.",
+        settings_fingerprints: "URL de firmas de awareness (JSON)",
+        settings_fingerprints_hint: "Permite mantener el diccionario de detección al día sin tocar el código.",
+        settings_save: "Guardar",
+        settings_saved: "Ajustes guardados.",
+        settings_force_refresh: "Forzar refresco",
+        settings_refresh_done: "Caché DNS vaciada; repitiendo el análisis…",
+        settings_refresh_empty: "No hay ningún análisis que repetir.",
+        settings_fingerprints_ok: "Firmas cargadas correctamente.",
+        settings_fingerprints_err: "No se pudieron cargar las firmas: {error}",
+        close: "Cerrar",
         // ===== Desglose de la puntuación (v3) =====
         adv_mta_sts_unreachable: "No evaluable (sin acceso)",
         dmarc_policy_np: "Política subdominios inexistentes (np)",
@@ -572,6 +591,25 @@ export const translations = {
 
         // Score Card Findings (EN)
         score_title_panel: "Security Score",
+        // ===== Settings (v3) =====
+        settings_title: "Settings",
+        settings_resolver: "DNS-over-HTTPS resolver",
+        settings_resolver_custom: "Your own (URL)",
+        settings_resolver_hint: "The analyzed domain is sent to the chosen resolver. With your own, no public resolver is used as a fallback.",
+        settings_custom_url: "Your resolver URL (JSON API)",
+        settings_custom_url_hint: "It must also be added to the connect-src of the CSP in index.html, or the browser will block the query.",
+        settings_cors_proxy: "Allow the public CORS proxy for MTA-STS",
+        settings_cors_proxy_hint: "Off: the audited domain would be sent to api.allorigins.win. Without it, a policy the browser cannot download is left \u201cnot evaluable\u201d and does not penalize the score.",
+        settings_fingerprints: "Awareness fingerprints URL (JSON)",
+        settings_fingerprints_hint: "Lets you keep the detection dictionary up to date without touching the code.",
+        settings_save: "Save",
+        settings_saved: "Settings saved.",
+        settings_force_refresh: "Force refresh",
+        settings_refresh_done: "DNS cache cleared; re-running the analysis\u2026",
+        settings_refresh_empty: "There is no analysis to re-run.",
+        settings_fingerprints_ok: "Fingerprints loaded successfully.",
+        settings_fingerprints_err: "Could not load the fingerprints: {error}",
+        close: "Close",
         // ===== Score breakdown (v3) =====
         adv_mta_sts_unreachable: "Not evaluable (no access)",
         dmarc_policy_np: "Non-existent subdomain policy (np)",

@@ -1,4 +1,5 @@
 import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './parsers.js';
+import { getSettings, resolverChain } from './settings.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -55,10 +56,8 @@ async function _fetchDoH(url, headers) {
 }
 
 async function _resolveDNS(name, type) {
-    const providers = [
-        { label: 'Google', url: `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}` },
-        { label: 'Cloudflare', url: `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`, headers: { 'Accept': 'application/dns-json' } }
-    ];
+    // El orden (y si hay respaldo) lo decide el usuario en el panel de ajustes.
+    const providers = resolverChain(name, type);
 
     let badStatus = null;
     for (const provider of providers) {
@@ -550,6 +549,17 @@ export async function fetchMTASTSPolicyFile(domain) {
         }
         body = await res.text();
     } catch (e) {
+        // El proxy CORS público es OPT-IN: manda el dominio auditado a un tercero.
+        // Sin él, la política simplemente queda sin evaluar (no penaliza la nota).
+        if (!getSettings().allowCorsProxy) {
+            return {
+                ...base,
+                error: e.name === 'AbortError'
+                    ? 'Policy fetch timed out'
+                    : 'Direct fetch failed (CORS/Network) and the public CORS proxy is disabled in settings',
+                validationReason: 'fetch_failed'
+            };
+        }
         console.warn(`Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.`, e);
         try {
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;

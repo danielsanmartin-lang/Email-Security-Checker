@@ -8,7 +8,7 @@ import { renderReputation } from './ui/reputationPanel.js';
 import { renderAdvancedDNS } from './ui/advancedDnsPanel.js';
 import { renderAwarenessVendors, analyzeHeaders } from './ui/awarenessPanel.js';
 export { renderReputation, renderAdvancedDNS, renderAwarenessVendors, analyzeHeaders };
-import { renderScorePanel } from './ui/scorePanel.js';
+import { renderScorePanel, renderScoreBreakdown } from './ui/scorePanel.js';
 import { renderSummaryPanel } from './ui/summaryPanel.js';
 import { renderMxPanel, renderProviderPanel, renderSecurityLayersPanel } from './ui/mxPanel.js';
 import { renderSpfPanel } from './ui/spfPanel.js';
@@ -170,6 +170,15 @@ export function translateDOM() {
         }
     });
 
+    // aria-label: los lectores de pantalla anuncian este texto, así que también
+    // tiene que cambiar de idioma (antes quedaba fijo en español).
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+        const key = el.getAttribute('data-i18n-aria-label');
+        if (t[key]) {
+            el.setAttribute('aria-label', t[key]);
+        }
+    });
+
     // Update Language Selector button state (flag, text code)
     const btnFlag = document.getElementById('lang-btn-flag');
     const btnText = document.getElementById('lang-btn-text');
@@ -198,6 +207,7 @@ export function renderResults(domain, result) {
     const t = translations[lang];
 
     renderScorePanel(result);
+    renderScoreBreakdown(result);
     renderSummaryPanel(domain, result);
     renderMxPanel(domain, result);
     renderProviderPanel(result);

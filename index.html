@@ -44,6 +44,15 @@
             </div>
             
             <div class="header__actions" style="display: flex; align-items: center; gap: 16px;">
+                <!-- Ajustes -->
+                <button type="button" class="icon-btn" id="settings-btn" data-i18n-title="settings_title"
+                    data-i18n-aria-label="settings_title" title="Ajustes" aria-label="Ajustes">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
                 <!-- Language Selector -->
                 <div class="lang-selector" id="lang-selector">
                     <button class="lang-btn" id="lang-btn" aria-haspopup="true" aria-expanded="false">
@@ -414,6 +423,22 @@
                 </div>
             </div>
 
+            <!-- Desglose de la puntuación por categoría -->
+            <div class="score-breakdown" id="score-breakdown">
+                <button type="button" class="score-breakdown__toggle" id="score-breakdown-toggle"
+                    aria-expanded="false" aria-controls="score-breakdown-body">
+                    <svg class="score-breakdown__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    <span data-i18n="score_breakdown_toggle">Ver desglose</span>
+                </button>
+                <div class="score-breakdown__body" id="score-breakdown-body" hidden>
+                    <!-- Will be populated by JS -->
+                </div>
+            </div>
+
             <!-- Summary Cards -->
             <div class="summary-grid" id="summary-grid">
                 <div class="summary-card" id="summary-provider">
@@ -741,6 +766,61 @@
     </div>
 
     <!-- Add to KB Modal -->
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal__overlay" id="settings-overlay"></div>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3 class="modal__title" id="settings-title" data-i18n="settings_title">Ajustes</h3>
+                <button class="modal__close" id="settings-close" data-i18n-aria-label="close" aria-label="Cerrar">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal__body">
+                <form id="settings-form">
+                    <div class="form-group">
+                        <label for="settings-resolver" data-i18n="settings_resolver">Resolver DNS-over-HTTPS</label>
+                        <select id="settings-resolver" class="search-input-wrapper search-input">
+                            <option value="google">Google (dns.google)</option>
+                            <option value="cloudflare">Cloudflare (cloudflare-dns.com)</option>
+                            <option value="quad9">Quad9 (dns.quad9.net)</option>
+                            <option value="custom" data-i18n="settings_resolver_custom">Propio (URL)</option>
+                        </select>
+                        <p class="form-hint" data-i18n="settings_resolver_hint">El dominio analizado se envía al resolver elegido. Con uno propio no se usa ningún resolver público de respaldo.</p>
+                    </div>
+                    <div class="form-group hidden" id="settings-custom-group">
+                        <label for="settings-custom-url" data-i18n="settings_custom_url">URL del resolver propio (API JSON)</label>
+                        <input type="url" id="settings-custom-url" class="search-input-wrapper search-input"
+                            placeholder="https://dns.midominio.com/resolve">
+                        <p class="form-hint" data-i18n="settings_custom_url_hint">Debe añadirse también al connect-src del CSP en index.html, o el navegador bloqueará la consulta.</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-cors-proxy">
+                            <span data-i18n="settings_cors_proxy">Permitir el proxy CORS público para MTA-STS</span>
+                        </label>
+                        <p class="form-hint" data-i18n="settings_cors_proxy_hint">Desactivado: el dominio auditado se enviaría a api.allorigins.win. Sin él, una política que el navegador no pueda descargar queda "no evaluable" y no penaliza la nota.</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="settings-fingerprints-url" data-i18n="settings_fingerprints">URL de firmas de awareness (JSON)</label>
+                        <input type="url" id="settings-fingerprints-url" class="search-input-wrapper search-input"
+                            placeholder="https://ejemplo.com/fingerprints.json">
+                        <p class="form-hint" data-i18n="settings_fingerprints_hint">Permite mantener el diccionario de detección al día sin tocar el código.</p>
+                    </div>
+                    <p class="form-status" id="settings-status" role="status" aria-live="polite"></p>
+                    <div class="modal__actions modal__actions--split">
+                        <button type="button" class="search-btn search-btn--ghost" id="settings-refresh" data-i18n="settings_force_refresh">Forzar refresco</button>
+                        <button type="submit" class="search-btn" data-i18n="settings_save">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="add-kb-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-kb-title">
         <div class="modal__overlay" id="add-kb-overlay"></div>
         <div class="modal__content">

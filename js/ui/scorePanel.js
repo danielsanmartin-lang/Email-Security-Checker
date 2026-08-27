@@ -79,3 +79,50 @@ export function renderScorePanel(result) {
         }
     }
 }
+
+/**
+ * Desglose de la nota por categoría y por control. Es lo que convierte la
+ * puntuación en algo defendible: se ve de dónde salen los puntos, qué control ha
+ * fallado y cuál no se ha podido evaluar (que no es lo mismo que fallar).
+ */
+export function renderScoreBreakdown(result) {
+    const body = document.getElementById('score-breakdown-body');
+    if (!body) return;
+    const t = translations[getLanguage()];
+    const breakdown = result.scoreCard?.breakdown;
+    if (!breakdown || breakdown.length === 0) {
+        body.innerHTML = raw('');
+        return;
+    }
+
+    const categories = breakdown.map(cat => {
+        const pct = cat.max > 0 ? Math.round((cat.earned / cat.max) * 100) : 0;
+        const tone = pct >= 90 ? 'good' : pct >= 50 ? 'mid' : 'bad';
+        const checks = cat.checks.map(check => {
+            if (check.unevaluable) {
+                return html`<li class="score-check score-check--unevaluable">
+                    <span class="score-check__name">${t[check.labelKey] || check.id}</span>
+                    <span class="score-check__value" title="${t.score_unevaluable_hint}">${t.score_unevaluable}</span>
+                </li>`;
+            }
+            const checkPct = check.max > 0 ? Math.round((Math.max(0, check.earned) / check.max) * 100) : 0;
+            const checkTone = checkPct >= 90 ? 'good' : checkPct >= 50 ? 'mid' : 'bad';
+            return html`<li class="score-check">
+                <span class="score-check__name">${t[check.labelKey] || check.id}</span>
+                <span class="score-check__bar"><span class="score-check__fill score-check__fill--${raw(checkTone)}" style="width:${checkPct}%"></span></span>
+                <span class="score-check__value">${Math.max(0, check.earned)}/${check.max}</span>
+            </li>`;
+        });
+        return html`<div class="score-cat">
+            <div class="score-cat__head">
+                <span class="score-cat__name">${t[cat.labelKey] || cat.id}</span>
+                <span class="score-cat__value">${cat.earned}/${cat.max}</span>
+            </div>
+            <div class="score-cat__bar"><span class="score-cat__fill score-cat__fill--${raw(tone)}" style="width:${pct}%"></span></div>
+            <p class="score-cat__desc">${t[`${cat.labelKey}_desc`] || ''}</p>
+            <ul class="score-checks">${checks}</ul>
+        </div>`;
+    });
+
+    body.innerHTML = html`<div class="score-breakdown__grid">${categories}</div>`;
+}
