@@ -36,6 +36,22 @@ export default [
         }
     },
     {
+        // Service worker: se ejecuta en su propio contexto (self, caches, clients).
+        files: ['sw.js'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'script',
+            globals: {
+                ...globals.serviceworker
+            }
+        },
+        rules: {
+            'no-undef': 'error',
+            'prefer-const': 'warn',
+            'no-var': 'error'
+        }
+    },
+    {
         // Archivos de test: añadir globals de Vitest y Node.
         files: ['js/**/*.test.js'],
         languageOptions: {

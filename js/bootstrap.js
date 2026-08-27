@@ -16,6 +16,16 @@ import { loadFingerprintsFromUrl } from './awarenessDetector.js';
 import { translations } from './i18n.js';
 import { getLanguage } from './lang.js';
 
+// Service worker: solo bajo http(s). Con file:// el navegador lo rechaza, y en
+// desarrollo local sí interesa tenerlo para probar el modo sin conexión.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => {
+            console.warn('No se pudo registrar el service worker', err);
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize i18n
     translateDOM();

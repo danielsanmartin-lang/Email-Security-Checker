@@ -9,7 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
-    "lint": "eslint js --max-warnings=0",
+    "lint": "eslint js sw.js --max-warnings=0",
     "format": "prettier --write \"js/**/*.js\""
   },
   "devDependencies": {
