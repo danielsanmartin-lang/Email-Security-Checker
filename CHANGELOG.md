@@ -22,14 +22,27 @@ y [Versionado Semántico](https://semver.org/lang/es/).
 - **Falso «destino externo no autorizado» en DMARC.** El RFC 7489 §7.1 exige verificar el
   destino de `rua`/`ruf` solo cuando difiere el **dominio organizativo**; la implementación
   comparaba cadenas exactas, así que a quien manda los informes a un subdominio propio
-  (`amazon.com` → `dmarc.amazon.com`, la práctica habitual) le salía un error rojo diciendo que
-  sus informes se descartarían, más una penalización. `extractRootDomain()` se traslada de
-  `analyzer.js` a `utils.js` —es una utilidad de nombres de dominio, no lógica de análisis— y
-  se re-exporta para no romper imports.
+  (`amazon.com` → `dmarc.amazon.com`) le salía un error rojo diciendo que sus informes se
+  descartarían, más una penalización. `extractRootDomain()` se traslada de `analyzer.js` a
+  `utils.js` —es una utilidad de nombres de dominio, no lógica de análisis— y se re-exporta
+  para no romper imports.
+
+  *Alcance medido* sobre 40 dominios reales (grandes empresas de tecnología, banca y energía):
+  afectaba a **2 de los 39** que publican informes (Amazon y Atlassian). La mayoría de las
+  organizaciones grandes usa un procesador externo (Agari, Proofpoint, dmarcian, Valimail,
+  Redsift, Cisco…), que sí requiere autorización — y **24 de 25** la publican correctamente,
+  así que el error rojo solo salta ya donde debe. El caso restante, `santander.com` →
+  `gsnetcloud.com`, se comprobó a mano: el dominio de destino existe pero no publica el
+  registro, así que sus informes se descartan de verdad. Es un hallazgo legítimo.
 - **DANE dejaba de castigarse dos veces.** DANE (RFC 7672) se apoya en DNSSEC: sin la zona
   firmada no es desplegable, así que restar 7 puntos a un dominio que ya pierde 8 por no tener
   DNSSEC cobraba dos veces la misma carencia (15 de los 25 de Transporte). Pasa a «no
   evaluable» y sale del denominador; con DNSSEC activo se sigue exigiendo.
+
+  *Alcance medido* sobre la misma muestra: **34 de 40 dominios (85%)** no tienen la zona
+  firmada, así que todos perdían esos 7 puntos por algo que no podían desplegar. Al salir del
+  denominador, la nota de cualquiera de ellos sube en torno a un 7% relativo (un 60 pasa a 65,
+  un 70 a 75). Es, con diferencia, la corrección de mayor alcance de esta versión.
 
 ### Calidad
 
