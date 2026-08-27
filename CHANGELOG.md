@@ -95,7 +95,10 @@ A+. **Las notas de v3 no son comparables con las de v2.x.**
 
 ### Privacidad y accesibilidad
 - Tipografías **autoalojadas** (92 KB, subsets latin): ninguna petición a Google Fonts.
-- **CSP** declarada en `index.html` con `default-src 'self'` y `connect-src` acotado.
+- **CSP** declarada en `index.html` con `default-src 'self'`, `script-src 'self'`,
+  `base-uri 'none'` y `form-action 'none'`. `connect-src` enumera los servicios usados
+  y admite además `https:`: la política MTA-STS vive en `mta-sts.<dominio-auditado>`, un
+  host que solo se conoce en ejecución y que CSP no puede expresar con comodín.
 - Tooltips accesibles: aparecen al enfocar, se cierran con Escape y usan `role="tooltip"`
   con `aria-describedby`. Sus disparadores son enfocables.
 - Etiquetas (`sr-only`) para los campos de dominio y selector DKIM; el `aria-label` de la

@@ -108,9 +108,11 @@ confidenciales.
   Awareness; el dominio viaja como parámetro de búsqueda.
 * **Tipografías:** autoalojadas en `css/fonts/`. La app **no hace ninguna petición a
   Google Fonts**.
-* **Content-Security-Policy** declarada en `index.html`: `default-src 'self'` y un
-  `connect-src` acotado a los servicios de arriba. Si configuras un resolver propio,
-  añádelo también ahí.
+* **Content-Security-Policy** declarada en `index.html`: `default-src 'self'`,
+  `script-src 'self'`, `base-uri 'none'` y `form-action 'none'`. `connect-src` enumera
+  los servicios de arriba y además admite `https:` en general, porque la comprobación
+  de MTA-STS pide la política a `mta-sts.<dominio-auditado>`, un host que solo se
+  conoce en tiempo de ejecución y para el que CSP no tiene comodín.
 
 Son 100% locales, sin ninguna petición de red: el **análisis por cabeceras de correo** y el
 **visor de informes agregados DMARC** (el fichero RUA no se sube a ningún sitio; ni siquiera
