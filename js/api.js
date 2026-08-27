@@ -1,5 +1,6 @@
 import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './parsers.js';
 import { getSettings, resolverChain } from './settings.js';
+import { isValidDomain } from './utils.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -55,6 +56,9 @@ async function _fetchDoH(url, headers) {
     }
 }
 
+// Los valores que vienen del dominio auditado se pasan como ARGUMENTOS de console,
+// nunca interpolados en el primer parámetro: ese es la cadena de formato de la consola
+// y un dominio con un "%s" dentro descolocaría el resto del mensaje.
 async function _resolveDNS(name, type) {
     // El orden (y si hay respaldo) lo decide el usuario en el panel de ajustes.
     const providers = resolverChain(name, type);
@@ -65,11 +69,11 @@ async function _resolveDNS(name, type) {
         try {
             candidate = await _fetchDoH(provider.url, provider.headers);
         } catch (e) {
-            console.warn(`${provider.label} DoH failed for ${name} (${type})`, e);
+            console.warn('%s DoH failed for %s (%s)', provider.label, name, type, e);
             continue;
         }
         if (typeof candidate.Status === 'number' && !DNS_CONCLUSIVE_STATUSES.includes(candidate.Status)) {
-            console.warn(`${provider.label} DoH returned Status ${candidate.Status} for ${name} (${type})`);
+            console.warn('%s DoH returned Status %s for %s (%s)', provider.label, candidate.Status, name, type);
             badStatus = candidate.Status;
             continue;
         }
@@ -424,7 +428,7 @@ export async function getIPAddresses(host) {
             }
         }
     } catch (e) {
-        console.warn(`Failed to resolve IPs for ${host}`, e);
+        console.warn('Failed to resolve IPs for %s', host, e);
     }
     return [...new Set(ips)];
 }
@@ -501,12 +505,22 @@ export async function getAllTXT(domain) {
             .filter(a => a.type === 16)
             .map(a => extractTxtValue(a.data));
     } catch (e) {
-        console.warn(`Failed to get all TXT for ${domain}`, e);
+        console.warn('Failed to get all TXT for %s', domain, e);
         return [];
     }
 }
 
 export async function fetchMTASTSPolicyFile(domain) {
+    // La URL se construye con el dominio auditado, que es justo lo que hace esta
+    // comprobación. Aun así se valida AQUÍ, en el punto del fetch: la función es
+    // exportada y no debe depender de que quien la llame haya validado antes.
+    if (!isValidDomain(domain)) {
+        return {
+            url: null, httpStatus: null, fetchOk: false, body: null, parsed: null,
+            mode: null, valid: false,
+            error: 'Invalid domain', validationReason: 'invalid_domain'
+        };
+    }
     const url = `https://mta-sts.${domain}/.well-known/mta-sts.txt`;
     const base = {
         url,
@@ -560,7 +574,7 @@ export async function fetchMTASTSPolicyFile(domain) {
                 validationReason: 'fetch_failed'
             };
         }
-        console.warn(`Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.`, e);
+        console.warn('Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.', e);
         try {
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
             const controller = new AbortController();
@@ -638,7 +652,7 @@ export async function getMTASTS(domain) {
             }
         }
     } catch (e) {
-        console.warn(`Failed to get MTA-STS for ${domain}`, e);
+        console.warn('Failed to get MTA-STS for %s', domain, e);
     }
     return null;
 }
@@ -656,7 +670,7 @@ export async function getTLSRPT(domain) {
             }
         }
     } catch (e) {
-        console.warn(`Failed to get TLS-RPT for ${domain}`, e);
+        console.warn('Failed to get TLS-RPT for %s', domain, e);
     }
     return null;
 }
@@ -669,7 +683,7 @@ export async function getNS(domain) {
             .filter(a => a.type === 2)
             .map(a => a.data.replace(/\.$/, ''));
     } catch (e) {
-        console.warn(`Failed to get NS for ${domain}`, e);
+        console.warn('Failed to get NS for %s', domain, e);
         return [];
     }
 }
@@ -699,7 +713,7 @@ export async function getSRV(domain) {
                     });
             }
         } catch (e) {
-            console.warn(`Failed to query SRV for ${check.record}`, e);
+            console.warn('Failed to query SRV for %s', check.record, e);
         }
     }));
     
@@ -764,7 +778,7 @@ export async function getDANE(mxHosts) {
                     .map(a => a.data);
             }
         } catch (e) {
-            console.warn(`Failed to query DANE for _25._tcp.${mx}`, e);
+            console.warn('Failed to query DANE for _25._tcp.%s', mx, e);
         }
     }));
     return daneRecords;

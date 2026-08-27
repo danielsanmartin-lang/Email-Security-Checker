@@ -757,12 +757,20 @@ export function exportToPDF() {
         if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
     };
 
+    // El esqueleto se escribe SIN interpolar nada: el idioma y el título (que lleva el
+    // dominio auditado) se ponen después por API del DOM, donde son texto y no HTML.
+    // Así ningún dato del dominio analizado llega a document.write.
     const doc = iframe.contentWindow.document;
     doc.open();
-    doc.write(`<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><title>${fileTitle}</title>
-        <style>@page { margin: 16mm; } body { margin: 0; }</style>
-        </head><body>${reportHtml}</body></html>`);
+    doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
+        + '<style>@page { margin: 16mm; } body { margin: 0; }</style>'
+        + '</head><body></body></html>');
     doc.close();
+    doc.documentElement.lang = lang;
+    doc.title = fileTitle;
+    // reportHtml es el informe que genera esta misma app: todos los valores externos
+    // que contiene ya han pasado por escapeHtml en generateReportHTML().
+    doc.body.innerHTML = reportHtml;
 
     const printFrame = () => {
         try {

@@ -352,7 +352,7 @@ if (typeof localStorage !== 'undefined') {
             if (list === 'mx') KB.mx.unshift(...entries);
             else KB.spf.push(...entries);
         } catch (e) {
-            console.error(`Error loading custom KB (${list}) from localStorage`, e);
+            console.error('Error loading custom KB (%s) from localStorage', list, e);
         }
     }
 }

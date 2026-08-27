@@ -412,3 +412,15 @@ describe('checkDMARCExternalAuth', () => {
         expect(r).toHaveLength(0);
     });
 });
+
+describe('fetchMTASTSPolicyFile: validación del dominio en el punto del fetch', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('rechaza un dominio con formato inválido sin llegar a hacer la petición', async () => {
+        global.fetch = vi.fn();
+        const r = await fetchMTASTSPolicyFile('no es un dominio/../etc');
+        expect(r.validationReason).toBe('invalid_domain');
+        expect(r.valid).toBe(false);
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+});
