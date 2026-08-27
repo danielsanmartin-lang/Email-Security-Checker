@@ -3,6 +3,10 @@ import { identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { getLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { escapeHtml } from './parsers.js';
+import { html, raw } from './utils.js';
+
+// Icono de confirmación del botón "Exportar a Google Docs" (SVG propio, estático).
+const CHECK_ICON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
 import {
     getCategoryLabel,
     formatProviderSource,
@@ -681,7 +685,7 @@ export async function exportToGoogle() {
         });
         await navigator.clipboard.write([clipboardItem]);
 
-        btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> ${t.msg_copied}`;
+        btn.innerHTML = html`${raw(CHECK_ICON_SVG)} ${t.msg_copied}`;
 
         setTimeout(() => { btn.innerHTML = originalHTML; }, 6000);
         window.open('https://docs.new', '_blank');

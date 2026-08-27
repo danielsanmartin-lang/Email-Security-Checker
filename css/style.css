@@ -1524,3 +1524,50 @@ body {
     font-family: 'JetBrains Mono', monospace;
     margin-top: 4px;
 }
+
+/* ===== DKIM (panel) ===== */
+.dkim-record { margin-bottom: 12px; }
+.dkim-errors {
+    margin-top: 12px;
+    color: var(--accent-rose, #ef4444);
+    font-size: 13px;
+}
+
+/* ===== SPF (panel) ===== */
+.record-duplicate {
+    color: var(--accent-rose, #ef4444);
+    margin-bottom: 4px;
+    padding: 4px 8px;
+    border-left: 3px solid var(--accent-rose, #ef4444);
+    background: rgba(239, 68, 68, 0.05);
+    font-family: 'JetBrains Mono', monospace;
+}
+.spf-cell-muted { color: var(--text-muted); }
+.service-pill__cat { color: var(--text-muted); }
+.spf-service__category--btn { border: none; cursor: pointer; }
+
+/* ===== Contador de lookups SPF ===== */
+.lookups--ok { background-color: #d1fae5; color: #059669; }
+.lookups--warn { background-color: #fef08a; color: #ca8a04; }
+.lookups--over { background-color: #fecdd3; color: #e11d48; }
+
+/* ===== DMARC (panel) ===== */
+.info-block--spaced { margin-top: 12px; }
+.reporting-item__service--ok { color: var(--accent-emerald); }
+.reporting-item__service--bad { color: var(--accent-rose); }
+.reporting-item__service--unknown { color: var(--text-muted); }
+
+/* ===== Reputación / RBL ===== */
+.rbl-disclaimer {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+.rbl-badge--listed { background: rgba(239, 68, 68, 0.15); color: var(--accent-rose); }
+.rbl-badge--inconclusive { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+.rbl-badge--clean { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+
+/* ===== Awareness (analizador de cabeceras) ===== */
+.no-data--sm { font-size: 12px; margin-top: 8px; }
+.awareness-vendors-list--spaced { margin-top: 10px; }

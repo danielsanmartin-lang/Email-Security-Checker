@@ -56,6 +56,9 @@ export const translations = {
         // Score Card Findings (ES)
         score_title_panel: "Puntuación de Seguridad",
         // ===== Desglose de la puntuación (v3) =====
+        adv_mta_sts_unreachable: "No evaluable (sin acceso)",
+        dmarc_policy_np: "Política subdominios inexistentes (np)",
+        dmarc_tooltip_np: "np: qué hacer con el correo que dice venir de un subdominio que NO existe. Es el vector habitual de suplantación (DMARCbis).",
         score_breakdown_title: "Desglose de la puntuación",
         score_breakdown_toggle: "Ver desglose",
         score_cat_auth: "Autenticación",
@@ -570,6 +573,9 @@ export const translations = {
         // Score Card Findings (EN)
         score_title_panel: "Security Score",
         // ===== Score breakdown (v3) =====
+        adv_mta_sts_unreachable: "Not evaluable (no access)",
+        dmarc_policy_np: "Non-existent subdomain policy (np)",
+        dmarc_tooltip_np: "np: what to do with mail claiming to come from a subdomain that does NOT exist. It is the usual spoofing vector (DMARCbis).",
         score_breakdown_title: "Score breakdown",
         score_breakdown_toggle: "View breakdown",
         score_cat_auth: "Authentication",

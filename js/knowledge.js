@@ -1,5 +1,14 @@
-// Knowledge base for identifying email services from DNS records
+// Knowledge base for identifying email services from DNS records.
+// `version` / `updatedAt` permiten saber con qué diccionario se hizo un análisis
+// (aparece en los informes) y detectar firmas obsoletas sin leer el diff.
+// Súbelos al añadir o corregir firmas. El test de esquema (knowledge.test.js)
+// valida la forma de cada entrada y la ausencia de duplicados.
+export const KB_VERSION = '3.0.0';
+export const KB_UPDATED_AT = '2026-08-27';
+
 export const KB = {
+    version: KB_VERSION,
+    updatedAt: KB_UPDATED_AT,
     mx: [
         { pattern: 'protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
         { pattern: 'mail.protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
