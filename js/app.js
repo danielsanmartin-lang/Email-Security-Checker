@@ -85,7 +85,7 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     const mxRecords = mxS.status === 'fulfilled' ? mxS.value : [];
     const spfDerived = spfS.status === 'fulfilled'
         ? spfS.value
-        : { spfData: { record: null, records: [], multiple: false }, spfRaw: null, spfTree: null, dkimRecords: { records: [], errors: [] }, unavailable: true };
+        : { spfData: { record: null, records: [], multiple: false }, spfRaw: null, spfTree: null, dkimRecords: { records: [], errors: [], attempted: 0 }, unavailable: true };
     const { spfData, spfRaw, spfTree, dkimRecords } = spfDerived;
     const spfUnavailable = spfS.status === 'rejected';
     const dmarcData = dmarcS.status === 'fulfilled' ? dmarcS.value : { record: null, records: [], multiple: false };

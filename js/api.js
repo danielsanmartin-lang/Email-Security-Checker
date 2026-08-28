@@ -13,6 +13,9 @@ const _inflight = new Map();
 export function clearDnsCache() {
     _dnsCache.clear();
     _inflight.clear();
+    _servfailZones.clear();
+    // NO se toca el semáforo: su contador es estado de transporte, no de caché. Ponerlo a
+    // cero con peticiones vivas lo dejaría en negativo al liberarse y admitiría de más.
 }
 
 function _getCached(name, type) {
@@ -43,6 +46,75 @@ const DNS_TIMEOUT = 8000; // 8 seconds
 // resolver NO pudo responder: tratarlo como "sin registros" produciría un falso
 // diagnóstico (p. ej. "sin SPF/DMARC" en dominios con DNSSEC roto).
 const DNS_CONCLUSIVE_STATUSES = [0, 3];
+// RCODE 2 = SERVFAIL ("no he podido"), 5 = REFUSED ("no quiero"). La diferencia importa
+// para el reintento: el primero suele ser un autoritativo saturado y a la segunda
+// responde; el segundo es una negativa deliberada (política, RPZ, o una DNSBL que
+// rechaza las consultas que le llegan vía resolver público — caso habitual en checkRBL)
+// y volver a preguntar devuelve exactamente lo mismo.
+const DNS_RCODE_SERVFAIL = 2;
+
+// Un análisis completo dispara ~120 consultas DoH. Sin límite salían en picos de 40
+// simultáneas, y los servidores autoritativos frágiles (medido en worldnic.com, que
+// sirve gruporamos.com) responden SERVFAIL a una parte aleatoria de la ráfaga. El
+// resolver público reenvía ese SERVFAIL y la consulta se pierde aunque el registro
+// exista. Con un tope bajo, la misma zona responde a todo.
+const MAX_CONCURRENT_DNS = 6;
+// Espera antes del único reintento ante SERVFAIL. Corta a propósito: lo que se busca
+// es dejar pasar el pico de la ráfaga, no esperar a que se recupere un servidor caído.
+const SERVFAIL_RETRY_DELAY = 300;
+
+// Zonas en las que un reintento YA falló: se deja de reintentar el resto de sus nombres
+// durante un rato. El reintento existe para el tropiezo transitorio; contra una zona
+// caída de verdad solo suma espera. Y suma en serie: el detector de awareness sondea 17
+// selectores DKIM uno detrás de otro, así que sin este corte un dominio con el DNS roto
+// se llevaba +5 s de reloj para no averiguar nada.
+const SERVFAIL_ZONE_TTL = 30 * 1000;
+const _servfailZones = new Map();
+
+function _zoneIsKnownBroken(name) {
+    const zone = extractRootDomain(name);
+    const ts = _servfailZones.get(zone);
+    if (ts === undefined) return false;
+    if (Date.now() - ts < SERVFAIL_ZONE_TTL) return true;
+    _servfailZones.delete(zone);
+    return false;
+}
+
+// Semáforo FIFO. INVARIANTE: solo puede envolver la resolución de UNA consulta, nunca
+// nada que espere a más DNS mientras lo retiene. `getSPFLookupTree` es recursiva y hace
+// Promise.all sobre sus subárboles: si un padre retuviera un hueco mientras espera a sus
+// hijos, con la piscina llena de padres nadie avanzaría (deadlock). Hoy todos los
+// abanicos (árbol SPF, getSRV, getDANE, getIPAddresses, RBL en app.js) completan su
+// queryDNS ANTES de lanzar la siguiente tanda, así que el invariante se cumple.
+let _dnsActive = 0;
+const _dnsQueue = [];
+
+function _releaseDnsSlot() {
+    _dnsActive--;
+    const next = _dnsQueue.shift();
+    if (next) {
+        _dnsActive++;
+        next();
+    }
+}
+
+function _acquireDnsSlot() {
+    if (_dnsActive < MAX_CONCURRENT_DNS) {
+        _dnsActive++;
+        return Promise.resolve();
+    }
+    return new Promise(resolve => _dnsQueue.push(resolve));
+}
+
+/** Ejecuta `fn` ocupando un hueco de la piscina. Ver el invariante de arriba. */
+async function _withDnsSlot(fn) {
+    await _acquireDnsSlot();
+    try {
+        return await fn();
+    } finally {
+        _releaseDnsSlot();
+    }
+}
 
 async function _fetchDoH(url, headers) {
     const controller = new AbortController();
@@ -64,6 +136,7 @@ async function _resolveDNS(name, type) {
     const providers = resolverChain(name, type);
 
     let badStatus = null;
+    let sawServfail = false;
     for (const provider of providers) {
         let candidate;
         try {
@@ -75,6 +148,7 @@ async function _resolveDNS(name, type) {
         if (typeof candidate.Status === 'number' && !DNS_CONCLUSIVE_STATUSES.includes(candidate.Status)) {
             console.warn('%s DoH returned Status %s for %s (%s)', provider.label, candidate.Status, name, type);
             badStatus = candidate.Status;
+            if (candidate.Status === DNS_RCODE_SERVFAIL) sawServfail = true;
             continue;
         }
         // Respuesta concluyente: cachear y devolver. Las respuestas de error no
@@ -86,6 +160,9 @@ async function _resolveDNS(name, type) {
     if (badStatus !== null) {
         const e = new Error(`DNS resolvers could not resolve ${name} (${type}): RCODE ${badStatus}`);
         e.code = 'servfail';
+        e.rcode = badStatus;
+        // Solo un SERVFAIL de verdad justifica reintentar (ver DNS_RCODE_SERVFAIL).
+        e.retryable = sawServfail;
         throw e;
     }
     const e = new Error(`DNS queries failed for ${name} (${type})`);
@@ -93,8 +170,41 @@ async function _resolveDNS(name, type) {
     throw e;
 }
 
+/**
+ * Resuelve una consulta ocupando un hueco de la piscina, con UN reintento ante SERVFAIL.
+ *
+ * Solo se reintenta el `servfail`: significa que un resolver SÍ contestó, pero que la zona
+ * no pudo servir la respuesta — casi siempre porque el autoritativo se atragantó con la
+ * ráfaga, y en la siguiente pasada responde. Un `network` es un fallo de conectividad de
+ * este navegador; reintentarlo al instante solo añade latencia al mismo error.
+ *
+ * El reintento vuelve a la COLA en vez de retener su hueco durante la espera: retenerlo
+ * desperdiciaría capacidad justo cuando la piscina está saturada, que es exactamente
+ * cuando aparecen estos SERVFAIL.
+ */
+async function _resolveWithRetry(name, type) {
+    try {
+        return await _withDnsSlot(() => _resolveDNS(name, type));
+    } catch (e) {
+        // Con resolver propio no se reintenta: quien lo configura lo hace para que el
+        // dominio auditado no salga de su infraestructura, no para doblarle el tráfico.
+        if (e.code !== 'servfail' || !e.retryable || getSettings().resolver === 'custom') throw e;
+        if (_zoneIsKnownBroken(name)) throw e;
+        await new Promise(r => setTimeout(r, SERVFAIL_RETRY_DELAY));
+        try {
+            return await _withDnsSlot(() => _resolveDNS(name, type));
+        } catch (e2) {
+            // Falló dos veces con espera de por medio: la zona no está tropezando, está
+            // caída. Se anota para que el resto de nombres se rindan a la primera.
+            if (e2.code === 'servfail') _servfailZones.set(extractRootDomain(name), Date.now());
+            throw e2;
+        }
+    }
+}
+
 export async function queryDNS(name, type) {
-    // Check cache first
+    // Check cache first. Los aciertos de caché y de deduplicación salen ANTES del
+    // semáforo: no cuestan red, así que encolarlos solo añadiría latencia.
     const cached = _getCached(name, type);
     if (cached) return cached;
 
@@ -103,7 +213,7 @@ export async function queryDNS(name, type) {
     const pending = _inflight.get(key);
     if (pending) return pending;
 
-    const promise = _resolveDNS(name, type).finally(() => _inflight.delete(key));
+    const promise = _resolveWithRetry(name, type).finally(() => _inflight.delete(key));
     _inflight.set(key, promise);
     return promise;
 }
@@ -249,11 +359,17 @@ export async function getDKIM(domain, customSelector = null, spfRaw = null, ices
                 }
             }
         } catch(e) {
-            errors.push({ selector, error: e.message });
+            // `code` distingue "la zona del dominio auditado no responde" (servfail) de
+            // "falló la conectividad de este navegador" (network). La UI dice cosas muy
+            // distintas en cada caso: lo primero es un dato sobre el dominio, lo segundo
+            // un problema nuestro.
+            errors.push({ selector, error: e.message, code: e.code || 'network' });
         }
     });
     await Promise.allSettled(promises);
-    return { records: results, errors };
+    // `attempted` permite decir "N de M sin comprobar": sin el total, un "9 selectores
+    // fallaron" no dice si el sondeo fue casi completo o casi inútil.
+    return { records: results, errors, attempted: selectors.length };
 }
 
 export async function getBIMI(domain) {

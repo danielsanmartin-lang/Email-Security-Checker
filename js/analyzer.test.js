@@ -299,6 +299,30 @@ describe('calculateScoreAndFindings', () => {
         expect(f.status).toBe('info');
     });
 
+    it('una zona que devuelve SERVFAIL se reporta como hallazgo, sin tocar la nota', () => {
+        // Que los NS autoritativos de un dominio fallen bajo carga es un dato sobre ESE
+        // dominio (afecta a su entregabilidad), no un fallo de la herramienta. Pero no se
+        // puntúa: la muestra depende de nuestra propia ráfaga de consultas.
+        const limpio = calculateScoreAndFindings(baseResult({ dkimRecords: { records: [], errors: [] } }));
+        const roto = calculateScoreAndFindings(baseResult({
+            dkimRecords: { records: [], errors: [{ selector: 's1', code: 'servfail' }, { selector: 's2', code: 'servfail' }], attempted: 9 }
+        }));
+        expect(roto.findings.some(f => f.key === 'finding_dns_zone_servfail')).toBe(true);
+        expect(limpio.findings.some(f => f.key === 'finding_dns_zone_servfail')).toBe(false);
+        expect(roto.score).toBe(limpio.score);
+    });
+
+    it('un fallo de red nuestro NO se atribuye a la zona del dominio', () => {
+        const card = calculateScoreAndFindings(baseResult({
+            dkimRecords: { records: [], errors: [{ selector: 's1', code: 'network' }], attempted: 9 }
+        }));
+        expect(card.findings.some(f => f.key === 'finding_dns_zone_servfail')).toBe(false);
+    });
+
+    it('tolera un dkimRecords sin la clave errors (resultados anteriores)', () => {
+        expect(() => calculateScoreAndFindings(baseResult({ dkimRecords: { records: [] } }))).not.toThrow();
+    });
+
     it('detecta clave DKIM débil (<1024 bits)', () => {
         const RSA_512 = 'MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAKyJEaa3SfJ/U3LSG8oJ6tikdzKzRrAinSnmqCrJVlbz75GKqVc1Ck6Qq2sOS6bf93KA8BQSz/nKOegAPr2BTAsCAwEAAQ==';
         const card = calculateScoreAndFindings(baseResult({

@@ -3,6 +3,81 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.1.0] - 2026-08-28
+
+Esta versión parte de una auditoría real de `gruporamos.com` y de una constatación sobre
+cómo se usa la herramienta: se audita el dominio de un TERCERO, antes de hablar con él.
+Nunca se va a tener acceso privilegiado a ese dominio ni un correo suyo.
+
+### Añadido
+
+- **Límite de concurrencia en la capa DNS (6 consultas simultáneas).** Un análisis dispara
+  ~116 consultas DoH y salían en picos de **42 a la vez**. Los servidores autoritativos
+  pequeños responden SERVFAIL a una parte *aleatoria* de esa ráfaga, y el resolver público
+  lo reenvía: la consulta se perdía aunque el registro existiera. Medido en
+  `gruporamos.com` (`ns33/ns34.worldnic.com`), donde el subconjunto que fallaba cambiaba en
+  cada pasada. Contra la intuición, **el análisis salió más rápido**: la ventana de
+  consultas DoH baja de **3095 ms a 782 ms**, porque cada SERVFAIL costaba antes una cadena
+  completa de tres resolvers. `google.com` mantiene su nota (81) y su número de consultas.
+- **Un reintento ante SERVFAIL**, con 300 ms de espera. Solo ante SERVFAIL (RCODE 2), que
+  es un "no he podido" transitorio. **REFUSED (RCODE 5) no se reintenta**: es una negativa
+  deliberada — política, RPZ, o una DNSBL que rechaza las consultas que le llegan vía
+  resolver público, caso habitual en `checkRBL` — y volver a preguntar da lo mismo.
+  Tampoco se reintenta un fallo de red (el problema es local) ni con resolver propio.
+- **Corte por zona ya demostrada caída.** Si el reintento de una zona también falla, el
+  resto de sus nombres se rinde a la primera durante 30 s. Sin esto, un dominio con el DNS
+  roto se llevaba **+5,1 s** de reloj: el detector de awareness sondea 17 selectores DKIM
+  *en serie* y cada uno pagaba su espera.
+- **Estado del sondeo en el detector de awareness** (`dnsIncomplete`, `dnsFailedQueries`),
+  con aviso en el panel y en el informe exportado.
+
+### Corregido
+
+- **El selector DKIM se veía con su ajuste apagado.** `applyToolVisibility()` ponía
+  `el.hidden = true` correctamente, pero el atributo `hidden` solo trae un `display:none`
+  de la hoja del navegador y `.dkim-toggle-container { display: flex }` lo pisaba (misma
+  especificidad, más abajo en el fichero). Se añade `[hidden] { display: none !important }`.
+  Solo afectaba a esta herramienta: `rua-section` y `awareness-header-tool` no declaran
+  `display`. El test que ya existía no lo detectó porque jsdom no aplica la hoja de
+  estilos: comprobaba `el.hidden === true`, que siempre fue cierto.
+- **Un SERVFAIL en el detector de awareness era un falso negativo silencioso.** `_doh()`
+  capturaba el error y devolvía `{ Answer: [] }`, indistinguible de "consultado y no hay
+  nada": un dominio con el DNS caído salía como "no usa ninguna plataforma de awareness".
+  Preparando una visita comercial, ese falso negativo se toma por una respuesta.
+- **El panel pedía algo imposible en una auditoría de terceros.** Decía *"Para confirmarlo
+  hace falta una cabecera de un correo de simulación recibido"* y *"Pega las cabeceras de
+  un correo de simulación abajo"*. Nunca se va a tener un correo de simulación de un
+  tercero. Peor: el segundo mensaje se emitía **incondicionalmente**, también con el
+  analizador de cabeceras apagado (lo está por defecto, así que señalaba a un panel
+  invisible) y **también en el PDF exportado**, donde no existe ningún "abajo". Ahora el
+  texto enuncia el techo real del DNS —de Microsoft AST no puede deducirse *ni su presencia
+  ni su ausencia*— y la mención al analizador solo aparece si esa herramienta está activada;
+  en el PDF, nunca.
+- **El badge de awareness se contradecía a sí mismo:** rotulaba "Sin evidencia DNS" mientras
+  listaba señales indirectas justo debajo. Pasa a cuatro estados reales (detectados /
+  señales indirectas / sondeo incompleto / sin evidencia) y deja de llevar los idiomas
+  incrustados en el renderizador.
+
+### Cambiado
+
+- **El mensaje de selectores DKIM sin comprobar.** Era *"Errores de red en selectores:
+  smg2, mail, mimecast20190707, …"* — una lista de nombres crudos, en rojo de error, que no
+  decía ni qué había pasado ni qué hacer, y que describía un "no evaluable" como si fuera un
+  fallo del dominio. Ahora se enuncia agregado ("N de M sin comprobar"), distingue la causa
+  (**SERVFAIL de la zona auditada** vs. **fallo de red nuestro**), va en ámbar y los nombres
+  quedan en un desplegable.
+- **El SERVFAIL de la zona pasa a ser un hallazgo del informe.** Que los NS autoritativos de
+  un dominio fallen bajo carga afecta a su entregabilidad y a cualquier comprobación
+  automática que le haga un tercero: es un dato sobre ese dominio, no ruido de la
+  herramienta. **No toca la nota** — la muestra depende de nuestra propia ráfaga de
+  consultas, así que penalizar por ella no sería defendible.
+
+### Notas
+
+- Tests: 308 → **326**. Entre ellos, dos de regresión de *deadlock* del semáforo
+  (recursión del árbol SPF y sondas void A→AAAA encadenadas), verificados rompiendo el
+  invariante a propósito: sin el arreglo se cuelgan y saltan por timeout. Cobertura 89,1 %.
+
 ## [3.0.1] - 2026-08-28
 
 ### Corregido

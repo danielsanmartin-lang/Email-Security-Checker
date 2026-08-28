@@ -596,3 +596,29 @@ describe('techo de las sospechas sin evidencia directa', () => {
         expect(result.indirectSignals.every(v => !v.productConfirmed)).toBe(true);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Sondeo incompleto: un fallo de DNS no puede pasar por "no usa nada"
+// ---------------------------------------------------------------------------
+describe('estado del sondeo DNS', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('un sondeo limpio no se marca como incompleto', async () => {
+        global.fetch = buildFetchMock(DNS_FIXTURES);
+        const result = await detectAwarenessVendors('knowbe4domain.com');
+        expect(result.dnsIncomplete).toBe(false);
+        expect(result.dnsFailedQueries).toBe(0);
+    });
+
+    it('con la zona devolviendo SERVFAIL, el resultado se marca incompleto', async () => {
+        // Antes, _doh() se tragaba el error y devolvía { Answer: [] }: un fallo de DNS era
+        // indistinguible de "consultado y no hay nada", así que un dominio con el DNS caído
+        // salía como "no usa ninguna plataforma de awareness". En preventa ese falso
+        // negativo se toma por una respuesta.
+        global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ Status: 2 }) }));
+        const result = await detectAwarenessVendors('zonarota.com');
+        expect(result.dnsIncomplete).toBe(true);
+        expect(result.dnsFailedQueries).toBeGreaterThan(0);
+        expect(result.detectedVendors).toHaveLength(0);
+    });
+});

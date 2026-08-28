@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderAwarenessVendors, analyzeHeaders } from './awarenessPanel.js';
 import { translations } from '../i18n.js';
+import { saveSettings, resetSettingsCache, DEFAULT_SETTINGS } from '../settings.js';
 
 const t = translations.es;
 
@@ -19,6 +20,8 @@ const vendor = (over = {}) => ({
 describe('panel de awareness', () => {
     beforeEach(() => {
         localStorage.setItem('lang', 'es');
+        resetSettingsCache();
+        saveSettings({ ...DEFAULT_SETTINGS });
         document.body.innerHTML = `
             <span id="awareness-badge"></span>
             <div id="awareness-body"></div>
@@ -61,9 +64,43 @@ describe('panel de awareness', () => {
         expect(indirect).toBeTruthy();
         expect(indirect.textContent).toContain('Proofpoint');
         expect(indirect.textContent).toContain('no concluyentes');
-        // No hay tarjeta de detección ni recuento en el badge.
+        // No hay tarjeta de detección...
         expect(body.querySelectorAll('.awareness-vendor-card')).toHaveLength(0);
-        expect(document.getElementById('awareness-badge').textContent).toContain('Sin evidencia');
+        // ...pero el badge tampoco puede decir "Sin evidencia DNS" mientras lista una
+        // señal indirecta justo debajo: se contradecía a sí mismo.
+        const badge = document.getElementById('awareness-badge').textContent;
+        expect(badge).toContain('1');
+        expect(badge).toContain('indirectas');
+        expect(badge).not.toContain('Sin evidencia');
+    });
+
+    it('NO pide cabeceras de una simulación: se auditan dominios de terceros', () => {
+        // Nunca se va a disponer de un correo de simulación de un tercero, así que pedirlo
+        // era un callejón sin salida — y encima señalaba a un panel oculto por defecto.
+        renderAwarenessVendors({ domain: 'acme.test', detectedVendors: [], indirectSignals: [] }, 'es', t);
+        const texto = document.getElementById('awareness-body').textContent;
+        expect(texto).toContain('no deja ninguna huella en DNS');
+        expect(texto).not.toContain('Pega las cabeceras');
+        expect(texto).not.toContain('analizador de cabeceras');
+    });
+
+    it('menciona el analizador de cabeceras solo si la herramienta está activada', () => {
+        saveSettings({ showHeaderAnalyzer: true });
+        renderAwarenessVendors({ domain: 'acme.test', detectedVendors: [], indirectSignals: [] }, 'es', t);
+        expect(document.getElementById('awareness-body').textContent).toContain('analizador de cabeceras');
+    });
+
+    it('un sondeo incompleto no se presenta como "no se detectó nada"', () => {
+        // El error caro en preventa: dar por hecho que un dominio no usa nada cuando en
+        // realidad parte de las consultas DNS no llegaron a resolverse.
+        renderAwarenessVendors({
+            domain: 'acme.test', detectedVendors: [], indirectSignals: [],
+            dnsIncomplete: true, dnsFailedQueries: 7
+        }, 'es', t);
+        const texto = document.getElementById('awareness-body').textContent;
+        expect(texto).toContain('7 consultas DNS');
+        expect(texto).toContain('no es concluyente');
+        expect(document.getElementById('awareness-badge').textContent).toContain('Sondeo incompleto');
     });
 
     it('avisa del PermError de SPF, que puede ocultar señales', () => {

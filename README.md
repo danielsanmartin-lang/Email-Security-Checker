@@ -158,14 +158,15 @@ npm run lint       # ESLint sobre js/ (recommended, --max-warnings=0)
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**258 tests**, cobertura ~88 %) cubre el módulo de Awareness (fixtures DNS
+La suite (**326 tests**, cobertura ~89 %) cubre el módulo de Awareness (fixtures DNS
 mockeados), el análisis por cabeceras (`headerAnalyzer`), los parsers y validadores
 (`parseSPF` con índices, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`,
 `analyzeDKIMRecord` con RSA y Ed25519, `validateTlsRptRua`, `checkMtaStsMxCoverage`),
 el analizador (`extractRootDomain`, `collectSpfTreeIssues`, `calculateScoreAndFindings`,
 el modelo de **categorías ponderadas** y todos los findings), la **capa DNS** (`queryDNS`
 con resolver configurable y validación de `Status`, caché TTL, dedup en vuelo,
-`getSPFLookupTree` con CIDR, bucles, PermError y void lookups, `fetchMTASTSPolicyFile`,
+**límite de concurrencia** —con dos tests de regresión de *deadlock*— y **reintento ante
+SERVFAIL**, `getSPFLookupTree` con CIDR, bucles, PermError y void lookups, `fetchMTASTSPolicyFile`,
 `checkRBL`, `getDNSSEC`, `checkDMARCExternalAuth`), el **visor de informes RUA**
 (parseo, agregación, `.gz`, `.zip` y ficheros corruptos), el **esquema de la base de
 conocimiento** (patrones válidos, sin duplicados) y las utilidades (`normalizeDomain`
@@ -194,7 +195,16 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 > El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
 
-### v3.0.0 — Motor de análisis, puntuación por categorías, visor RUA, privacidad y PWA (Actual)
+### v3.1.0 — DNS resiliente y auditoría de dominios de terceros (Actual)
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la capa DNS deja de
+perder consultas por su propia ráfaga (tope de 6 simultáneas y reintento ante SERVFAIL —
+que además salió **más rápido**: 3095 ms → 782 ms en un dominio con el DNS frágil), un
+fallo de DNS deja de disfrazarse de "este dominio no usa nada", y el panel de Awareness
+enuncia el techo real del DNS en vez de pedir una muestra de correo que, auditando a un
+tercero, no se va a tener nunca.
+
+### v3.0.0 — Motor de análisis, puntuación por categorías, visor RUA, privacidad y PWA
 
 Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: nuevas comprobaciones que
 antes pasaban en silencio (PermError de SPF, cobertura MTA-STS↔MX, VMC de BIMI, Ed25519,

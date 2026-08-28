@@ -109,6 +109,17 @@ describe('flujo completo (jsdom + DoH simulado)', () => {
         expect(document.getElementById('awareness-header-tool').hidden).toBe(true);
     });
 
+    it('la hoja de estilos honra el atributo hidden', () => {
+        // jsdom no aplica style.css, así que el assert de arriba solo comprueba el
+        // estado en JS. En el navegador el atributo `hidden` solo trae un
+        // `display:none` de la hoja del navegador, y reglas propias como
+        // `.dkim-toggle-container{display:flex}` (misma especificidad, más abajo en el
+        // fichero) lo pisaban: el selector DKIM se veía con su ajuste apagado. El
+        // `!important` es lo que rompe ese empate, de ahí que se exija aquí.
+        const css = readFileSync(join(HERE, '..', 'css', 'style.css'), 'utf8');
+        expect(css).toMatch(/\[hidden\]\s*\{[^}]*display:\s*none\s*!important/);
+    });
+
     it('un análisis completo funciona con las tres herramientas ocultas', async () => {
         await runFlow('acme.test');
         expect(visible('results-section')).toBe(true);

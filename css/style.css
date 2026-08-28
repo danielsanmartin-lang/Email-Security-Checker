@@ -709,6 +709,10 @@ body {
 
 /* ===== Utility ===== */
 .hidden { display: none !important; }
+/* El atributo `hidden` solo trae `display:none` de la hoja del navegador, así que
+   cualquier regla propia con `display` (p. ej. `.dkim-toggle-container{display:flex}`)
+   lo pisaba y la herramienta seguía viéndose con su ajuste apagado. */
+[hidden] { display: none !important; }
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
@@ -1569,11 +1573,17 @@ body {
 
 /* ===== DKIM (panel) ===== */
 .dkim-record { margin-bottom: 12px; }
+/* Selectores sin comprobar: es un "no evaluable", no un fallo del dominio. Iba en rojo
+   de error, que lo leía como un hallazgo en contra del dominio auditado. */
 .dkim-errors {
     margin-top: 12px;
-    color: var(--accent-rose, #ef4444);
+    color: var(--accent-amber);
     font-size: 13px;
 }
+.dkim-errors__summary { margin: 0; }
+.dkim-errors__detail { margin-top: 6px; color: var(--text-muted); font-size: 12px; }
+.dkim-errors__detail summary { cursor: pointer; }
+.dkim-errors__selectors { font-family: var(--font-mono); word-break: break-all; }
 
 /* ===== SPF (panel) ===== */
 .record-duplicate {

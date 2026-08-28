@@ -785,11 +785,28 @@ const SCORE_CHECKS = [
     function dkim(result) {
         const records = (result.dkimRecords && result.dkimRecords.records) || [];
         const count = records.length;
+
+        // Una zona que devuelve SERVFAIL bajo la ráfaga de sondeo es un hallazgo sobre el
+        // DOMINIO, no sobre su DKIM: los resolvers de destino se topan con lo mismo, así
+        // que afecta a la entregabilidad y a cualquier comprobación automática de un
+        // tercero. Se observa aquí porque el sondeo de selectores es el abanico más ancho
+        // del análisis, pero se redacta sobre la zona. NO toca puntos: la muestra depende
+        // de nuestra propia carga, y penalizar por ella no sería defendible.
+        const dnsErrors = (result.dkimRecords && result.dkimRecords.errors) || [];
+        const servfails = dnsErrors.filter(e => e.code === 'servfail');
+        const zoneFindings = servfails.length > 0
+            ? [{ status: 'warning', key: 'finding_dns_zone_servfail', replacements: { '{n}': String(servfails.length) } }]
+            : [];
+
         // Ausencia: NO penaliza. La detección prueba selectores comunes (best-effort);
         // un selector personalizado válido no se detecta y no debe bajar la nota, así
         // que el control sale del denominador en vez de puntuar 0.
         if (count === 0) {
-            return { points: 0, findings: [{ status: 'info', key: 'finding_dkim_besteffort' }], unevaluable: true };
+            return {
+                points: 0,
+                findings: [{ status: 'info', key: 'finding_dkim_besteffort' }, ...zoneFindings],
+                unevaluable: true
+            };
         }
 
         let points = SCORE_WEIGHTS.dkim;
@@ -835,7 +852,7 @@ const SCORE_CHECKS = [
         if (testing.length > 0) {
             findings.push({ status: 'info', key: 'finding_dkim_testing', replacements: { '{selectors}': testing.map(a => a.selector).join(', ') } });
         }
-        return { points, findings };
+        return { points, findings: [...findings, ...zoneFindings] };
     },
 
     function bimi(result) {
