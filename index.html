@@ -485,15 +485,15 @@
             <!-- Desglose de la puntuación por categoría -->
             <div class="score-breakdown" id="score-breakdown">
                 <button type="button" class="score-breakdown__toggle" id="score-breakdown-toggle"
-                    aria-expanded="false" aria-controls="score-breakdown-body">
+                    aria-expanded="true" aria-controls="score-breakdown-body">
                     <svg class="score-breakdown__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
                         aria-hidden="true">
                         <polyline points="9 18 15 12 9 6" />
                     </svg>
-                    <span data-i18n="score_breakdown_toggle">Ver desglose</span>
+                    <span data-i18n="score_breakdown_hide">Ocultar desglose</span>
                 </button>
-                <div class="score-breakdown__body" id="score-breakdown-body" hidden>
+                <div class="score-breakdown__body" id="score-breakdown-body">
                     <!-- Will be populated by JS -->
                 </div>
             </div>
@@ -977,10 +977,10 @@
                 </ul>
                 <p style="margin-bottom: 16px;" data-i18n="modal_dkim_p4">Esto te permite auditar y certificar cualquier configuración DKIM de terceros o personalizada, algo esencial en auditorías de seguridad avanzadas.</p>
 
-                <h4 style="color: #ffffff; margin-bottom: 8px; font-size: 16px;" data-i18n="modal_dkim_q4">Hay dos formas súper sencillas para conseguir el dato si fuera necesario:</h4>
+                <h4 style="color: #ffffff; margin-bottom: 8px; font-size: 16px;" data-i18n="modal_dkim_q4">Cómo conseguir el dato si fuera necesario:</h4>
 
-                <p style="margin-bottom: 8px;" data-i18n="modal_dkim_p5"><strong>1. El truco del "Email de Prueba" (Súper fácil)</strong></p>
-                <p style="margin-bottom: 8px;" data-i18n="modal_dkim_p6">Si estás hablando con un cliente o prospecto y quieres auditar su DKIM exacto, solo pídele: <em>"Por favor, envíame un correo de prueba desde tu cuenta corporativa"</em>. Cuando te llegue a tu bandeja:</p>
+                <p style="margin-bottom: 8px;" data-i18n="modal_dkim_p5"><strong>El truco del Email</strong></p>
+                <p style="margin-bottom: 8px;" data-i18n="modal_dkim_p6">Si esa organización te ha enviado algún correo alguna vez —una respuesta, una convocatoria de reunión, un hilo cualquiera—, ya tienes el dato en tu bandeja:</p>
                 <ul style="margin-bottom: 16px; padding-left: 20px;">
                     <li style="margin-bottom: 4px;" data-i18n="modal_dkim_li5">Abre el correo en Outlook o Gmail.</li>
                     <li style="margin-bottom: 4px;" data-i18n="modal_dkim_li6">Dale a los tres puntitos y selecciona <em>"Ver original"</em> o <em>"Ver detalles del mensaje"</em>.</li>
@@ -988,13 +988,10 @@
                     <li data-i18n="modal_dkim_li8">Verás una línea que dice algo como <code>s=selector1</code> o <code>s=google</code>. ¡Ese valor después de la <code>s=</code> es el selector! Lo copias, lo pegas en tu herramienta y listo.</li>
                 </ul>
 
-                <p style="margin-bottom: 8px;" data-i18n="modal_dkim_p7"><strong>2. Preguntando a su departamento de TI</strong></p>
-                <p style="margin-bottom: 16px;" data-i18n="modal_dkim_p8">Cuando estás en fase de preventa o soporte con un cliente y quieres asegurar que todo está bien configurado, puedes pedirle a su contacto técnico: <em>"¿Me podrías indicar qué selectores DKIM tenéis activos para poder auditarlos en nuestro sistema?"</em>. Ellos te darán una palabra corta (ej. <code>exclaimer</code> o <code>marketing</code>) que podrás ingresar en la herramienta.</p>
 
                 <h4 style="color: #ffffff; margin-bottom: 8px; font-size: 16px;" data-i18n="modal_dkim_q5">¿Y si lo dejas en blanco?</h4>
                 <p style="margin-bottom: 8px;" data-i18n="modal_dkim_p9"><strong>¡No pasa nada!</strong> De hecho, el 90% de las veces lo vas a dejar vacío.</p>
-                <p style="margin-bottom: 8px;" data-i18n="modal_dkim_p10">Si lo dejas en blanco, la herramienta utiliza de forma invisible un "escáner automático" que prueba los selectores más comunes del mercado (como los de Microsoft 365, Google Workspace o Mailchimp).</p>
-                <p style="margin-bottom: 0;" data-i18n="modal_dkim_p11">Piensa en esta casilla como un <strong>"superpoder de emergencia"</strong>: si un cliente te dice <em>"Oye, nuestro equipo de sistemas acaba de configurar un DKIM especial con el selector 'envios2026' y no sabemos si se ha propagado bien en internet"</em>, tú vas, escribes <code>envios2026</code> y en 3 segundos tendrás la respuesta.</p>
+                <p style="margin-bottom: 0;" data-i18n="modal_dkim_p10">Si lo dejas en blanco, la herramienta utiliza de forma invisible un "escáner automático" que prueba los selectores más comunes del mercado (como los de Microsoft 365, Google Workspace o Mailchimp).</p>
             </div>
         </div>
     </div>

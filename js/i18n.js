@@ -117,6 +117,7 @@ export const translations = {
         dmarc_tooltip_np: "np: qué hacer con el correo que dice venir de un subdominio que NO existe. Es el vector habitual de suplantación (DMARCbis).",
         score_breakdown_title: "Desglose de la puntuación",
         score_breakdown_toggle: "Ver desglose",
+        score_breakdown_hide: "Ocultar desglose",
         score_cat_auth: "Autenticación",
         score_cat_transport: "Transporte",
         score_cat_hygiene: "Higiene y observabilidad",
@@ -325,21 +326,18 @@ export const translations = {
         modal_dkim_li4: "<strong>Qué vas a obtener:</strong> La herramienta irá a buscar directamente ese registro DNS específico (<code>[tu-selector]._domainkey.empresa.com</code>). Si existe, te mostrará la clave criptográfica pública estructurada en el panel de resultados.",
         modal_dkim_p4: "Esto te permite auditar y certificar cualquier configuración DKIM de terceros o personalizada, algo esencial en auditorías de seguridad avanzadas.",
         
-        modal_dkim_q4: "Hay dos formas súper sencillas para conseguir el dato si fuera necesario:",
-        modal_dkim_p5: "<strong>1. El truco del \"Email de Prueba\" (Súper fácil)</strong>",
-        modal_dkim_p6: "Si estás hablando con un cliente o prospecto y quieres auditar su DKIM exacto, solo pídele: <em>\"Por favor, envíame un correo de prueba desde tu cuenta corporativa\"</em>. Cuando te llegue a tu bandeja:",
+        modal_dkim_q4: "Cómo conseguir el dato si fuera necesario:",
+        modal_dkim_p5: "<strong>El truco del Email</strong>",
+        modal_dkim_p6: "Si esa organización te ha enviado algún correo alguna vez —una respuesta, una convocatoria de reunión, un hilo cualquiera—, ya tienes el dato en tu bandeja:",
         modal_dkim_li5: "Abre el correo en Outlook o Gmail.",
         modal_dkim_li6: "Dale a los tres puntitos y selecciona <em>\"Ver original\"</em> o <em>\"Ver detalles del mensaje\"</em>.",
         modal_dkim_li7: "Busca con <strong>Ctrl + F</strong> (o <strong>Cmd + F</strong>) la palabra <code>dkim</code>.",
         modal_dkim_li8: "Verás una línea que dice algo como <code>s=selector1</code> o <code>s=google</code>. ¡Ese valor después de la <code>s=</code> es el selector! Lo copias, lo pegas en tu herramienta y listo.",
         
-        modal_dkim_p7: "<strong>2. Preguntando a su departamento de TI</strong>",
-        modal_dkim_p8: "Cuando estás en fase de preventa o soporte con un cliente y quieres asegurar que todo está bien configurado, puedes pedirle a su contacto técnico: <em>\"¿Me podrías indicar qué selectores DKIM tenéis activos para poder auditarlos en nuestro sistema?\"</em>. Ellos te darán una palabra corta (ej. <code>exclaimer</code> o <code>marketing</code>) que podrás ingresar en la herramienta.",
         
         modal_dkim_q5: "¿Y si lo dejas en blanco?",
         modal_dkim_p9: "<strong>¡No pasa nada!</strong> De hecho, el 90% de las veces lo vas a dejar vacío.",
         modal_dkim_p10: "Si lo dejas en blanco, la herramienta utiliza de forma invisible un \"escáner automático\" que prueba los selectores más comunes del mercado (como los de Microsoft 365, Google Workspace o Mailchimp).",
-        modal_dkim_p11: "Piensa en esta casilla como un <strong>\"superpoder de emergencia\"</strong>: si un cliente te dice <em>\"Oye, nuestro equipo de sistemas acaba de configurar un DKIM especial con el selector 'envios2026' y no sabemos si se ha propagado bien en internet\"</em>, tú vas, escribes <code>envios2026</code> y en 3 segundos tendrás la respuesta.",
 
         // Footer disclaimer
         footer_text: "Email Security Checker — Consultas DNS en tiempo real vía DoH (DNS-over-HTTPS)",
@@ -700,6 +698,7 @@ export const translations = {
         dmarc_tooltip_np: "np: what to do with mail claiming to come from a subdomain that does NOT exist. It is the usual spoofing vector (DMARCbis).",
         score_breakdown_title: "Score breakdown",
         score_breakdown_toggle: "View breakdown",
+        score_breakdown_hide: "Hide breakdown",
         score_cat_auth: "Authentication",
         score_cat_transport: "Transport",
         score_cat_hygiene: "Hygiene & observability",
@@ -908,21 +907,18 @@ export const translations = {
         modal_dkim_li4: "<strong>What you will get:</strong> The tool will query that specific DNS record directly (<code>[your-selector]._domainkey.company.com</code>). If it exists, it will display the structured public cryptographic key in the results panel.",
         modal_dkim_p4: "This allows you to audit and certify any third-party or custom DKIM configuration, which is essential in advanced security audits.",
         
-        modal_dkim_q4: "There are two very simple ways to get this data if needed:",
-        modal_dkim_p5: "<strong>1. The \"Test Email\" trick (Super easy)</strong>",
-        modal_dkim_p6: "If you are speaking with a client or prospect and want to audit their exact DKIM, just ask: <em>\"Please send me a test email from your corporate account\"</em>. When it arrives in your inbox:",
+        modal_dkim_q4: "How to get this data if you need it:",
+        modal_dkim_p5: "<strong>The Email trick</strong>",
+        modal_dkim_p6: "If that organization has ever sent you an email — a reply, a meeting invite, any thread at all — you already have the data in your inbox:",
         modal_dkim_li5: "Open the email in Outlook or Gmail.",
         modal_dkim_li6: "Click the three dots and select <em>\"Show original\"</em> or <em>\"View message details\"</em>.",
         modal_dkim_li7: "Search using <strong>Ctrl + F</strong> (or <strong>Cmd + F</strong>) for the word <code>dkim</code>.",
         modal_dkim_li8: "You will see a line that says something like <code>s=selector1</code> or <code>s=google</code>. That value after <code>s=</code> is the selector! Copy it, paste it into your tool and you're set.",
         
-        modal_dkim_p7: "<strong>2. Asking their IT department</strong>",
-        modal_dkim_p8: "When you are in a pre-sales or support phase with a client and want to ensure everything is properly configured, you can ask their technical contact: <em>\"Could you tell me which DKIM selectors you have active so we can audit them in our system?\"</em>. They will give you a short word (e.g., `exclaimer` or `marketing`) that you can enter in the tool.",
         
         modal_dkim_q5: "And if you leave it blank?",
         modal_dkim_p9: "<strong>Nothing happens!</strong> In fact, 90% of the time you will leave it empty.",
         modal_dkim_p10: "If you leave it blank, the tool silently uses an \"auto scanner\" that tests the most common selectors in the market (such as Microsoft 365, Google Workspace, or Mailchimp).",
-        modal_dkim_p11: "Think of this input as an <strong>\"emergency superpower\"</strong>: if a client tells you *\"Hey, our systems team just set up a special DKIM with the selector 'envios2026' and we don't know if it propagated correctly on the internet\"*, you go, type <code>envios2026</code>, and in 3 seconds you'll have the answer.",
 
         // Footer disclaimer
         footer_text: "Email Security Checker — Real-time DNS queries via DoH (DNS-over-HTTPS)",

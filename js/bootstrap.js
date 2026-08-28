@@ -308,15 +308,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Desglose de la puntuación: colapsado por defecto (la nota se lee de un vistazo;
-    // el desglose es para cuando hay que justificarla).
+    // Desglose de la puntuación: DESPLEGADO por defecto. La nota sola no dice nada
+    // accionable; el desglose por categorías es lo que se lleva a la conversación, así
+    // que la flecha sirve para esconderlo, no para descubrirlo.
     const breakdownToggle = document.getElementById('score-breakdown-toggle');
     const breakdownBody = document.getElementById('score-breakdown-body');
     if (breakdownToggle && breakdownBody) {
+        // La etiqueta se cambia moviendo el `data-i18n`, no solo el texto: así un cambio
+        // de idioma (translateDOM) la vuelve a traducir en el estado en el que esté, en
+        // vez de restaurar la cadena del HTML original.
+        const label = breakdownToggle.querySelector('[data-i18n]');
         breakdownToggle.addEventListener('click', () => {
             const expanded = breakdownToggle.getAttribute('aria-expanded') === 'true';
             breakdownToggle.setAttribute('aria-expanded', String(!expanded));
             breakdownBody.hidden = expanded;
+            if (label) {
+                const key = expanded ? 'score_breakdown_toggle' : 'score_breakdown_hide';
+                label.setAttribute('data-i18n', key);
+                label.textContent = translations[getLanguage()][key];
+            }
         });
     }
 

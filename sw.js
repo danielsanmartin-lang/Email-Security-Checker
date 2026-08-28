@@ -9,7 +9,7 @@
  */
 // Generación de la caché, no la versión de la app: se sube cada vez que cambia el
 // app shell para que los clientes descarten lo viejo.
-const SW_VERSION = 'v3.1.0';
+const SW_VERSION = 'v3.1.1';
 const CACHE = `esc-shell-${SW_VERSION}`;
 
 // Núcleo mínimo para arrancar sin red. El resto de módulos ES se cachea sobre la
