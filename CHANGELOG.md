@@ -3,6 +3,31 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.1.1] - 2026-08-28
+
+### Cambiado
+
+- **El desglose de la puntuación viene desplegado.** La nota sola no dice nada accionable;
+  el desglose por categorías es lo que se lleva a la conversación, así que tenerlo detrás
+  de un clic lo escondía justo a quien lo necesita. La flecha ahora sirve para **ocultarlo**,
+  y la etiqueta alterna entre "Ocultar desglose" y "Ver desglose". El cambio de etiqueta se
+  hace moviendo el `data-i18n`, no solo el texto: así un cambio de idioma la retraduce en el
+  estado en el que esté en vez de restaurar la cadena del HTML.
+- **Modal del selector DKIM, reescrito para preventa.** Decía *"solo pídele: «Por favor,
+  envíame un correo de prueba desde tu cuenta corporativa»"*. A un cliente potencial no se
+  le pide un correo porque sí. Ahora parte de lo que ya se tiene: *"Si esa organización te
+  ha enviado algún correo alguna vez —una respuesta, una convocatoria de reunión, un hilo
+  cualquiera—, ya tienes el dato en tu bandeja"*. El apartado pasa a llamarse
+  **"El truco del Email"**.
+
+### Eliminado
+
+- **El "truco" de preguntar al departamento de TI** del prospecto qué selectores DKIM tiene
+  activos. Esa llamada no se va a hacer: quedaría mal.
+- **El párrafo del "superpoder de emergencia"** (el ejemplo del selector `envios2026`).
+  Describía un escenario de soporte a un cliente ya firmado, que no es el uso real de la
+  herramienta.
+
 ## [3.1.0] - 2026-08-28
 
 Esta versión parte de una auditoría real de `gruporamos.com` y de una constatación sobre
