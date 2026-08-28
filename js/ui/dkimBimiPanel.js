@@ -4,6 +4,22 @@ import { html, raw } from '../utils.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
 
+/**
+ * Texto del aviso de selectores sin comprobar. La causa dominante manda: si la zona del
+ * dominio auditado devolvió SERVFAIL, eso es un dato sobre ELLOS; si solo hubo fallos de
+ * transporte, el problema es de este navegador y lo que procede es reintentar.
+ */
+function resolveDkimErrorText(t, dkimErrors, result) {
+    const servfails = dkimErrors.filter(e => e.code === 'servfail').length;
+    const key = servfails > 0 ? t.dkim_unchecked_servfail : t.dkim_unchecked_network;
+    // `attempted` puede faltar en resultados viejos (caché del navegador, export previo):
+    // se cae al número de errores para no imprimir "N de undefined".
+    const total = (result.dkimRecords && result.dkimRecords.attempted) || dkimErrors.length;
+    return (key || '')
+        .split('{n}').join(String(dkimErrors.length))
+        .split('{total}').join(String(total));
+}
+
 export function renderDkimBimiPanel(result) {
     const lang = getLanguage();
     const t = translations[lang];
@@ -17,8 +33,19 @@ export function renderDkimBimiPanel(result) {
                 <div class="info-block__value info-block__value--mono">${dkim.record}</div>
             </div>`)}`
         : html`<p class="no-data">${t.no_dkim_records}</p>`;
+    // Los selectores sin comprobar son un "no evaluable", no un fallo del dominio: se
+    // enuncian como cuántos son sobre el total y por qué causa. Antes se listaban los
+    // nombres crudos en rojo ("Errores de red en selectores: smg2, mail, …"), que no
+    // decía ni qué había pasado ni qué hacer. Los nombres siguen ahí, plegados, para
+    // quien continúe la auditoría a mano.
     const dkimErrHtml = dkimErrors.length > 0
-        ? html`<div class="dkim-errors">${t.dkim_network_error}: ${dkimErrors.map(e => e.selector).join(', ')}</div>`
+        ? html`<div class="dkim-errors">
+            <p class="dkim-errors__summary">${resolveDkimErrorText(t, dkimErrors, result)}</p>
+            <details class="dkim-errors__detail">
+                <summary>${t.dkim_unchecked_detail}</summary>
+                <span class="dkim-errors__selectors">${dkimErrors.map(e => e.selector).join(', ')}</span>
+            </details>
+        </div>`
         : raw('');
     dkimBody.innerHTML = html`${dkimList}${dkimErrHtml}`;
 

@@ -170,6 +170,142 @@ describe('queryDNS (deduplicación en vuelo)', () => {
     });
 });
 
+describe('queryDNS (semáforo de concurrencia)', () => {
+    beforeEach(() => { clearDnsCache(); resetSettingsCache(); saveSettings({ ...DEFAULT_SETTINGS }); });
+    afterEach(() => vi.restoreAllMocks());
+
+    // Un análisis real dispara ~120 consultas en picos de 40 simultáneas, y los
+    // autoritativos frágiles responden SERVFAIL a parte de la ráfaga. El tope es la
+    // razón de ser del cambio, así que se fija aquí.
+    it('nunca supera 6 consultas en vuelo por muchas que se pidan a la vez', async () => {
+        let active = 0, max = 0;
+        global.fetch = vi.fn(async () => {
+            active++;
+            if (active > max) max = active;
+            await new Promise(r => setTimeout(r, 5));
+            active--;
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        // 40 nombres DISTINTOS: con el mismo nombre la deduplicación en vuelo los
+        // colapsaría en una sola consulta y el test no probaría nada.
+        await Promise.all(Array.from({ length: 40 }, (_, i) => queryDNS(`h${i}.example`, 'TXT')));
+        // Exactamente 6, no "como mucho 6": así el test también detecta que la piscina se
+        // aproveche entera y no se serialice de más.
+        expect(max).toBe(6);
+        expect(global.fetch).toHaveBeenCalledTimes(40);
+    });
+
+    it('un acierto de caché no pide turno: responde con la piscina saturada', async () => {
+        // Fija el ORDEN dentro de queryDNS: si la comprobación de caché se moviera detrás
+        // del semáforo, esta consulta ya resuelta se quedaría esperando detrás de las 6
+        // bloqueadas y el test moriría por timeout.
+        let abrir;
+        const puerta = new Promise(r => { abrir = r; });
+        global.fetch = vi.fn(async (url) => {
+            if (new URL(String(url)).searchParams.get('name') !== 'cacheada.example') await puerta;
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        await queryDNS('cacheada.example', 'TXT');
+        const bloqueadas = Array.from({ length: 6 }, (_, i) => queryDNS(`b${i}.example`, 'TXT'));
+        await expect(queryDNS('cacheada.example', 'TXT')).resolves.toBeTruthy();
+        abrir(); // imprescindible: si no, los 6 turnos se filtrarían al siguiente test
+        await Promise.all(bloqueadas);
+    });
+
+    it('las sondas void encadenadas (A→AAAA) tampoco bloquean la piscina', async () => {
+        // _probeVoidLookup consulta A y, si viene vacía, AAAA: DNS dependiente EN SERIE.
+        // Si el turno envolviera la sonda entera en vez de cada consulta, 6 sondas
+        // reteniendo turno y necesitando un séptimo se bloquearían entre ellas.
+        const mecanismos = Array.from({ length: 10 }, (_, i) => `a:h${i}.com`).join(' ');
+        global.fetch = fetchMock((name, type) => {
+            if (type === 'TXT' && name === 'ex.com') {
+                return { Status: 0, Answer: [{ type: 16, data: `"v=spf1 ${mecanismos} -all"` }] };
+            }
+            return { Status: 0 }; // A y AAAA vacías: todas void
+        });
+        const tree = await getSPFLookupTree('ex.com');
+        expect(tree.children.filter(c => c.void === true)).toHaveLength(10);
+    });
+
+    it('el árbol SPF recursivo no se bloquea con la piscina llena', async () => {
+        // Regresión del riesgo de deadlock: si un nodo padre retuviera su hueco mientras
+        // espera a los includes hijos, una cadena más profunda que la piscina no
+        // terminaría nunca. La cadena tiene 8 niveles y la piscina 6.
+        global.fetch = fetchMock((name, type) => {
+            if (type !== 'TXT') return { Status: 0 };
+            const m = name.match(/^n(\d+)\.example$/);
+            if (m) {
+                const i = Number(m[1]);
+                const rec = i < 8 ? `v=spf1 include:n${i + 1}.example -all` : 'v=spf1 -all';
+                return { Status: 0, Answer: [{ type: 16, data: `"${rec}"` }] };
+            }
+            return { Status: 0 };
+        });
+        // Se satura la piscina con consultas lentas en paralelo al árbol.
+        const ruido = Array.from({ length: 20 }, (_, i) => queryDNS(`ruido${i}.example`, 'A'));
+        const tree = await getSPFLookupTree('n0.example');
+        await Promise.all(ruido);
+        expect(JSON.stringify(tree)).toContain('n8.example');
+    });
+});
+
+describe('queryDNS (reintento ante SERVFAIL)', () => {
+    beforeEach(() => { clearDnsCache(); resetSettingsCache(); saveSettings({ ...DEFAULT_SETTINGS }); });
+    afterEach(() => vi.restoreAllMocks());
+
+    it('reintenta una vez y acierta si la zona se recupera', async () => {
+        // Comportamiento real medido en gruporamos.com: el SERVFAIL es transitorio y el
+        // subconjunto de consultas que falla cambia en cada pasada.
+        let vuelta = 0;
+        global.fetch = vi.fn(async () => {
+            vuelta++;
+            // Las 3 primeras (la cadena entera de resolvers) fallan; a partir de ahí, bien.
+            return { ok: true, status: 200, json: async () => vuelta <= 3 ? { Status: 2 } : { Status: 0, Answer: [] } };
+        });
+        const data = await queryDNS('flaky.example', 'TXT');
+        expect(data.Status).toBe(0);
+        expect(vuelta).toBe(4); // 3 de la primera cadena + 1 acierto en el reintento
+    });
+
+    it('un fallo de red NO se reintenta: el problema es local, no de la zona', async () => {
+        global.fetch = vi.fn(async () => { throw new TypeError('offline'); });
+        await expect(queryDNS('sinred.example', 'TXT')).rejects.toMatchObject({ code: 'network' });
+        // Una sola pasada por los tres resolvers, sin segunda ronda.
+        expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('REFUSED (RCODE 5) no se reintenta: es una negativa deliberada, no un tropiezo', async () => {
+        // Caso real en checkRBL: las DNSBL rechazan las consultas que les llegan vía
+        // resolver público. Reintentar da exactamente la misma respuesta, así que sería
+        // 300 ms de espera por comprobación a cambio de nada.
+        global.fetch = fetchMock(() => ({ Status: 5 }));
+        await expect(queryDNS('refused.example', 'TXT')).rejects.toMatchObject({ code: 'servfail', rcode: 5 });
+        expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('deja de reintentar una zona ya demostrada caída (no se paga 300 ms por nombre)', async () => {
+        // El detector de awareness sondea 17 selectores EN SERIE. Sin este corte, un
+        // dominio con el DNS roto se llevaba +5 s de reloj para no averiguar nada.
+        global.fetch = fetchMock(() => ({ Status: 2 }));
+        // Primer nombre: 3 resolvers + espera + 3 resolvers = 6, y la zona queda anotada.
+        await expect(queryDNS('a._domainkey.rota.example', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
+        expect(global.fetch).toHaveBeenCalledTimes(6);
+        // Los siguientes nombres de la MISMA zona se rinden a la primera pasada.
+        await expect(queryDNS('b._domainkey.rota.example', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
+        expect(global.fetch).toHaveBeenCalledTimes(9);
+        // Otra zona distinta conserva su reintento: el corte es por zona, no global.
+        await expect(queryDNS('c.otra.example', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
+        expect(global.fetch).toHaveBeenCalledTimes(15);
+    });
+
+    it('con resolver propio no se reintenta (no se le dobla el tráfico a tu infra)', async () => {
+        saveSettings({ resolver: 'custom', customResolverUrl: 'https://dns.interno.local/resolve' });
+        global.fetch = fetchMock(() => ({ Status: 2 }));
+        await expect(queryDNS('ex.com', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('getSPFLookupTree', () => {
     beforeEach(() => clearDnsCache());
     afterEach(() => vi.restoreAllMocks());
@@ -275,6 +411,17 @@ describe('getDKIM (TXT multi-string)', () => {
         const r = await getDKIM('ex.com', 'default');
         expect(r.records).toHaveLength(1);
         expect(r.records[0].record).toBe('v=DKIM1; k=rsa; p=AAAABBBBCCCC');
+    });
+
+    it('marca la CAUSA de cada selector sin comprobar y cuántos se intentaron', async () => {
+        // "No se pudo comprobar" no es lo mismo que "no hay DKIM ahí", y un SERVFAIL de la
+        // zona auditada no es lo mismo que quedarse sin red: la UI dice cosas distintas.
+        global.fetch = fetchMock(() => ({ Status: 2 }));
+        const r = await getDKIM('rota.example', ['s1', 's2']);
+        expect(r.attempted).toBe(2);
+        expect(r.records).toHaveLength(0);
+        expect(r.errors.map(e => e.selector).sort()).toEqual(['s1', 's2']);
+        expect(r.errors.every(e => e.code === 'servfail')).toBe(true);
     });
 });
 

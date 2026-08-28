@@ -156,6 +156,18 @@ export function generateReportHTML() {
             `;
         }
         
+        // Un sondeo incompleto condiciona todo el bloque: sin esto, el informe presentaría
+        // como "no se detectó nada" lo que en realidad fue "no se pudo comprobar".
+        if (ar.dnsIncomplete) {
+            warningsHtml += `
+                <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; color: #b45309; font-size: 12px; font-family: sans-serif; margin-bottom: 10px; text-align: left; line-height: 1.4;">
+                    <strong>⚠</strong> ${escapeHtml((t.awareness_dns_incomplete || '').split('{n}').join(String(ar.dnsFailedQueries || 0)))}
+                </div>
+            `;
+        }
+
+        // Solo la constatación del punto ciego, NUNCA la pista sobre el analizador de
+        // cabeceras: en un PDF no hay ningún "abajo" al que mandar al lector.
         warningsHtml += `
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; color: #64748b; font-size: 12px; font-family: sans-serif; margin-bottom: 10px; text-align: left; line-height: 1.4;">
                 <strong>${t.awareness_blind_spot || 'Blind spot'}:</strong> ${t.awareness_blind_spot_ms}

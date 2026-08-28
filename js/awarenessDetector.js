@@ -625,26 +625,44 @@ export const AWARENESS_FINGERPRINTS = {
 //      (caché TTL compartida + fallback Google→Cloudflare). Evita duplicar el
 //      cliente DoH y aprovecha consultas ya cacheadas por el análisis principal.
 // ---------------------------------------------------------------------------
-async function _doh(name, type) {
+/**
+ * Consulta DoH tolerante a fallos. `stats` es un colector POR EJECUCIÓN, no un contador
+ * de módulo: dos análisis solapados (el usuario cambia de dominio a mitad) compartirían
+ * estado y `app.js` ya tolera resultados obsoletos.
+ *
+ * Sin él, un fallo de DNS era indistinguible de "consultado y no hay nada": un SERVFAIL
+ * se convertía en "este dominio no usa KnowBe4". En preventa ese falso negativo es el
+ * error caro, porque se toma por una respuesta.
+ */
+async function _doh(name, type, stats = null) {
     try {
         return await queryDNS(name, type);
-    } catch {
+    } catch (e) {
+        if (stats) {
+            stats.failed++;
+            if (e.code === 'servfail') stats.servfail++;
+        }
         return { Answer: [] };
     }
 }
 
-async function _getTxt(domain) {
+/** Colector vacío para una ejecución del detector. */
+function _newDnsStats() {
+    return { failed: 0, servfail: 0 };
+}
+
+async function _getTxt(domain, stats = null) {
     try {
-        const d = await _doh(domain, 'TXT');
+        const d = await _doh(domain, 'TXT', stats);
         // extractTxtValue concatena correctamente los chunks entrecomillados que DoH
         // devuelve para TXT >255 chars (claves DKIM de 2048 bits partidas en trozos).
         return (d.Answer || []).map(a => extractTxtValue(a.data));
     } catch { return []; }
 }
 
-async function _getMxRaw(domain) {
+async function _getMxRaw(domain, stats = null) {
     try {
-        const d = await _doh(domain, 'MX');
+        const d = await _doh(domain, 'MX', stats);
         return (d.Answer || [])
             .filter(a => a.type === 15)
             .map(a => {
@@ -654,9 +672,9 @@ async function _getMxRaw(domain) {
     } catch { return []; }
 }
 
-async function _getCname(domain) {
+async function _getCname(domain, stats = null) {
     try {
-        const d = await _doh(domain, 'CNAME');
+        const d = await _doh(domain, 'CNAME', stats);
         return (d.Answer || [])
             .filter(a => a.type === 5)
             .map(a => a.data.trim().replace(/\.$/, '').toLowerCase());
@@ -666,12 +684,12 @@ async function _getCname(domain) {
 // ---------------------------------------------------------------------------
 // 4. SPF FLATTENING — RFC 7208 (límite 10 lookups)
 // ---------------------------------------------------------------------------
-export async function flattenSpf(domain, budget = { lookups: 10 }, seen = new Set()) {
+export async function flattenSpf(domain, budget = { lookups: 10 }, seen = new Set(), stats = null) {
     const out = { includes: [], ips: [], redirects: [], permError: false, domains: [] };
     if (seen.has(domain)) return out;
     seen.add(domain);
 
-    const txts = await _getTxt(domain);
+    const txts = await _getTxt(domain, stats);
     const spf = txts.find(t => t.toLowerCase().startsWith('v=spf1'));
     if (!spf) return out;
 
@@ -683,7 +701,7 @@ export async function flattenSpf(domain, budget = { lookups: 10 }, seen = new Se
             out.includes.push(target);
             out.domains.push(target);
             if (--budget.lookups < 0) { out.permError = true; break; }
-            const nested = await flattenSpf(target, budget, seen);
+            const nested = await flattenSpf(target, budget, seen, stats);
             out.includes.push(...nested.includes);
             out.ips.push(...nested.ips);
             out.domains.push(...nested.domains);
@@ -694,7 +712,7 @@ export async function flattenSpf(domain, budget = { lookups: 10 }, seen = new Se
             out.redirects.push(target);
             out.domains.push(target);
             if (--budget.lookups < 0) { out.permError = true; break; }
-            const nested = await flattenSpf(target, budget, seen);
+            const nested = await flattenSpf(target, budget, seen, stats);
             out.includes.push(...nested.includes);
             out.ips.push(...nested.ips);
             out.domains.push(...nested.domains);
@@ -867,6 +885,8 @@ const UNCONFIRMED_SCORE_CAP = 0.4;
  *   domain: string,
  *   detectedVendors: VendorResult[],
  *   spfPermError: boolean,
+ *   dnsFailedQueries: number,   // consultas DoH que no se pudieron resolver
+ *   dnsIncomplete: boolean,     // true ⇒ "no se detectó nada" NO es concluyente
  *   unresolvedSignals: string[],
  *   notes: string[],
  * }
@@ -889,12 +909,13 @@ export async function detectAwarenessVendors(domain) {
     domain = domain.trim().toLowerCase();
 
     // --- DNS ---
-    const spf = await flattenSpf(domain);
-    const mxHosts = await _getMxRaw(domain);
-    const rootTxts = await _getTxt(domain);
+    const dnsStats = _newDnsStats();
+    const spf = await flattenSpf(domain, { lookups: 10 }, new Set(), dnsStats);
+    const mxHosts = await _getMxRaw(domain, dnsStats);
+    const rootTxts = await _getTxt(domain, dnsStats);
 
     // DMARC: extraer rua/ruf por si apuntan a infra de vendor
-    const dmarcTxts = await _getTxt(`_dmarc.${domain}`);
+    const dmarcTxts = await _getTxt(`_dmarc.${domain}`, dnsStats);
     const dmarcRaw = dmarcTxts.find(t => t.toLowerCase().startsWith('v=dmarc1')) || '';
     const ruaMatch = dmarcRaw.match(/rua=([^;]+)/i);
     const rufMatch = dmarcRaw.match(/ruf=([^;]+)/i);
@@ -920,7 +941,7 @@ export async function detectAwarenessVendors(domain) {
     ];
     const cnameResults = {};
     await Promise.all(AWARENESS_SUBDOMAINS.map(async sub => {
-        const targets = await _getCname(`${sub}.${domain}`);
+        const targets = await _getCname(`${sub}.${domain}`, dnsStats);
         if (targets.length > 0) {
             cnameResults[sub] = targets;
         }
@@ -930,7 +951,7 @@ export async function detectAwarenessVendors(domain) {
     const GENERIC_AWARENESS_SELECTORS = ['s1', 's2', 'k1', 'k2', 'mail', 'default', 'phish', 'sim', 'training'];
     const genericDkimResults = {};
     await Promise.all(GENERIC_AWARENESS_SELECTORS.map(async sel => {
-        const txts = await _getTxt(`${sel}._domainkey.${domain}`);
+        const txts = await _getTxt(`${sel}._domainkey.${domain}`, dnsStats);
         if (txts.length > 0) {
             genericDkimResults[sel] = txts;
         }
@@ -1023,7 +1044,7 @@ export async function detectAwarenessVendors(domain) {
         // (el cliente podría tener una clave propia en ese nombre).
         for (const sel of (fp.dkimSelectors || [])) {
             try {
-                const txts = await _getTxt(`${sel}._domainkey.${domain}`);
+                const txts = await _getTxt(`${sel}._domainkey.${domain}`, dnsStats);
                 let signingMatch = false;
                 let hasKey = false;
                 for (const t of txts) {
@@ -1179,6 +1200,10 @@ export async function detectAwarenessVendors(domain) {
         detectedVendors,
         indirectSignals,
         spfPermError: spf.permError,
+        // Estado del SONDEO, no del dominio: si parte de las consultas no se resolvieron,
+        // "no se detectó nada" deja de ser una conclusión y pasa a ser una laguna.
+        dnsFailedQueries: dnsStats.failed,
+        dnsIncomplete: dnsStats.failed > 0,
         unresolvedSignals,
         notes: [
             'Microsoft Attack Simulation Training (Defender O365) y los allowlists por transport rule/Advanced Delivery NO dejan rastro DNS: no son detectables por este módulo.',

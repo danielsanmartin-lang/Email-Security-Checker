@@ -2,6 +2,7 @@
 // Panel del detector de plataformas de Awareness / Phishing Simulation.
 import { html, raw } from '../utils.js';
 import { detectFromHeaders } from '../headerAnalyzer.js';
+import { getSettings } from '../settings.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
 
@@ -67,23 +68,37 @@ export function renderAwarenessVendors(result, lang, t) {
     const body = document.getElementById('awareness-body');
     if (!body) return;
 
-    // Update header badge
+    // Badge. Antes solo contaba detecciones confirmadas, así que un dominio con tres
+    // señales indirectas listadas justo debajo se rotulaba "Sin evidencia DNS" y se
+    // contradecía a sí mismo. Y un sondeo que falló a medias no es lo mismo que un
+    // sondeo limpio sin resultados: en preventa, un "no usa nada" falso es el error caro.
     const badge = document.getElementById('awareness-badge');
     if (badge) {
+        const ambar = () => {
+            badge.style.background = 'rgba(245,158,11,0.15)';
+            badge.style.color = 'var(--accent-amber)';
+            badge.style.border = '1px solid rgba(245,158,11,0.3)';
+        };
+        const apagado = () => {
+            badge.style.background = 'rgba(100,116,139,0.1)';
+            badge.style.color = 'var(--text-muted)';
+            badge.style.border = '1px solid rgba(100,116,139,0.15)';
+        };
         if (!result) {
             badge.textContent = '...';
             badge.style.cssText = '';
         } else if (result.detectedVendors && result.detectedVendors.length > 0) {
-            const count = result.detectedVendors.length;
-            badge.textContent = `${count} ${count === 1 ? (lang === 'es' ? 'detectado' : 'detected') : (lang === 'es' ? 'detectados' : 'detected')}`;
-            badge.style.background = 'rgba(245,158,11,0.15)';
-            badge.style.color = 'var(--accent-amber)';
-            badge.style.border = '1px solid rgba(245,158,11,0.3)';
+            badge.textContent = `${result.detectedVendors.length} ${t.awareness_badge_detected}`;
+            ambar();
+        } else if (result.indirectSignals && result.indirectSignals.length > 0) {
+            badge.textContent = `${result.indirectSignals.length} ${t.awareness_badge_indirect}`;
+            apagado();
+        } else if (result.dnsIncomplete) {
+            badge.textContent = t.awareness_badge_incomplete;
+            apagado();
         } else {
-            badge.textContent = lang === 'es' ? 'Sin evidencia DNS' : 'No DNS evidence';
-            badge.style.background = 'rgba(100,116,139,0.1)';
-            badge.style.color = 'var(--text-muted)';
-            badge.style.border = '1px solid rgba(100,116,139,0.15)';
+            badge.textContent = t.awareness_badge_none;
+            apagado();
         }
     }
 
@@ -131,10 +146,27 @@ export function renderAwarenessVendors(result, lang, t) {
         </div>`;
     }
 
+    // --- Sondeo incompleto ---
+    // Va ANTES del punto ciego: si faltan consultas, condiciona todo lo de arriba.
+    if (result.dnsIncomplete) {
+        out += html`<div class="awareness-alert awareness-alert--warning" style="margin-top:14px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>${(t.awareness_dns_incomplete || '').split('{n}').join(String(result.dnsFailedQueries || 0))}</span>
+        </div>`;
+    }
+
     // --- Blind spot: Microsoft ---
+    // La constatación se enuncia siempre; la pista sobre el analizador de cabeceras solo
+    // si esa herramienta está activada. Esta herramienta se usa para auditar dominios de
+    // TERCEROS, donde nunca se va a tener un correo de simulación suyo: pedirlo de serie
+    // convertía el aviso en un callejón sin salida, y encima señalaba a un panel que por
+    // defecto está oculto.
+    const pistaCabeceras = getSettings().showHeaderAnalyzer
+        ? ` ${t.awareness_blind_spot_headers_hint || ''}`
+        : '';
     out += html`<div class="awareness-alert awareness-alert--blind" style="margin-top:14px;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        <span><strong>${t.awareness_blind_spot}:</strong> ${t.awareness_blind_spot_ms}</span>
+        <span><strong>${t.awareness_blind_spot}:</strong> ${t.awareness_blind_spot_ms}${pistaCabeceras}</span>
     </div>`;
 
     // --- Notes generales ---

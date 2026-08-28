@@ -1,6 +1,6 @@
 {
   "name": "email-security-checker",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Auditoría de seguridad de correo (SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, DANE, DNSSEC), detección de proveedores vía DNS-over-HTTPS y visor local de informes agregados DMARC. Front-end estático, sin backend.",
   "type": "module",
   "private": true,
