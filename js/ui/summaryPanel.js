@@ -1,7 +1,7 @@
 // ui/summaryPanel.js
 // Cabecera del resultado (dominio + hora del escaneo) y las cuatro tarjetas resumen.
 import { translations } from '../i18n.js';
-import { getLanguage } from '../lang.js';
+import { getLanguage, getLocale } from '../lang.js';
 import { displayProvider, displayDmarcPolicy } from '../viewmodel.js';
 
 export function renderSummaryPanel(domain, result) {
@@ -11,7 +11,7 @@ export function renderSummaryPanel(domain, result) {
     // Fecha real del escaneo (fijada en app.js), no la del render actual: cambiar de
     // idioma re-renderiza y no debe "mover" la hora del análisis.
     const scannedAt = result.scannedAt ? new Date(result.scannedAt) : new Date();
-    document.getElementById('result-timestamp').textContent = scannedAt.toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
+    document.getElementById('result-timestamp').textContent = scannedAt.toLocaleString(getLocale(lang));
 
     const providerDisplay = displayProvider(result, t);
     document.getElementById('summary-provider-value').textContent = providerDisplay;
