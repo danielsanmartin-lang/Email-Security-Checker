@@ -172,7 +172,8 @@ export { renderSPFTree } from './ui/spfPanel.js';
 // Banderas del selector de idioma: SVG estático y propio (sin datos externos).
 const FLAG_SVG = {
     es: '<svg viewBox="0 0 3 2" width="20" height="13.3"><rect width="3" height="2" fill="#AD1519"/><rect height="1" y="0.5" width="3" fill="#FABD00"/></svg>',
-    en: '<svg viewBox="0 0 60 30" width="20" height="10"><path fill="#012169" d="M0 0h60v30H0z"/><path fill="#FFF" d="m0 0 60 30h-7L0 3.5zM0 30 60 0h-7L0 26.5zM60 30 0 0h7l53 26.5zM60 0 0 30h7l53-26.5zM30 0h-6v30h6zm-30 12h60v6H0z"/><path fill="#FFF" d="M27 0h6v30h-6zm-27 12h60v6H0z"/><path fill="#C8102E" d="M28 0h4v30h-4zm-28 13h60v4H0z"/></svg>'
+    en: '<svg viewBox="0 0 60 30" width="20" height="10"><path fill="#012169" d="M0 0h60v30H0z"/><path fill="#FFF" d="m0 0 60 30h-7L0 3.5zM0 30 60 0h-7L0 26.5zM60 30 0 0h7l53 26.5zM60 0 0 30h7l53-26.5zM30 0h-6v30h6zm-30 12h60v6H0z"/><path fill="#FFF" d="M27 0h6v30h-6zm-27 12h60v6H0z"/><path fill="#C8102E" d="M28 0h4v30h-4zm-28 13h60v4H0z"/></svg>',
+    de: '<svg viewBox="0 0 5 3" width="20" height="12"><rect width="5" height="3" fill="#000000"/><rect y="1" width="5" height="2" fill="#DD0000"/><rect y="2" width="5" height="1" fill="#FFCE00"/></svg>'
 };
 
 export function translateDOM() {
@@ -251,13 +252,7 @@ export function translateDOM() {
     const btnText = document.getElementById('lang-btn-text');
     
     if (btnText) btnText.textContent = lang.toUpperCase();
-    if (btnFlag) {
-        if (lang === 'es') {
-            btnFlag.innerHTML = FLAG_SVG.es;
-        } else {
-            btnFlag.innerHTML = FLAG_SVG.en;
-        }
-    }
+    if (btnFlag) btnFlag.innerHTML = FLAG_SVG[lang] || FLAG_SVG.es;
 
     // Update active class in selector dropdown list
     document.querySelectorAll('.lang-dropdown__item').forEach(item => {

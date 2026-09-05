@@ -27,7 +27,7 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 * **Exportaciones:** Informes en Google Docs, Word (.doc) y PDF con score, hallazgos, SPF tree, DMARC detallado, **DNSSEC, DANE, SRV y autorización DMARC externa**. Los tres formatos comparten una única fuente de contenido (el PDF se genera del mismo informe que Word/Docs).
 * **Motor DNS resiliente:** Consultas con **degradación elegante** (un fallo transitorio no tumba el análisis completo), **validación del `Status` DoH** (distingue SERVFAIL/REFUSED de "sin registros"), **herencia DMARC del dominio organizativo** para subdominios (RFC 7489 §6.6.3), reconocimiento de **Null MX** (RFC 7505), contaje correcto de lookups SPF con máscara CIDR y deduplicación de consultas en vuelo.
 * **Validación de entrada y errores claros:** Normalización de dominios **IDN → punycode**, tolerancia a FQDN con punto final, validación de formato y mensajes de error diferenciados (dominio inexistente / sin conexión / **problema de resolución DNS** / formato inválido).
-* **Multilingüe y accesible:** Interfaz completa en Español e Inglés con persistencia por `localStorage`, `<html lang>` y `aria-label` sincronizados, regiones `aria-live`, etiquetas de formulario para lector de pantalla, **tooltips accesibles por teclado** (foco, Escape, `aria-describedby`), modales con trampa de foco y contraste WCAG AA.
+* **Multilingüe y accesible:** Interfaz completa en Español, Inglés y Alemán con persistencia por `localStorage`, `<html lang>` y `aria-label` sincronizados, regiones `aria-live`, etiquetas de formulario para lector de pantalla, **tooltips accesibles por teclado** (foco, Escape, `aria-describedby`), modales con trampa de foco y contraste WCAG AA.
 * **Render progresivo:** Los resultados principales se muestran de inmediato; el panel de Awareness (lo más lento, por los CT logs) se rellena solo al terminar, sin bloquear la vista.
 
 * **Puntuación por categorías ponderadas (v3):** Autenticación 60 / Transporte 25 / Higiene 15, con **desglose visible** de qué aporta cada control. El grado está **acotado por la categoría de Autenticación**: DNSSEC, DANE o BIMI ya no compensan un dominio suplantable (`p=none` o un PermError de SPF no llegan a A). Los controles que no se pueden medir (DKIM no detectado, política MTA-STS inalcanzable) **salen del denominador** en vez de contar como fallo.
@@ -69,8 +69,8 @@ js/
 ├── awarenessDetector.js # Detector de plataformas de Awareness/PhishSim (DNS + CT logs)
 ├── headerAnalyzer.js    # Detección por cabeceras de correo (cubre el punto ciego DNS)
 ├── knowledge.js         # Base de conocimiento de vendors (versionada, >50 firmas)
-├── i18n.js              # Traducciones ES/EN (paridad de claves verificada por tests)
-├── lang.js              # Selector de idioma con persistencia
+├── i18n.js              # Traducciones ES/EN/DE (paridad de claves verificada por tests)
+├── lang.js              # Idioma activo, idiomas soportados y locale de fechas
 ├── export.js            # Motor de exportación (Google Docs / Word / PDF)
 ├── parsers.js           # Parsers y validadores de registros DNS
 └── utils.js             # Helpers, incluido el tagged template html`` (XSS-safe)
@@ -158,7 +158,7 @@ npm run lint       # ESLint sobre js/ (recommended, --max-warnings=0)
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**326 tests**, cobertura ~89 %) cubre el módulo de Awareness (fixtures DNS
+La suite (**343 tests**, cobertura ~89 %) cubre el módulo de Awareness (fixtures DNS
 mockeados), el análisis por cabeceras (`headerAnalyzer`), los parsers y validadores
 (`parseSPF` con índices, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`,
 `analyzeDKIMRecord` con RSA y Ed25519, `validateTlsRptRua`, `checkMtaStsMxCoverage`),
@@ -170,7 +170,9 @@ SERVFAIL**, `getSPFLookupTree` con CIDR, bucles, PermError y void lookups, `fetc
 `checkRBL`, `getDNSSEC`, `checkDMARCExternalAuth`), el **visor de informes RUA**
 (parseo, agregación, `.gz`, `.zip` y ficheros corruptos), el **esquema de la base de
 conocimiento** (patrones válidos, sin duplicados) y las utilidades (`normalizeDomain`
-IDN/FQDN, `isValidDomain`, `parseDkimSelectors`, helper `html``).
+IDN/FQDN, `isValidDomain`, `parseDkimSelectors`, helper `html``) y la **paridad del
+diccionario i18n** (mismas claves, sin cadenas vacías y con los mismos marcadores de
+posición en los tres idiomas).
 
 Además hay dos niveles de pruebas con **jsdom**:
 * `render.dom.test.js` — `renderResults`/`generateReportHTML`, escapado anti-XSS y

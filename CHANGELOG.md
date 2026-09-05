@@ -3,6 +3,40 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.2.0] - 2026-09-05
+
+### Añadido
+
+- **Alemán como tercer idioma de la interfaz.** Las 472 claves del diccionario traducidas
+  (`de` en `js/i18n.js`), no un subconjunto: hallazgos de la puntuación, tooltips de SPF y
+  DMARC, panel de concienciación, visor de informes RUA, ajustes, modales y el informe
+  exportado. El selector de la cabecera pasa a tres entradas (ES / EN / DE) con la bandera
+  alemana como SVG propio, igual que las otras dos: sin peticiones a terceros.
+- **Test de paridad del diccionario** (`js/i18n.test.js`). El README ya afirmaba que existía
+  y no era cierto. Con dos idiomas una clave que faltase pasaba desapercibida —deja el hueco
+  en blanco, no rompe nada—; con tres, el descuido es cuestión de tiempo. Verifica que los
+  tres idiomas tengan el mismo juego de claves, ninguna cadena vacía, los mismos marcadores
+  de posición (`{policy}`, `{n}`, `{selectors}`…) y las mismas categorías.
+
+### Cambiado
+
+- **El locale de fechas y horas se resuelve en `lang.js`**, no con un ternario `es/en`
+  repetido en `export.js` y `summaryPanel.js`. Con un tercer idioma ese ternario habría
+  dado formato estadounidense a los informes en alemán. Ahora `getLocale()` mapea
+  `es→es-ES`, `en→en-US`, `de→de-DE`.
+- **`getLanguage()` valida el idioma guardado** contra `SUPPORTED_LANGS` y cae a español si
+  encuentra otra cosa. Antes, un valor inesperado en `localStorage` dejaba la interfaz sin
+  traducir en lugar de degradar a un idioma válido.
+- **La bandera del botón se resuelve por mapa** (`FLAG_SVG[lang]`) en vez de un `if/else`
+  que asumía dos idiomas y habría enseñado la del Reino Unido al elegir alemán.
+
+### Notas
+
+- Quedan fuera tres cadenas que tampoco están en inglés y que no vienen del diccionario:
+  las notas de los *fingerprints* de concienciación y algún nombre de servicio de la base
+  de conocimiento (ambos en español en sus ficheros de datos) y el mensaje de error del
+  descargador de MTA-STS (en inglés en el código).
+
 ## [3.1.1] - 2026-08-28
 
 ### Cambiado

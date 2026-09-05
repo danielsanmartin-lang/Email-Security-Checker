@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { identifySPFService, identifyDMARCReporter } from './analyzer.js';
-import { getLanguage } from './lang.js';
+import { getLanguage, getLocale } from './lang.js';
 import { translations } from './i18n.js';
 import { escapeHtml } from './parsers.js';
 import { html, raw } from './utils.js';
@@ -40,7 +40,7 @@ export function generateReportHTML() {
     // Fecha del escaneo (no la de exportación): un informe generado más tarde debe
     // reflejar cuándo se hizo realmente el análisis.
     const d = (currentResult.scannedAt ? new Date(currentResult.scannedAt) : new Date())
-        .toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
+        .toLocaleDateString(getLocale(lang));
     
     const layerEvidence = (entry) => {
         const ev = Array.isArray(entry.evidence) ? entry.evidence : [];
