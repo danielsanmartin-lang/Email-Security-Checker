@@ -41,6 +41,71 @@ export function formatProviderSource(source, t) {
     return source.arg ? `${label} ${source.arg}` : label;
 }
 
+/**
+ * Quién filtra el correo entrante.
+ *
+ * `provider` solo se rellena cuando el MX es de un PROVEEDOR de buzones (Microsoft,
+ * Google…), así que un dominio con un gateway delante —Proofpoint, Mimecast— salía como
+ * "no identificado" aunque su filtro de entrada estuviera perfectamente identificado.
+ * Cuando pasa eso, se muestra el SEG que el MX confirma, que es la respuesta correcta a
+ * la pregunta que hace la etiqueta.
+ */
+export function displayInboundFilter(result, t) {
+    const provider = displayProvider(result, t);
+    if (provider !== t.unidentified_provider) return provider;
+    const mxSeg = (result.segList || []).find(s => (s.evidence || []).some(e => e.signal === 'mx'));
+    return mxSeg ? mxSeg.name : provider;
+}
+
+/**
+ * Fuente de la identificación del filtro de entrada, coherente con displayInboundFilter.
+ */
+export function inboundFilterSource(result, t) {
+    const provider = displayProvider(result, t);
+    if (provider !== t.unidentified_provider) return formatProviderSource(result.providerSource, t);
+    const mxSeg = (result.segList || []).find(s => (s.evidence || []).some(e => e.signal === 'mx'));
+    if (!mxSeg) return formatProviderSource(result.providerSource, t);
+    const ev = mxSeg.evidence.find(e => e.signal === 'mx');
+    return `${t.evidence_mx} ${ev.value}`;
+}
+
+/**
+ * Veredicto de hospedaje traducido ('En la nube', 'Híbrido', 'Servidor propio'…).
+ * Devuelve '' si no hay clasificación, para que quien renderiza pueda omitir el bloque
+ * entero en vez de pintar un hueco vacío.
+ */
+export function displayMailHosting(mailHosting, t) {
+    if (!mailHosting || !mailHosting.kind) return '';
+    return t[`mail_hosting_${mailHosting.kind}`] || mailHosting.kind;
+}
+
+/** Explicación larga del veredicto: qué significa, y qué NO se puede saber desde fuera. */
+export function mailHostingDetail(mailHosting, t) {
+    if (!mailHosting || !mailHosting.kind) return '';
+    return t[`mail_hosting_detail_${mailHosting.kind}`] || '';
+}
+
+/** Plataforma de buzón traducida ('Microsoft 365', 'Infraestructura propia'…). */
+export function mailHostingPlatform(mailHosting, t) {
+    if (!mailHosting || !mailHosting.platform) return t.mh_platform_unknown || '';
+    return t[`mh_platform_${mailHosting.platform}`] || mailHosting.platform;
+}
+
+/**
+ * Evidencia como lista de pares ya traducidos, lista para pintar.
+ * Se comparte con el informe exportado para que ambos digan exactamente lo mismo.
+ */
+export function mailHostingEvidence(mailHosting, t) {
+    const ev = (mailHosting && Array.isArray(mailHosting.evidence)) ? mailHosting.evidence : [];
+    return ev.map(e => ({ label: t[`mh_signal_${e.signal}`] || e.signal, value: e.value }));
+}
+
+/** Avisos traducidos (CDN descartado, sin autodiscover, SEG delante, consultas fallidas). */
+export function mailHostingNotes(mailHosting, t) {
+    const notes = (mailHosting && Array.isArray(mailHosting.notes)) ? mailHosting.notes : [];
+    return notes.map(n => t[`mh_note_${n.key}`]).filter(Boolean);
+}
+
 /** Resuelve el texto de un finding (clave i18n + reemplazos). Idéntico en ui y export. */
 export function resolveFindingText(t, finding) {
     let text = t[finding.key] || finding.message || '';

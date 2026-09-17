@@ -555,6 +555,19 @@ export async function getIPAddress(host) {
     return ips[0] || null;
 }
 
+/**
+ * Invierte una IP al formato que exigen las consultas por IP: RBL, PTR (in-addr.arpa
+ * / ip6.arpa) y el mapeo IP→ASN de Team Cymru. IPv4 se invierte por octetos; IPv6, por
+ * nibbles. Devuelve null si la dirección no se puede interpretar.
+ */
+export function reverseIpForDns(ip) {
+    if (typeof ip !== 'string' || !ip) return null;
+    if (ip.includes(':')) return expandIPv6ForRbl(ip);
+    const octets = ip.split('.');
+    if (octets.length !== 4 || !octets.every(o => /^\d{1,3}$/.test(o) && Number(o) <= 255)) return null;
+    return octets.reverse().join('.');
+}
+
 // Expande una dirección IPv6 a sus 32 nibbles en orden inverso (formato de query RBL/PTR).
 function expandIPv6ForRbl(ip) {
     // Manejar la abreviatura "::"
@@ -581,15 +594,9 @@ function expandIPv6ForRbl(ip) {
 //                 por lo que estas comprobaciones son best-effort.
 export async function checkRBL(ip, rblHost) {
     try {
-        let queryName;
-        if (ip.includes(':')) {
-            const reversed = expandIPv6ForRbl(ip);
-            if (!reversed) return { status: 'error', listed: false, rbl: rblHost };
-            queryName = `${reversed}.${rblHost}`;
-        } else {
-            const reversedIp = ip.split('.').reverse().join('.');
-            queryName = `${reversedIp}.${rblHost}`;
-        }
+        const reversed = reverseIpForDns(ip);
+        if (!reversed) return { status: 'error', listed: false, rbl: rblHost };
+        const queryName = `${reversed}.${rblHost}`;
         const data = await queryDNS(queryName, 'A');
         if (data && data.Answer && data.Answer.length > 0) {
             const codes = data.Answer.filter(a => a.type === 1 && a.data).map(a => a.data);
@@ -908,3 +915,147 @@ export async function getDANE(mxHosts) {
     return daneRecords;
 }
 
+
+// ===========================================================================
+// Hospedaje del correo: sondas del eje "plataforma de buzón"
+//
+// El MX dice quién FILTRA el correo entrante. Estas sondas responden a la otra
+// pregunta, la que el MX tapa cuando hay un gateway delante: dónde VIVEN los
+// buzones. Todas van por `queryDNS`, así que heredan caché, semáforo de
+// concurrencia y cadena de resolvers, y no necesitan tocar la CSP.
+// ===========================================================================
+
+/**
+ * Resuelve `autodiscover.<dominio>`: el endpoint de autoconfiguración de Exchange.
+ * Es el mejor indicador externo de dónde están los buzones — apunta a
+ * `autodiscover.outlook.com` en M365 y a infraestructura propia en on-premise.
+ *
+ * OJO al interpretarlo: autodiscover es un protocolo de Microsoft. Su AUSENCIA es
+ * lo normal en Google Workspace y NO debe leerse como indicio de on-premise.
+ *
+ * `status` separa "no existe" (un dato sobre el dominio) de "no se pudo consultar" (un
+ * dato sobre nosotros). La diferencia es crítica: un fallo transitorio de DNS no debe
+ * leerse jamás como ausencia de autodiscover, y de ahí como indicio de servidor propio.
+ *
+ * @returns {Promise<{cname: string|null, ips: string[], status: 'ok'|'nxdomain'|'unavailable'}>}
+ */
+export async function getAutodiscover(domain) {
+    const host = `autodiscover.${domain}`;
+    let cname = null;
+    const ips = [];
+    try {
+        // Una sola consulta A basta: la cadena Answer trae el CNAME (type 5) y la
+        // dirección final (type 1). Pedir CNAME por separado sería una consulta de más.
+        const data = await queryDNS(host, 'A');
+        for (const a of (data && data.Answer) || []) {
+            if (a.type === 5 && a.data && !cname) cname = String(a.data).replace(/\.$/, '').toLowerCase();
+            if (a.type === 1 && a.data) ips.push(a.data);
+        }
+    } catch (e) {
+        console.warn('Failed to resolve autodiscover for %s', domain, e);
+        return { cname: null, ips: [], status: 'unavailable' };
+    }
+    const status = (cname || ips.length) ? 'ok' : 'nxdomain';
+    return { cname, ips: [...new Set(ips)], status };
+}
+
+// El nombre de un ASN no cambia entre consultas y muchas IPs comparten ASN: sin
+// memoizar, un análisis repetiría la misma consulta una vez por IP.
+const _asNameCache = new Map();
+
+/**
+ * Nombre de la organización dueña de un ASN, vía Team Cymru sobre DNS.
+ * `AS8075.asn.cymru.com` TXT → "8075 | US | arin | … | MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation, US"
+ */
+async function getASName(asn) {
+    if (!asn) return null;
+    if (_asNameCache.has(asn)) return _asNameCache.get(asn);
+    let name = null;
+    try {
+        const data = await queryDNS(`AS${asn}.asn.cymru.com`, 'TXT');
+        const txt = extractTxtValue(((data && data.Answer) || []).map(a => a.data).find(Boolean) || '');
+        // El último campo del TXT es la descripción de la organización.
+        const parts = txt.split('|').map(s => s.trim());
+        if (parts.length >= 5 && parts[4]) name = parts[4];
+    } catch (e) {
+        console.warn('Failed to resolve AS name for AS%s', asn, e);
+    }
+    _asNameCache.set(asn, name);
+    return name;
+}
+
+/**
+ * Perfila una IP: a qué ASN pertenece, de quién es ese ASN y qué PTR tiene.
+ *
+ * El ASN es la señal más fuerte de infraestructura propia: cuando una empresa
+ * anuncia sus propios rangos, el ASN lleva literalmente su nombre (AS_INDITEX,
+ * ASMERCADONA). Se usa el mapeo IP→ASN de Team Cymru, que se sirve por DNS y por
+ * tanto funciona igual que cualquier otra consulta de la herramienta.
+ *
+ * Degrada con elegancia: si Cymru no responde (algunos resolvers corporativos lo
+ * filtran), se devuelven los campos a null y la clasificación simplemente pierde
+ * esa señal en vez de fallar.
+ *
+ * @returns {Promise<{ip: string, asn: string|null, asName: string|null, prefix: string|null, cc: string|null, ptr: string|null}>}
+ */
+export async function getIpIntel(ip) {
+    const out = { ip, asn: null, asName: null, prefix: null, cc: null, ptr: null };
+    const reversed = reverseIpForDns(ip);
+    if (!reversed) return out;
+    const zone = ip.includes(':') ? 'origin6.asn.cymru.com' : 'origin.asn.cymru.com';
+    const arpa = ip.includes(':') ? 'ip6.arpa' : 'in-addr.arpa';
+
+    const [cymru, ptr] = await Promise.all([
+        queryDNS(`${reversed}.${zone}`, 'TXT').catch(() => null),
+        queryDNS(`${reversed}.${arpa}`, 'PTR').catch(() => null)
+    ]);
+
+    if (cymru && cymru.Answer) {
+        // "204748 | 195.77.160.0/23 | ES | ripencc | 1996-12-02"
+        const txt = extractTxtValue(cymru.Answer.map(a => a.data).find(Boolean) || '');
+        const parts = txt.split('|').map(s => s.trim());
+        if (parts[0]) out.asn = parts[0].split(/\s+/)[0]; // el campo puede traer varios ASN
+        if (parts[1]) out.prefix = parts[1];
+        if (parts[2]) out.cc = parts[2];
+    }
+    if (ptr && ptr.Answer) {
+        const rec = ptr.Answer.find(a => a.type === 12 && a.data);
+        if (rec) out.ptr = String(rec.data).replace(/\.$/, '').toLowerCase();
+    }
+    if (out.asn) out.asName = await getASName(out.asn);
+    return out;
+}
+
+/**
+ * Consulta selectores DKIM CONSERVANDO el destino del CNAME.
+ *
+ * `getDKIM` se queda solo con el TXT `v=DKIM1` y descarta la cadena, pero en M365
+ * el CNAME es justo lo interesante: `selector1._domainkey.<dominio>` →
+ * `selector1-<dominio>._domainkey.<TENANT>.onmicrosoft.com`. Ese destino demuestra
+ * que existe un tenant de Microsoft 365 y hasta revela su nombre.
+ *
+ * Lo que NO demuestra: dónde están los buzones. Un tenant puede coexistir con un
+ * Exchange local — que es precisamente el caso híbrido que interesa detectar.
+ *
+ * @returns {Promise<Array<{selector: string, cname: string|null, hasKey: boolean}>>}
+ */
+export async function getDkimSelectorChain(domain, selectors = ['selector1', 'selector2']) {
+    const results = await Promise.all(selectors.map(async (selector) => {
+        const out = { selector, cname: null, hasKey: false };
+        try {
+            // Misma consulta (nombre, tipo) que hace getDKIM para selector1: la caché
+            // de queryDNS la sirve sin tráfico adicional.
+            const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT');
+            for (const a of (data && data.Answer) || []) {
+                if (a.type === 5 && a.data && !out.cname) {
+                    out.cname = String(a.data).replace(/\.$/, '').toLowerCase();
+                }
+                if (a.type === 16 && extractTxtValue(a.data).startsWith('v=DKIM1')) out.hasKey = true;
+            }
+        } catch (e) {
+            console.warn('Failed to resolve DKIM chain %s._domainkey.%s', selector, domain, e);
+        }
+        return out;
+    }));
+    return results;
+}

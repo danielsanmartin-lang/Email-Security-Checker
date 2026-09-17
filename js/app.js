@@ -1,4 +1,4 @@
-import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists } from './api.js';
+import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists, getAutodiscover, getIpIntel, getDkimSelectorChain } from './api.js';
 import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT, extractRootDomain } from './analyzer.js';
 import { renderResults, renderAwarenessVendors, showSection, setStep } from './ui.js';
 import { KB } from './knowledge.js';
@@ -137,8 +137,41 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
         )
     ]);
 
+    // ===== Fase 2b: señales de la plataforma de buzón =====
+    // El MX dice quién FILTRA; estas sondas dicen dónde VIVEN los buzones. Se hacen aquí
+    // porque analyze() es síncrona y pura. Un fallo degrada a "sin panel", nunca rompe
+    // el análisis: por eso cada rama tiene su propio catch.
+    let mailHostingSignals;
+    try {
+        const [autodiscover, dkimChains] = await Promise.all([
+            getAutodiscover(domain),
+            getDkimSelectorChain(domain)
+        ]);
+        // Las IPs de los MX ya las resolvió el paso de RBL: se reutilizan tal cual en vez
+        // de volver a preguntar. Se perfilan como mucho 4 IPs para acotar el gasto.
+        const mxIps = {};
+        for (const r of rblResults) mxIps[r.host] = r.ips || [];
+        const ipsToProfile = [...new Set([...autodiscover.ips, ...Object.values(mxIps).flat()])].slice(0, 4);
+        const intelList = await Promise.all(ipsToProfile.map(ip => getIpIntel(ip).catch(() => null)));
+        const ipIntel = {};
+        for (const intel of intelList) if (intel) ipIntel[intel.ip] = intel;
+
+        mailHostingSignals = {
+            autodiscover,
+            dkimChains,
+            mxIps,
+            ipIntel,
+            daneRecords,
+            googleDkim: (dkimRecords.records || []).some(r => r.selector === 'google')
+        };
+    } catch (err) {
+        console.warn('Mail hosting signal gathering failed:', err);
+        mailHostingSignals = undefined;
+    }
+
     const result = analyze(mxRecords, spfRaw, dmarcRaw, {
         domain,
+        mailHostingSignals,
         txtVerifications,
         nsProvider,
         nsRecords,

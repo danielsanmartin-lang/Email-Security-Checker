@@ -65,6 +65,52 @@ describe('esquema de la base de conocimiento', () => {
         }
     });
 
+    // Las listas de ASN no encajan en LISTS_WITH_PATTERN: un número de ASN no es un
+    // "pattern". Validación propia, con el mismo objetivo — que una entrada mal escrita
+    // no apague una detección en silencio.
+    it('las listas de ASN declaran número, nombre y categoría válidos', () => {
+        const VALID = new Set(['cloud', 'cdn', 'hoster']);
+        for (const list of ['cloud_asns', 'cdn_asns', 'hoster_asns']) {
+            expect(Array.isArray(KB[list]), list).toBe(true);
+            expect(KB[list].length).toBeGreaterThan(0);
+            for (const entry of KB[list]) {
+                expect(entry.asn, `${list} → ${JSON.stringify(entry)}`).toMatch(/^\d+$/);
+                expect(typeof entry.name).toBe('string');
+                expect(entry.name.trim().length).toBeGreaterThan(0);
+                expect(VALID.has(entry.kind), `${entry.asn} → ${entry.kind}`).toBe(true);
+            }
+        }
+    });
+
+    it('ningún ASN aparece en dos categorías (la clasificación dependería del orden)', () => {
+        const seen = new Map();
+        for (const list of ['cloud_asns', 'cdn_asns', 'hoster_asns']) {
+            for (const entry of KB[list]) {
+                expect(seen.has(entry.asn), `AS${entry.asn} duplicado: ${seen.get(entry.asn)} vs ${list}`).toBe(false);
+                seen.set(entry.asn, list);
+            }
+        }
+    });
+
+    it('KB.mailbox_platform_cnames declara pattern, platform y source válidos', () => {
+        const SOURCES = new Set(['autodiscover', 'dkim']);
+        for (const entry of KB.mailbox_platform_cnames) {
+            expect(typeof entry.pattern).toBe('string');
+            expect(entry.pattern.trim().length).toBeGreaterThan(0);
+            expect(typeof entry.platform).toBe('string');
+            expect(SOURCES.has(entry.source), `${entry.pattern} → ${entry.source}`).toBe(true);
+        }
+    });
+
+    it('KB.mail_hosting_weights tiene todos los pesos en rango (0, 1]', () => {
+        const weights = Object.entries(KB.mail_hosting_weights);
+        expect(weights.length).toBeGreaterThan(0);
+        for (const [signal, w] of weights) {
+            expect(w, signal).toBeGreaterThan(0);
+            expect(w, signal).toBeLessThanOrEqual(1);
+        }
+    });
+
     it('KB.rbl_lists son hostnames válidos', () => {
         for (const rbl of KB.rbl_lists) {
             expect(rbl).toMatch(/^[a-z0-9.-]+\.[a-z]{2,}$/i);

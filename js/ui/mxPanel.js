@@ -4,7 +4,7 @@ import { html, raw } from '../utils.js';
 import { identifyMX } from '../analyzer.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
-import { displayProvider, formatProviderSource } from '../viewmodel.js';
+import { displayInboundFilter, inboundFilterSource, displayMailHosting, mailHostingDetail, mailHostingPlatform, mailHostingEvidence, mailHostingNotes } from '../viewmodel.js';
 
 export function renderMxPanel(domain, result) {
     const lang = getLanguage();
@@ -31,14 +31,64 @@ export function renderMxPanel(domain, result) {
 
 export function renderProviderPanel(result) {
     const t = translations[getLanguage()];
-    const providerDisplay = displayProvider(result, t);
     const provBody = document.getElementById('provider-body');
+
+    // Este panel respondía a "quién es el proveedor" con lo único que sabía leer: el MX.
+    // Pero el MX es el FILTRO DE ENTRADA, no la plataforma de buzón, y con un gateway
+    // delante las dos respuestas son distintas. Ahora se muestran los dos ejes por
+    // separado, cada uno diciendo solo lo que su evidencia sostiene.
+    const mh = result.mailHosting;
+
+    const hostingHtml = mh
+        ? html`<div class="info-block info-block--spaced">
+            <div class="info-block__label">${t.mailbox_platform_label}</div>
+            <div class="info-block__value">${mailHostingPlatform(mh, t)}${hostingBadge(mh, t)}</div>
+            ${mh.tenant ? html`<div class="info-block__detail">${t.mh_tenant_label}: ${mh.tenant}</div>` : raw('')}
+        </div>
+        <div class="info-block info-block--spaced">
+            <div class="info-block__label">${t.panel_mail_hosting_label}</div>
+            <div class="info-block__value">${displayMailHosting(mh, t)}</div>
+            <div class="info-block__detail">${mailHostingDetail(mh, t)}</div>
+            ${hostingEvidenceHtml(mh, t)}
+            ${hostingNotesHtml(mh, t)}
+            <div class="info-block__detail info-block__detail--muted">${t.mail_hosting_disclaimer}</div>
+        </div>`
+        : raw('');
+
     provBody.innerHTML = html`
         <div class="info-block">
-            <div class="info-block__label">${t.provider_identified}</div>
-            <div class="info-block__value">${providerDisplay}</div>
-            <div class="info-block__detail">${formatProviderSource(result.providerSource, t)}</div>
-        </div>`;
+            <div class="info-block__label">${t.inbound_filter_label}</div>
+            <div class="info-block__value">${displayInboundFilter(result, t)}</div>
+            <div class="info-block__detail">${inboundFilterSource(result, t)}</div>
+        </div>
+        ${hostingHtml}`;
+}
+
+/**
+ * Insignia de confianza. Se omite a propósito cuando el veredicto es 'undetermined':
+ * poner "0%" junto a "no determinable" sugeriría una medición donde no hay ninguna.
+ */
+function hostingBadge(mh, t) {
+    if (!mh || mh.kind === 'undetermined' || typeof mh.confidence !== 'number') return raw('');
+    const levelLabel = t[`awareness_level_${mh.level}`] || mh.level || '';
+    const pct = `${Math.round(mh.confidence * 100)}%`;
+    return html`<span class="seg-confidence seg-confidence--${raw(mh.level)}" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;background:rgba(99,102,241,0.12);color:var(--accent-violet);">${levelLabel} · ${pct}</span>`;
+}
+
+function hostingEvidenceHtml(mh, t) {
+    const items = mailHostingEvidence(mh, t);
+    if (!items.length) return raw('');
+    return html`<div class="info-block__detail">${t.evidence}: ${items.map((e, i) => html`${raw(i ? ' · ' : '')}${e.label}: ${e.value}`)}</div>`;
+}
+
+function hostingNotesHtml(mh, t) {
+    const notes = mailHostingNotes(mh, t);
+    const low = mh && mh.kind !== 'undetermined' && mh.confidence < 0.55
+        ? [t.mh_low_confidence_note]
+        : [];
+    const all = [...low, ...notes];
+    if (!all.length) return raw('');
+    return html`${all.map(text => html`<div class="info-block__detail" style="color:var(--accent-amber,#d97706);font-style:italic;">⚠ ${text}</div>`)}`;
 }
 
 export function renderSecurityLayersPanel(domain, result) {

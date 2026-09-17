@@ -27,6 +27,10 @@ export default defineConfig({
                 'js/headerAnalyzer.js': { statements: 90 },
                 'js/awarenessDetector.js': { statements: 94 },
                 'js/viewmodel.js': { statements: 95 },
+                // Motor de reglas puro. Mismo listón que analyzer.js: las ramas que quedan
+                // fuera son valores por defecto defensivos (|| {}, || []) que solo se
+                // dispararían con una entrada malformada.
+                'js/mailHosting.js': { statements: 95, branches: 85 },
                 'js/app.js': { statements: 88 },
                 'js/ui/**': { statements: 85 }
             }

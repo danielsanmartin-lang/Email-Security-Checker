@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache } from './api.js';
+import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache, reverseIpForDns, getAutodiscover, getIpIntel, getDkimSelectorChain } from './api.js';
 import { saveSettings, resetSettingsCache, DEFAULT_SETTINGS } from './settings.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
@@ -616,5 +616,144 @@ describe('checkDMARCExternalAuth: la comparación es por dominio ORGANIZATIVO (R
         }));
         const r = await checkDMARCExternalAuth('acme.com', ['mailto:r@rua.proveedor.com']);
         expect(r[0].authorized).toBe(true);
+    });
+});
+
+// ===========================================================================
+// Sondas del hospedaje del correo
+// Las respuestas de Team Cymru son TRANSCRIPCIONES literales de consultas reales:
+// si el formato del TXT cambia, el parser debe romperse aquí y no en producción.
+// ===========================================================================
+
+describe('reverseIpForDns', () => {
+    it('invierte IPv4 por octetos', () => {
+        expect(reverseIpForDns('195.77.161.26')).toBe('26.161.77.195');
+    });
+
+    it('expande e invierte IPv6 por nibbles, incluida la abreviatura ::', () => {
+        expect(reverseIpForDns('2001:db8::1')).toBe(
+            '1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2'
+        );
+    });
+
+    it('devuelve null ante entradas que no son una IP', () => {
+        expect(reverseIpForDns('no-soy-una-ip')).toBeNull();
+        expect(reverseIpForDns('1.2.3')).toBeNull();
+        expect(reverseIpForDns('999.1.1.1')).toBeNull();
+        expect(reverseIpForDns('')).toBeNull();
+        expect(reverseIpForDns(null)).toBeNull();
+    });
+});
+
+describe('getAutodiscover', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('conserva el CNAME de la cadena además de la IP final', async () => {
+        global.fetch = fetchMock((name) => {
+            if (name === 'autodiscover.acme.com') {
+                return { Status: 0, Answer: [
+                    { type: 5, data: 'autodiscover.outlook.com.' },
+                    { type: 1, data: '52.98.1.1' }
+                ] };
+            }
+            return { Status: 3, Answer: [] };
+        });
+        const r = await getAutodiscover('acme.com');
+        expect(r.cname).toBe('autodiscover.outlook.com');
+        expect(r.ips).toEqual(['52.98.1.1']);
+        expect(r.status).toBe('ok');
+    });
+
+    it('distingue "no existe" de "no se pudo consultar"', async () => {
+        // Esta distinción es la que impide leer un fallo de red como ausencia de
+        // autodiscover, y de ahí como indicio de servidor propio.
+        global.fetch = fetchMock(() => ({ Status: 3, Answer: [] }));
+        expect((await getAutodiscover('acme.com')).status).toBe('nxdomain');
+
+        clearDnsCache();
+        global.fetch = fetchMock(() => ({ Status: 2, Answer: [] }));
+        const r = await getAutodiscover('acme.com');
+        expect(r.status).toBe('unavailable');
+        expect(r.cname).toBeNull();
+    });
+});
+
+describe('getIpIntel', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('parsea el ASN, el prefijo, el país y el nombre de la organización', async () => {
+        global.fetch = fetchMock((name) => {
+            if (name === '26.161.77.195.origin.asn.cymru.com') {
+                return { Status: 0, Answer: [{ type: 16, data: '"204748 | 195.77.160.0/23 | ES | ripencc | 1996-12-02"' }] };
+            }
+            if (name === 'AS204748.asn.cymru.com') {
+                return { Status: 0, Answer: [{ type: 16, data: '"204748 | ES | ripencc | 2018-01-16 | AS_INDITEX - INDUSTRIA DE DISENO TEXTIL SOCIEDAD ANONIMA, ES"' }] };
+            }
+            if (name === '26.161.77.195.in-addr.arpa') {
+                return { Status: 0, Answer: [{ type: 12, data: '26.red-195-77-161.customer.static.ccgg.telefonica.net.' }] };
+            }
+            return { Status: 3, Answer: [] };
+        });
+        const r = await getIpIntel('195.77.161.26');
+        expect(r.asn).toBe('204748');
+        expect(r.prefix).toBe('195.77.160.0/23');
+        expect(r.cc).toBe('ES');
+        expect(r.asName).toBe('AS_INDITEX - INDUSTRIA DE DISENO TEXTIL SOCIEDAD ANONIMA, ES');
+        expect(r.ptr).toBe('26.red-195-77-161.customer.static.ccgg.telefonica.net');
+    });
+
+    it('degrada a null cuando Cymru no responde, sin inventar nada', async () => {
+        global.fetch = fetchMock(() => ({ Status: 3, Answer: [] }));
+        const r = await getIpIntel('198.51.100.1');
+        expect(r.asn).toBeNull();
+        expect(r.asName).toBeNull();
+        expect(r.ptr).toBeNull();
+    });
+
+    it('no consulta nada si la IP no es válida', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [] }));
+        const r = await getIpIntel('no-es-ip');
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(r.asn).toBeNull();
+    });
+
+    it('usa la zona IPv6 de Cymru para direcciones IPv6', async () => {
+        const seen = [];
+        global.fetch = fetchMock((name) => { seen.push(name); return { Status: 3, Answer: [] }; });
+        await getIpIntel('2001:db8::1');
+        expect(seen.some(n => n.endsWith('.origin6.asn.cymru.com'))).toBe(true);
+        expect(seen.some(n => n.endsWith('.ip6.arpa'))).toBe(true);
+    });
+});
+
+describe('getDkimSelectorChain', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('conserva el CNAME al tenant, que es lo que getDKIM descarta', async () => {
+        global.fetch = fetchMock((name) => {
+            if (name === 'selector1._domainkey.acme.com') {
+                return { Status: 0, Answer: [
+                    { type: 5, data: 'selector1-acme-com._domainkey.acmetenant.onmicrosoft.com.' },
+                    { type: 16, data: '"v=DKIM1; k=rsa; p=MIIB"' }
+                ] };
+            }
+            return { Status: 3, Answer: [] };
+        });
+        const r = await getDkimSelectorChain('acme.com', ['selector1', 'selector2']);
+        expect(r).toHaveLength(2);
+        expect(r[0].cname).toBe('selector1-acme-com._domainkey.acmetenant.onmicrosoft.com');
+        expect(r[0].hasKey).toBe(true);
+        expect(r[1].cname).toBeNull();
+    });
+
+    it('reutiliza la caché de la consulta que ya hizo getDKIM', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [{ type: 16, data: '"v=DKIM1; p=abc"' }] }));
+        await queryDNS('selector1._domainkey.acme.com', 'TXT');
+        const antes = global.fetch.mock.calls.length;
+        await getDkimSelectorChain('acme.com', ['selector1']);
+        expect(global.fetch.mock.calls.length).toBe(antes);
     });
 });

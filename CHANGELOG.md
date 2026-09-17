@@ -3,6 +3,67 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.3.0] - 2026-09-17
+
+### Añadido
+
+- **Detección de hospedaje del correo: nube, híbrido u on-premise** (`js/mailHosting.js`).
+  La herramienta deducía el "proveedor de correo" del registro MX, pero **el MX es el filtro
+  de entrada, no la plataforma de buzón**. Con un SEG delante (Proofpoint, Mimecast,
+  Hornetsecurity, IronPort) el MX tapa por completo lo que hay detrás: telefonica.es y
+  mercadona.es tienen ambos un gateway en el MX y, sin embargo, una tiene los buzones en
+  Microsoft 365 y la otra en su propio centro de datos. El panel de proveedor pasa a mostrar
+  tres filas —filtro de entrada, plataforma de buzón y hospedaje— cada una con su evidencia.
+- **Consumidor para el `type: 'self'` de `identifyMX`.** Ese valor se calculaba desde
+  siempre y no lo leía nadie: cuando el MX pertenecía al propio dominio, `provider` se
+  quedaba a `null` y la interfaz decía "proveedor no identificado". El caso on-premise, que
+  es el más interesante de detectar, se caía por un agujero del código.
+- **Tres sondas DNS nuevas** en `js/api.js`, todas sobre la capa DoH que ya existía —sin
+  CORS, sin backend y sin tocar la CSP:
+  - `getAutodiscover()` resuelve `autodiscover.<dominio>` conservando el CNAME. Es el mejor
+    indicador externo de dónde están los buzones. Distingue "no existe" de "no se pudo
+    consultar": un fallo transitorio de DNS no debe leerse jamás como ausencia de registro.
+  - `getIpIntel()` perfila una IP con el mapeo IP→ASN de Team Cymru (que se sirve por DNS) y
+    su PTR. Cuando una empresa anuncia sus propios rangos, el ASN lleva literalmente su
+    nombre: `AS_INDITEX`, `ASMERCADONA`.
+  - `getDkimSelectorChain()` conserva el CNAME que `getDKIM` descarta. En Microsoft 365 ese
+    destino apunta al tenant (`…onmicrosoft.com`) y hasta revela su nombre.
+- **`reverseIpForDns()`** generaliza la inversión de IP que hasta ahora solo usaban las RBL.
+- **Diccionarios de ASN** (`cloud_asns`, `cdn_asns`, `hoster_asns`), destinos de CNAME de
+  plataforma y pesos de las señales, en `js/knowledge.js` (KB 3.1.0).
+- **El informe exportado** incluye el hospedaje, con su evidencia y sus salvedades.
+
+### Notas de diseño
+
+- **La clasificación no toca la puntuación.** On-premise no es inseguro per se; penalizarlo
+  sería una afirmación que los datos no sostienen, y el mismo error de categoría —confundir
+  infraestructura con control de seguridad— que este cambio viene a corregir.
+- **`undetermined` es un resultado de primera clase.** ugr.es no da señales suficientes y se
+  presenta como "no determinable con DNS público", sin insignia y sin porcentaje: un "0%"
+  junto a "no determinable" sugeriría una medición donde no hay ninguna.
+- **Varias señales pesan por debajo del umbral a propósito**, para que no puedan decidir
+  solas. El ASN de Microsoft cubre Exchange Online y también las máquinas Azure donde
+  alguien corre su propio Exchange; un MX del propio dominio puede ser un CNAME a un hosting.
+- **Tres técnicas descartadas**, documentadas en el módulo para que no se reintroduzcan:
+  sondear `<dominio>.mail.protection.outlook.com` (falso positivo sistemático: devuelve
+  NOERROR para dominios de Google Workspace); leer la ausencia de `autodiscover` como
+  indicio de on-premise (es un protocolo de Microsoft, Workspace no lo publica nunca); y
+  leer los literales `ip4:` del SPF como indicio de buzones locales (hablan del relé de
+  salida — telefonica.es publica 17 rangos propios y tiene los buzones en M365).
+
+### Corregido
+
+- **El panel de proveedor decía "no identificado" con un gateway delante.** La fila del
+  filtro de entrada ahora muestra el SEG que el MX confirma, en vez de dejar en blanco una
+  pregunta que sí tenía respuesta.
+
+### Verificación
+
+Las reglas se calibraron contra medidas en vivo y los tests unitarios usan esas medidas
+como fixtures: telefonica.es → nube; inditex.com y congreso.es → híbrido (con tenant);
+mercadona.es y csic.es → on-premise; ugr.es → no determinable; cabify.com, glovoapp.com y
+wallapop.com → nube (Workspace).
+
 ## [3.2.0] - 2026-09-05
 
 ### Añadido

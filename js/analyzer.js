@@ -1,6 +1,7 @@
 import { KB } from './knowledge.js';
 import { extractRootDomain } from './utils.js';
 import { parseSPF, parseDMARC, analyzeDKIMRecord, validateTlsRptRua, checkMtaStsMxCoverage } from './parsers.js';
+import { classifyMailHosting } from './mailHosting.js';
 
 export function identifyMX(host, domain) {
     const h = host.toLowerCase();
@@ -418,8 +419,19 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         }
     }
 
+    // Eje de la PLATAFORMA DE BUZÓN, independiente del filtro de entrada que se acaba de
+    // calcular. Las señales las resuelve app.js (esto es síncrono y puro); aquí solo se
+    // aporta la identificación de los MX, que ya vive en este módulo.
+    const mailHosting = classifyMailHosting({
+        domain,
+        mxIds: mxRecords.map(mx => ({ ...identifyMX(mx.host, domain), host: mx.host })),
+        segFronting: segList.some(s => (s.evidence || []).some(e => e.signal === 'mx')),
+        ...(advancedData.mailHostingSignals || {})
+    });
+
     return {
         provider, providerIdentified, providerSource, segList, icesList,
+        mailHosting,
         spfRaw, spfEntries, spfServices,
         spfData: advancedData.spfData || { record: spfRaw, records: spfRaw ? [spfRaw] : [], multiple: false },
         dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass,

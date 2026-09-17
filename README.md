@@ -11,6 +11,7 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 
 * **Análisis DNS en tiempo real:** Consulta registros MX, SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, NS y **DNSSEC** directamente desde el navegador vía DNS-over-HTTPS.
 * **Identificación de Proveedores (SEGs/ICES):** Base de conocimiento local con más de 50 firmas de servicios de correo (Microsoft 365, Google Workspace, Proofpoint, Mimecast, etc.).
+* **Hospedaje del correo — nube, híbrido u on-premise:** El MX identifica quién **filtra** el correo entrante, no dónde **viven** los buzones: con un gateway delante (Proofpoint, Mimecast, Hornetsecurity…) las dos respuestas son distintas. Un eje aparte resuelve la segunda pregunta a partir de `autodiscover`, el CNAME de DKIM (que revela el tenant de Microsoft 365) y el mapeo IP→ASN de Team Cymru —cuando una empresa anuncia sus propios rangos, el ASN lleva literalmente su nombre—. Cada veredicto va con su evidencia y su nivel de confianza, y **"no determinable" es un resultado de primera clase**: se dice cuando el DNS público no da para más, en vez de conjeturar. No afecta a la puntuación: on-premise no es inseguro per se.
 * **Awareness-Vendor Detector:** Módulo dedicado que detecta plataformas de concienciación de seguridad y simulación de phishing (KnowBe4, Proofpoint SAT, Cofense, Hoxhunt, Barracuda PhishLine, etc.) a partir de señales DNS, con score de confianza y evidencia estructurada. Distingue **"tiene el gateway del vendor"** de **"usa el módulo de awareness"** (confirmación de producto), y se enriquece con dos fuentes de Certificate Transparency (crt.sh + Certspotter).
 * **Análisis por cabeceras de correo:** Pega las cabeceras de un correo de simulación recibido y la herramienta detecta el vendor con **alta confianza** por dominios de envío y X-headers propietarias (`X-PHISHTEST`, `X-Gophish-*`, `simulator.office.com`…). Cubre **Microsoft Attack Simulation Training**, que no deja rastro en DNS. 100% local.
 * **Evaluación de Seguridad:** Diagnóstico visual del estado de las políticas de autenticación (A+ a F, 0–100 puntos).
@@ -197,7 +198,16 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 > El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
 
-### v3.1.0 — DNS resiliente y auditoría de dominios de terceros (Actual)
+### v3.3.0 — Hospedaje del correo: nube, híbrido u on-premise (Actual)
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la herramienta deducía el
+proveedor del registro MX, pero el MX es el **filtro de entrada** y no la **plataforma de
+buzón** — telefonica.es y mercadona.es tienen ambos un gateway delante y, sin embargo, una
+tiene los buzones en Microsoft 365 y la otra en su propio centro de datos. Ahora se
+distinguen los dos ejes, y el `type: 'self'` que `identifyMX` calculaba desde siempre —y
+que no leía nadie— por fin sirve para algo.
+
+### v3.1.0 — DNS resiliente y auditoría de dominios de terceros
 
 Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la capa DNS deja de
 perder consultas por su propia ráfaga (tope de 6 simultáneas y reintento ante SERVFAIL —

@@ -3,8 +3,8 @@
 // (aparece en los informes) y detectar firmas obsoletas sin leer el diff.
 // Súbelos al añadir o corregir firmas. El test de esquema (knowledge.test.js)
 // valida la forma de cada entrada y la ausencia de duplicados.
-export const KB_VERSION = '3.0.0';
-export const KB_UPDATED_AT = '2026-08-27';
+export const KB_VERSION = '3.1.0';
+export const KB_UPDATED_AT = '2026-09-17';
 
 export const KB = {
     version: KB_VERSION,
@@ -322,6 +322,106 @@ export const KB = {
         { pattern: 'powerdmarc.com', name: 'PowerDMARC' },
         { pattern: 'uriports.com', name: 'URIports' },
     ],
+    // ---------------------------------------------------------------------
+    // Hospedaje del correo: ¿los buzones están en la nube o en un servidor propio?
+    //
+    // El MX responde a "quién FILTRA el correo entrante", que es una pregunta
+    // distinta de "dónde VIVEN los buzones". Cuando un SEG va delante (Proofpoint,
+    // Mimecast, Hornetsecurity…), el MX tapa por completo lo que hay detrás. Estas
+    // listas alimentan el segundo eje, el de la plataforma de buzón.
+    // ---------------------------------------------------------------------
+
+    // ASN de hiperescalares y proveedores de correo en la nube. Una IP aquí NO es
+    // infraestructura propia del dominio auditado.
+    cloud_asns: [
+        { asn: '8075', name: 'Microsoft', kind: 'cloud' },
+        { asn: '8068', name: 'Microsoft', kind: 'cloud' },
+        { asn: '8069', name: 'Microsoft', kind: 'cloud' },
+        { asn: '12076', name: 'Microsoft (Azure)', kind: 'cloud' },
+        { asn: '15169', name: 'Google', kind: 'cloud' },
+        { asn: '19527', name: 'Google', kind: 'cloud' },
+        { asn: '396982', name: 'Google Cloud', kind: 'cloud' },
+        { asn: '16509', name: 'Amazon AWS', kind: 'cloud' },
+        { asn: '14618', name: 'Amazon AWS', kind: 'cloud' },
+        { asn: '7224', name: 'Amazon AWS', kind: 'cloud' },
+        { asn: '2635', name: 'Automattic', kind: 'cloud' },
+        { asn: '6185', name: 'Apple', kind: 'cloud' },
+        { asn: '714', name: 'Apple', kind: 'cloud' },
+        { asn: '2818', name: 'Zoho', kind: 'cloud' },
+        { asn: '58182', name: 'Zoho', kind: 'cloud' },
+    ],
+    // CDN y proxies inversos. Una IP aquí NO dice NADA sobre dónde está el servidor
+    // real: la señal se descarta como no concluyente, nunca se lee como on-premise.
+    cdn_asns: [
+        { asn: '13335', name: 'Cloudflare', kind: 'cdn' },
+        { asn: '209242', name: 'Cloudflare', kind: 'cdn' },
+        { asn: '20940', name: 'Akamai', kind: 'cdn' },
+        { asn: '16625', name: 'Akamai', kind: 'cdn' },
+        { asn: '32787', name: 'Akamai', kind: 'cdn' },
+        { asn: '54113', name: 'Fastly', kind: 'cdn' },
+        { asn: '22822', name: 'Edgio (Limelight)', kind: 'cdn' },
+        { asn: '15133', name: 'Edgecast', kind: 'cdn' },
+    ],
+    // Hosters y proveedores de alojamiento compartido. Correo gestionado por un
+    // tercero que no es hiperescalar: ni nube propiamente dicha, ni servidor propio.
+    hoster_asns: [
+        { asn: '16276', name: 'OVH', kind: 'hoster' },
+        { asn: '35540', name: 'OVH', kind: 'hoster' },
+        { asn: '8560', name: 'IONOS (1&1)', kind: 'hoster' },
+        { asn: '8972', name: 'IONOS (1&1)', kind: 'hoster' },
+        { asn: '24940', name: 'Hetzner', kind: 'hoster' },
+        { asn: '20773', name: 'Hostcentric (Host Europe)', kind: 'hoster' },
+        { asn: '26496', name: 'GoDaddy', kind: 'hoster' },
+        { asn: '398101', name: 'GoDaddy', kind: 'hoster' },
+        { asn: '30083', name: 'Newfold (Web.com)', kind: 'hoster' },
+        { asn: '32475', name: 'SingleHop', kind: 'hoster' },
+        { asn: '12772', name: 'Arsys', kind: 'hoster' },
+        { asn: '15879', name: 'Nerim / Dinahosting', kind: 'hoster' },
+        { asn: '197595', name: 'Dinahosting', kind: 'hoster' },
+        { asn: '14061', name: 'DigitalOcean', kind: 'hoster' },
+        { asn: '63949', name: 'Akamai (Linode)', kind: 'hoster' },
+        { asn: '20473', name: 'Vultr (Choopa)', kind: 'hoster' },
+    ],
+    // Destinos de CNAME que identifican la PLATAFORMA DE BUZÓN.
+    //   source 'autodiscover' → el CNAME de autodiscover.<dominio>
+    //   source 'dkim'         → el CNAME de selectorN._domainkey.<dominio>, que en
+    //                           M365 apunta al tenant (…onmicrosoft.com) y por tanto
+    //                           demuestra que existe un tenant, no dónde está el buzón.
+    mailbox_platform_cnames: [
+        { pattern: 'autodiscover.outlook.com', platform: 'm365', source: 'autodiscover' },
+        { pattern: 'autodiscover.office365.us', platform: 'm365', source: 'autodiscover' },
+        { pattern: 'onmicrosoft.com', platform: 'm365', source: 'dkim' },
+        { pattern: 'dkim.mail.microsoft', platform: 'm365', source: 'dkim' },
+    ],
+    // Primeras etiquetas de hostname que delatan un servidor de correo propio cuando
+    // aparecen en Certificate Transparency. Señal DÉBIL y nunca única: un certificado
+    // solo prueba que el nombre existió, no que el servicio esté activo hoy.
+    onprem_ct_hostnames: [
+        'owa', 'exchange', 'webmail', 'correo', 'zimbra', 'mdaemon', 'kerio', 'axigen', 'zarafa'
+    ],
+    // Patrones de PTR típicos de una línea de cliente de ISP (fibra/ADSL con IP fija).
+    // Un MX detrás de uno de estos casi siempre es un servidor en las oficinas.
+    isp_ptr_patterns: [
+        'customer.static', 'static.customer', 'dynamic', 'dsl.', 'adsl', 'pool.',
+        'cable.', 'fibertel', 'dyn.', '.rev.', 'business.static'
+    ],
+    // Pesos de las señales de hospedaje. Mismo esquema noisy-OR que seg_signal_weights.
+    // Los pesos por DEBAJO del umbral de afirmación (0.55) están así a propósito: son
+    // señales que nunca deben decidir solas. Ver mailHosting.js para el porqué de cada una.
+    mail_hosting_weights: {
+        autodiscover_cloud: 0.9,     // autodiscover → autodiscover.outlook.com
+        autodiscover_own_asn: 0.9,   // la IP de autodiscover está en un ASN de la propia empresa
+        autodiscover_own_domain: 0.85, // el CNAME de autodiscover apunta al propio dominio
+        dkim_tenant_m365: 0.85,      // selectorN._domainkey → tenant .onmicrosoft.com
+        mx_cloud: 0.8,               // el MX es de un proveedor cloud conocido
+        autodiscover_own_ptr: 0.75,  // el PTR de la IP de autodiscover cae en el propio dominio
+        mx_self_own_asn: 0.7,        // MX del propio dominio Y en un ASN que no es de nadie conocido
+        autodiscover_cloud_asn: 0.5, // la IP de autodiscover está en un ASN de hiperescalar
+        dane: 0.5,                   // hay TLSA: MTA autogestionado (MS/Google no publican)
+        mx_self: 0.45,               // la raíz del MX coincide con la del dominio auditado
+        ptr_isp_static: 0.4,         // el PTR parece una línea de cliente de ISP
+        ct_onprem_host: 0.35         // owa./webmail./zimbra. en Certificate Transparency
+    },
     categoryColors: {
         email: '#6366f1', seg: '#a855f7', ices: '#8b5cf6',
         marketing: '#f59e0b', transactional: '#06b6d4', crm: '#10b981',

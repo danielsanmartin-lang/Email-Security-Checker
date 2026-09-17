@@ -11,6 +11,12 @@ import {
     getCategoryLabel,
     formatProviderSource,
     displayProvider,
+    displayInboundFilter,
+    displayMailHosting,
+    mailHostingDetail,
+    mailHostingPlatform,
+    mailHostingEvidence,
+    mailHostingNotes,
     resolveFindingText,
     displayDmarcPolicy,
     serviceDescription,
@@ -65,6 +71,34 @@ export function generateReportHTML() {
             : '';
     const layerItem = (entry, label, inconclusiveLabel) =>
         `<li style="margin-bottom: 10px;"><strong>${isInconclusive(entry) ? inconclusiveLabel : label}:</strong> <span style="color: #4f46e5; font-weight: bold;">${escapeHtml(entry.name)}</span>${layerLevel(entry)} <br><small style="color: #64748b;">${t.evidence}: ${layerEvidence(entry)}</small>${layerLowConfidence(entry)}${layerUnconfirmed(entry)}</li>`;
+
+    // Hospedaje del correo. El informe enumera los campos uno a uno, así que un campo
+    // nuevo del result se perdería en silencio si no se añade aquí explícitamente.
+    let mailHostingHtml = '';
+    const mh = currentResult.mailHosting;
+    if (mh) {
+        const evidence = mailHostingEvidence(mh, t)
+            .map(e => `${escapeHtml(e.label)}: ${escapeHtml(e.value)}`).join(' · ');
+        const notes = mailHostingNotes(mh, t)
+            .map(n => `<p style="color: #d97706; font-style: italic; font-family: sans-serif; font-size: 12px; margin: 4px 0;">⚠ ${escapeHtml(n)}</p>`).join('');
+        // Sin insignia de porcentaje cuando no es determinable: un "0%" al lado de
+        // "no determinable" sugeriría una medición donde no hay ninguna.
+        const conf = mh.kind === 'undetermined'
+            ? ''
+            : ` <span style="color: #64748b; font-size: 12px;">(${t.confidence_label}: ${escapeHtml(t[`awareness_level_${mh.level}`] || mh.level)} ${Math.round(mh.confidence * 100)}%)</span>`;
+        mailHostingHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🏢 ${t.panel_mail_hosting_label}</h2>`
+            + `<ul style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px 15px 15px 35px; border-radius: 8px; font-family: sans-serif; font-size: 13px;">`
+            + `<li><strong>${t.inbound_filter_label}:</strong> ${escapeHtml(displayInboundFilter(currentResult, t))}</li>`
+            + `<li><strong>${t.mailbox_platform_label}:</strong> ${escapeHtml(mailHostingPlatform(mh, t))}`
+            + (mh.tenant ? ` <small style="color: #64748b;">(${t.mh_tenant_label}: ${escapeHtml(mh.tenant)})</small>` : '')
+            + `</li>`
+            + `<li><strong>${t.panel_mail_hosting_label}:</strong> ${escapeHtml(displayMailHosting(mh, t))}${conf}`
+            + `<br><small style="color: #64748b;">${escapeHtml(mailHostingDetail(mh, t))}</small>`
+            + (evidence ? `<br><small style="color: #64748b;">${t.evidence}: ${evidence}</small>` : '')
+            + `</li></ul>`
+            + notes
+            + `<p style="color: #94a3b8; font-style: italic; font-family: sans-serif; font-size: 12px;">${escapeHtml(t.mail_hosting_disclaimer)}</p>`;
+    }
 
     let segHtml = '';
     if (currentResult.segList.length > 0 || currentResult.icesList.length > 0) {
@@ -484,12 +518,14 @@ export function generateReportHTML() {
             <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13.5px; color: #334155; line-height: 1.6; text-align: left;">
                 <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100)</li>
                 <li><strong>${t.summary_provider}:</strong> ${escapeHtml(providerDisplay)} <br><small style="color: #64748b;">(${escapeHtml(formatProviderSource(currentResult.providerSource, t))})</small></li>
+                ${mh ? `<li><strong>${t.summary_mail_hosting}:</strong> ${escapeHtml(displayMailHosting(mh, t))}</li>` : ''}
                 <li><strong>${t.summary_dmarc}:</strong> ${dmarcPolicyText}</li>
                 <li><strong>${authorizedServicesLabel}:</strong> ${currentResult.spfServices.length} ${currentResult.spfServices.length === 1 ? (t.detected_singular || t.detected_plural) : t.detected_plural}</li>
                 ${awarenessSummaryLine}
                 <li><strong>${rblSummaryLabel}:</strong> ${rblStatusVal}</li>
             </ul>
 
+            ${mailHostingHtml}
             ${segHtml}
             ${servicesHtml}
             ${awarenessHtml}
