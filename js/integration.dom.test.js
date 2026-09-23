@@ -86,18 +86,30 @@ async function runFlow(domain) {
 }
 
 describe('flujo completo (jsdom + DoH simulado)', () => {
+    let dispose;
+
     beforeEach(async () => {
         localStorage.clear();
         localStorage.setItem('lang', 'es');
+        // La URL también sobrevive entre tests: el submit la reescribe con pushState y,
+        // sin limpiarla, init() arrancaría el deep-link del test anterior (?domain=…&dkim=…),
+        // un análisis que nadie espera y que llegaba a pintar dentro del test siguiente.
+        window.history.replaceState(null, '', '/');
         mountIndexHtml();
         installFetchMock();
         const { clearDnsCache } = await import('./api.js');
         clearDnsCache();
-        await import('./bootstrap.js');
-        document.dispatchEvent(new window.Event('DOMContentLoaded'));
+        // init() en vez de despachar DOMContentLoaded: `document` sobrevive entre tests y
+        // el evento despertaba también a las instancias de bootstrap.js de los tests
+        // anteriores (vi.resetModules() da una nueva en cada import), que cableaban su
+        // propio submit sobre este formulario, cada una con su copia de settings.js y
+        // state.js. Así solo actúa la de este test, y dispose() la desmonta al acabar.
+        const { init } = await import('./bootstrap.js');
+        dispose = init();
     });
 
     afterEach(() => {
+        dispose();
         vi.restoreAllMocks();
         vi.resetModules();
     });
@@ -205,11 +217,7 @@ describe('flujo completo (jsdom + DoH simulado)', () => {
         saveSettings({ contactAuditedHosts: true });
         try {
             await runFlow('acme.test');
-            // Se comprueba la PETICIÓN y no el panel: cada test re-importa bootstrap.js y
-            // los listeners de DOMContentLoaded de los tests anteriores siguen vivos, así
-            // que varias instancias del módulo (cada una con su copia de los ajustes)
-            // compiten por pintar el resultado.
-            await waitFor(() => global.fetch.mock.calls.some(([u]) => String(u).includes('mta-sts.acme.test/.well-known')));
+            expect(document.getElementById('advanced-dns-body').textContent).toContain('Enforce');
         } finally {
             saveSettings({ contactAuditedHosts: DEFAULT_SETTINGS.contactAuditedHosts });
         }
@@ -265,5 +273,29 @@ describe('flujo completo (jsdom + DoH simulado)', () => {
         // Un segundo análisis reemplaza por completo al anterior.
         await runFlow('acme.test');
         expect(document.getElementById('result-domain').textContent).toBe('acme.test');
+    });
+
+    it('dispose() retira también los listeners de document', () => {
+        // Son los que sobreviven al re-montaje del DOM entre tests. Escape cierra los
+        // modales desde un keydown en document.
+        const modal = document.getElementById('settings-modal');
+        const escape = () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+        modal.classList.remove('hidden');
+        escape();
+        expect(modal.classList.contains('hidden')).toBe(true);
+        modal.classList.remove('hidden');
+        dispose();
+        escape();
+        expect(modal.classList.contains('hidden')).toBe(false);
+    });
+
+    it('un submit lo atiende solo la instancia de bootstrap.js de este test', async () => {
+        // Guarda del aislamiento del beforeEach, por eso va al final: una instancia de un
+        // test anterior que siguiera cableada al formulario atendería también el submit, y
+        // cada manejador reescribe la URL una vez. Contar consultas DNS no serviría: cada
+        // instancia tiene su propia caché y ya habría resuelto acme.test.
+        const pushState = vi.spyOn(window.history, 'pushState');
+        await runFlow('acme.test');
+        expect(pushState).toHaveBeenCalledTimes(1);
     });
 });
