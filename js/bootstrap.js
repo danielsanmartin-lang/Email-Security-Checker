@@ -42,7 +42,22 @@ function applyToolVisibility() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+/**
+ * Cablea la página: traduce el DOM, aplica los ajustes y registra todos los listeners
+ * (formulario, idioma, modales, ajustes, exportación). En el navegador se llama una sola
+ * vez, en DOMContentLoaded (al final del fichero).
+ *
+ * Devuelve un dispose() que retira todos esos listeners, también los que cuelgan de
+ * `document`, que sobreviven a un re-montaje del DOM. Lo usa el test de integración, que
+ * monta la página una vez por test y no puede dejar cableadas las instancias del módulo
+ * de los tests anteriores.
+ * @returns {() => void}
+ */
+export function init() {
+    // Todos los listeners llevan esta señal: abortarla es el dispose() que se devuelve.
+    const controller = new AbortController();
+    const opts = { signal: controller.signal };
+
     // Initialize i18n
     translateDOM();
     applyToolVisibility();
@@ -67,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
             langDropdown.classList.toggle('hidden');
             const isOpen = langSelector.classList.contains('open');
             langBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        });
+        }, opts);
         
         document.querySelectorAll('.lang-dropdown__item').forEach(item => {
             item.addEventListener('click', (e) => {
@@ -85,14 +100,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (state.currentResult && state.currentDomain) {
                     renderResults(state.currentDomain, state.currentResult);
                 }
-            });
+            }, opts);
         });
         
         document.addEventListener('click', () => {
             if (langSelector) langSelector.classList.remove('open');
             if (langDropdown) langDropdown.classList.add('hidden');
             if (langBtn) langBtn.setAttribute('aria-expanded', 'false');
-        });
+        }, opts);
     }
 
     // ===== Accesibilidad de modales: cierre con Escape y trampa de foco =====
@@ -118,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 first.focus();
             }
         }
-    });
+    }, opts);
 
     // DKIM UI Logic
     const dkimToggleBtn = document.getElementById('dkim-toggle-btn');
@@ -134,16 +149,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!dkimCollapsible.classList.contains('hidden')) {
                 if (dkimInput) dkimInput.focus();
             }
-        });
+        }, opts);
     }
 
     const closeDkimModal = () => { if (dkimInfoModal) dkimInfoModal.classList.add('hidden'); };
     if (dkimInfoBtn) {
         dkimInfoBtn.addEventListener('click', () => {
             if (dkimInfoModal) dkimInfoModal.classList.remove('hidden');
-        });
-        if (dkimInfoClose) dkimInfoClose.addEventListener('click', closeDkimModal);
-        if (dkimInfoOverlay) dkimInfoOverlay.addEventListener('click', closeDkimModal);
+        }, opts);
+        if (dkimInfoClose) dkimInfoClose.addEventListener('click', closeDkimModal, opts);
+        if (dkimInfoOverlay) dkimInfoOverlay.addEventListener('click', closeDkimModal, opts);
     }
 
     if (domainParam) {
@@ -175,13 +190,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (domain) runAnalysis(domain, dkimSelectors.length ? dkimSelectors : null);
-    });
+    }, opts);
 
     document.querySelectorAll('.search-hint').forEach(hint => {
         hint.addEventListener('click', () => {
             input.value = hint.dataset.domain;
             form.dispatchEvent(new Event('submit'));
-        });
+        }, opts);
     });
 
     document.getElementById('new-scan-btn').addEventListener('click', () => {
@@ -190,16 +205,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dkimInput) dkimInput.value = '';
         input.focus();
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
+    }, opts);
 
     const googleBtn = document.getElementById('export-google-btn');
-    if (googleBtn) googleBtn.addEventListener('click', exportToGoogle);
+    if (googleBtn) googleBtn.addEventListener('click', exportToGoogle, opts);
 
     const fileBtn = document.getElementById('export-file-btn');
-    if (fileBtn) fileBtn.addEventListener('click', exportToFile);
+    if (fileBtn) fileBtn.addEventListener('click', exportToFile, opts);
 
     const pdfBtn = document.getElementById('export-pdf-btn');
-    if (pdfBtn) pdfBtn.addEventListener('click', exportToPDF);
+    if (pdfBtn) pdfBtn.addEventListener('click', exportToPDF, opts);
 
     // Visor de informes agregados DMARC (RUA): colapsado, es una herramienta aparte
     // del análisis DNS y no todo el mundo tiene un informe a mano.
@@ -210,8 +225,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const expanded = ruaToggle.getAttribute('aria-expanded') === 'true';
             ruaToggle.setAttribute('aria-expanded', String(!expanded));
             ruaBody.hidden = expanded;
-        });
-        initDmarcReportPanel();
+        }, opts);
+        initDmarcReportPanel(opts);
     }
 
     // ===== Panel de ajustes =====
@@ -267,10 +282,10 @@ document.addEventListener('DOMContentLoaded', () => {
             loadIntoForm();
             settingsModal.classList.remove('hidden');
             resolverSel.focus();
-        });
-        closeBtn.addEventListener('click', close);
-        overlay.addEventListener('click', close);
-        resolverSel.addEventListener('change', syncCustomVisibility);
+        }, opts);
+        closeBtn.addEventListener('click', close, opts);
+        overlay.addEventListener('click', close, opts);
+        resolverSel.addEventListener('change', syncCustomVisibility, opts);
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -299,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     say('settings_fingerprints_err', { '{error}': err.message });
                 }
             }
-        });
+        }, opts);
 
         refreshBtn.addEventListener('click', () => {
             clearDnsCache();
@@ -311,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 say('settings_refresh_empty');
             }
-        });
+        }, opts);
     }
 
     // Desglose de la puntuación: DESPLEGADO por defecto. La nota sola no dice nada
@@ -333,12 +348,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 label.setAttribute('data-i18n', key);
                 label.textContent = translations[getLanguage()][key];
             }
-        });
+        }, opts);
     }
 
     // Analizador de cabeceras de correo (panel de Awareness) — se vincula una sola vez.
     const headerBtn = document.getElementById('awareness-header-btn');
-    if (headerBtn) headerBtn.addEventListener('click', analyzeHeaders);
+    if (headerBtn) headerBtn.addEventListener('click', analyzeHeaders, opts);
 
     // La herramienta de cabeceras es un complemento opcional (solo aplica si tienes una
     // muestra de correo en la mano), así que va colapsada y se despliega bajo demanda.
@@ -349,17 +364,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const expanded = headerToggle.getAttribute('aria-expanded') === 'true';
             headerToggle.setAttribute('aria-expanded', String(!expanded));
             headerBody.hidden = expanded;
-        });
+        }, opts);
     }
 
     document.getElementById('error-retry').addEventListener('click', () => {
         const domain = input.value.trim().toLowerCase();
         const dkimSelectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
         if (domain) runAnalysis(domain, dkimSelectors.length ? dkimSelectors : null);
-    });
+    }, opts);
 
-    document.getElementById('add-kb-close').addEventListener('click', closeKbModal);
-    document.getElementById('add-kb-overlay').addEventListener('click', closeKbModal);
+    document.getElementById('add-kb-close').addEventListener('click', closeKbModal, opts);
+    document.getElementById('add-kb-overlay').addEventListener('click', closeKbModal, opts);
     
     document.getElementById('add-kb-form').addEventListener('submit', (e) => {
         e.preventDefault();
@@ -399,5 +414,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
             runAnalysis(state.currentDomain, selectors.length ? selectors : null);
         }
-    });
-});
+    }, opts);
+
+    return () => controller.abort();
+}
+
+document.addEventListener('DOMContentLoaded', () => init());
