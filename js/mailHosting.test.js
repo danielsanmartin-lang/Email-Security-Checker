@@ -365,3 +365,26 @@ describe('classifyMailHosting — ramas de desempate', () => {
         expect(r.evidence).toEqual([]);
     });
 });
+
+describe('DANE ya no implica MTA propio (Microsoft 365 publica TLSA)', () => {
+    it('TLSA en un MX de Microsoft 365 (*.mx.microsoft) no cuenta como infraestructura propia', () => {
+        const r = classifyMailHosting({
+            domain: 'contoso.com',
+            mxIds: [{ host: 'contoso-com.l-v1.mx.microsoft', type: 'provider', name: 'Microsoft 365' }],
+            autodiscover: { cname: 'autodiscover.outlook.com', ips: [], status: 'ok' },
+            daneRecords: { 'contoso-com.l-v1.mx.microsoft': ['3 1 1 abc'] }
+        });
+        expect(r.evidence.some(e => e.signal === 'dane')).toBe(false);
+        expect(r.kind).toBe('cloud');
+        expect(r.platform).toBe('m365');
+    });
+
+    it('el autodiscover bajo una marca corta de ccTLD es propio (sin heurística de raíz)', () => {
+        const r = classifyMailHosting({
+            domain: 'ine.es',
+            mxIds: [{ host: 'mx.ine.es', type: 'self', name: 'mx.ine.es' }],
+            autodiscover: { cname: 'correo.ine.es', ips: [], status: 'ok' }
+        });
+        expect(r.evidence.some(e => e.signal === 'autodiscover_own_domain')).toBe(true);
+    });
+});

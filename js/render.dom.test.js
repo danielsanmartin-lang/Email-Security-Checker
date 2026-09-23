@@ -4,6 +4,7 @@ import { renderResults } from './ui.js';
 import { analyze, calculateScoreAndFindings } from './analyzer.js';
 import { generateReportHTML } from './export.js';
 import { state } from './state.js';
+import { saveSettings, DEFAULT_SETTINGS } from './settings.js';
 
 const CONTAINER_IDS = [
     'result-domain', 'result-timestamp',
@@ -201,5 +202,136 @@ describe('renderResults (jsdom, integración)', () => {
         expect(report).not.toContain('6. Advanced DNS');
         expect(report).not.toContain('>Name<');
         expect(report).not.toContain('DNS Lookups:');
+    });
+});
+
+// ===========================================================================
+// DMARC en la UI y en el informe: datos del registro auditado con marcado, t=y y
+// política efectiva. Antes, p/sp/pct entraban crudos en el informe exportado.
+// ===========================================================================
+function dmarcResult(dmarcRaw, extra = {}) {
+    const result = analyze([{ priority: 10, host: 'mx.acme.com' }], 'v=spf1 -all', dmarcRaw, {
+        domain: 'acme.com', mtaSts: null, tlsRpt: null, srvRecords: {}, daneRecords: {}, ...extra
+    });
+    Object.assign(result, {
+        spfLookups: 1,
+        spfTree: { domain: 'acme.com', lookups: 1, error: null, children: [] },
+        dkimRecords: { records: [], errors: [] },
+        bimiRecord: null,
+        rblResults: [],
+        awarenessResult: null
+    });
+    result.scoreCard = calculateScoreAndFindings(result);
+    return result;
+}
+
+describe('DMARC con marcado en las etiquetas (UI e informe)', () => {
+    beforeEach(buildDom);
+
+    const EVIL = 'v=DMARC1; p=<img data-evil=1 src=https://evil.example/p.gif>; sp=<b data-evil=1>sp</b>; np=<i data-evil=1>np</i>; t=<u data-evil=1>t</u>; psd=<s data-evil=1>psd</s>; pct=<em data-evil=1>9</em>; rua=mailto:a@acme.com';
+
+    it('el informe exportado no inyecta ningún elemento del registro', () => {
+        state.currentResult = dmarcResult(EVIL);
+        state.currentDomain = 'acme.com';
+        const container = document.createElement('div');
+        container.innerHTML = generateReportHTML().toString();
+        expect(container.querySelectorAll('[data-evil]').length).toBe(0);
+        expect(container.querySelectorAll('img').length).toBe(0);
+        expect(container.textContent).toContain('data-evil');
+    });
+
+    it('la interfaz tampoco', () => {
+        renderResults('acme.com', dmarcResult(EVIL));
+        expect(document.querySelectorAll('[data-evil]').length).toBe(0);
+    });
+});
+
+describe('DMARC: la interfaz y el informe dicen la política que se aplica', () => {
+    beforeEach(buildDom);
+
+    it('p=reject; t=y se resume como quarantine en modo prueba', () => {
+        const result = dmarcResult('v=DMARC1; p=reject; t=y; rua=mailto:a@acme.com');
+        renderResults('acme.com', result);
+        const summary = document.getElementById('summary-dmarc-value');
+        expect(summary.textContent).toContain('Quarantine');
+        expect(summary.textContent).toContain('REJECT');
+        expect(summary.classList.contains('dmarc-policy--quarantine')).toBe(true);
+        const body = document.getElementById('dmarc-body').textContent;
+        expect(body).toContain('Modo prueba (t)');
+        expect(body).toContain('Receptores RFC 9989: QUARANTINE');
+
+        state.currentResult = result;
+        state.currentDomain = 'acme.com';
+        const report = generateReportHTML().toString();
+        expect(report).toContain('REJECT en modo prueba');
+    });
+
+    it('un subdominio que hereda muestra de dónde y con qué etiqueta', () => {
+        const result = dmarcResult('v=DMARC1; p=reject; sp=quarantine; rua=mailto:a@acme.com', {
+            domain: 'shop.acme.com', dmarcInherited: true, dmarcInheritedFrom: 'acme.com',
+            dmarcSource: 'org', dmarcPolicyDomain: 'acme.com', dmarcOrgDomain: 'acme.com'
+        });
+        renderResults('shop.acme.com', result);
+        const body = document.getElementById('dmarc-body').textContent;
+        expect(body).toContain('Heredada de acme.com (etiqueta sp)');
+        expect(body).toContain('Dominio organizativo (Tree Walk, RFC 9989)');
+        expect(document.getElementById('summary-dmarc-value').textContent).toContain('heredada de acme.com');
+    });
+
+    it('marca como no válido un rua sin mailto:', () => {
+        renderResults('acme.com', dmarcResult('v=DMARC1; p=reject; rua=dmarc@acme.com'));
+        expect(document.getElementById('dmarc-reporting-body').textContent).toContain('No válido');
+    });
+});
+
+describe('desglose: el tope de la nota se explica', () => {
+    beforeEach(buildDom);
+
+    it('una nota topada en 94 dice por qué junto a la suma sin topes', () => {
+        const result = unconfirmedSegResult();
+        expect(result.scoreCard.cap).toEqual({ key: 'unverified', value: 94 });
+        document.body.insertAdjacentHTML('beforeend', '<span id="score-number"></span><div id="score-breakdown-body"></div>');
+        renderResults('acme.com', result);
+        const note = document.querySelector('#score-breakdown-body .score-cat__cap');
+        expect(note).not.toBeNull();
+        expect(note.textContent).toContain('94');
+        expect(note.textContent).not.toContain('{cap}');
+        expect(document.getElementById('score-number').textContent).toBe('94');
+    });
+});
+
+describe('BIMI: el logo no se pide al dominio auditado sin permiso', () => {
+    beforeEach(buildDom);
+
+    const bimiResult = () => {
+        const result = dmarcResult('v=DMARC1; p=reject; rua=mailto:a@acme.com');
+        result.bimiRecord = { record: 'v=BIMI1; l=https://acme.com/logo.svg', logo: 'https://acme.com/logo.svg', vmc: null, declined: false };
+        return result;
+    };
+
+    it('por defecto carga el logo, sin Referer', () => {
+        renderResults('acme.com', bimiResult());
+        const bimi = document.getElementById('bimi-body');
+        const img = bimi.querySelector('img.bimi-logo');
+        expect(img).not.toBeNull();
+        expect(img.referrerPolicy).toBe('no-referrer');
+        expect(bimi.querySelector('.bimi-logo-load')).toBeNull();
+    });
+
+    it('con loadBimiLogos apagado ofrece un botón en vez de cargar la imagen', () => {
+        saveSettings({ loadBimiLogos: false });
+        try {
+            renderResults('acme.com', bimiResult());
+            const bimi = document.getElementById('bimi-body');
+            expect(bimi.querySelector('img.bimi-logo')).toBeNull();
+            const btn = bimi.querySelector('.bimi-logo-load');
+            expect(btn).not.toBeNull();
+            btn.click();
+            const img = bimi.querySelector('img.bimi-logo');
+            expect(img).not.toBeNull();
+            expect(img.referrerPolicy).toBe('no-referrer');
+        } finally {
+            saveSettings({ loadBimiLogos: DEFAULT_SETTINGS.loadBimiLogos });
+        }
     });
 });

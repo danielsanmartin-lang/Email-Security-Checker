@@ -31,6 +31,8 @@ function dohResponse(name, type) {
     if (type === 'MX' && MX[name]) return answer(MX[name], 15);
     if (type === 'NS' && NS[name]) return answer(NS[name], 2);
     if (type === 'A' && name === 'mx.mimecast.com') return answer(['203.0.113.10'], 1);
+    // El host de la política MTA-STS existe: la comprobación por DNS lo encuentra.
+    if (type === 'A' && name === 'mta-sts.acme.test') return answer(['203.0.113.20'], 1);
     if (type === 'DNSKEY' && name === 'acme.test') return { Status: 0, AD: true, Answer: [{ type: 48, data: 'key' }] };
     return { Status: 0 }; // NOERROR sin respuestas
 }
@@ -169,6 +171,48 @@ describe('flujo completo (jsdom + DoH simulado)', () => {
         expect(document.getElementById('dmarc-reporting-body').textContent).toContain('dmarc@acme.test');
         expect(document.getElementById('bimi-body').textContent).toContain('v=BIMI1');
         expect(document.getElementById('advanced-dns-body').textContent).toContain('MTA-STS');
+    });
+
+    it('por defecto no contacta con el dominio auditado y no manda su red a los DNS', async () => {
+        await runFlow('acme.test');
+        const urls = global.fetch.mock.calls.map(([u]) => String(u));
+        // La política MTA-STS no se pide a los servidores de acme.test. El logo BIMI sí
+        // se carga (ajuste loadBimiLogos), pero como imagen: sin Origin y sin Referer.
+        expect(urls.some(u => u.includes('mta-sts.acme.test/.well-known'))).toBe(false);
+        const logo = document.querySelector('#bimi-body img.bimi-logo');
+        expect(logo).not.toBeNull();
+        expect(logo.referrerPolicy).toBe('no-referrer');
+        expect(document.getElementById('advanced-dns-body').textContent).toContain('No descargada (privacidad)');
+        // Google DoH sin ECS.
+        const google = urls.filter(u => u.startsWith('https://dns.google/'));
+        expect(google.length).toBeGreaterThan(0);
+        expect(google.every(u => u.includes('edns_client_subnet=0.0.0.0%2F0') || u.includes('edns_client_subnet=0.0.0.0/0'))).toBe(true);
+        // El Tree Walk de RFC 9989 sube hasta el TLD para fijar el dominio organizativo.
+        expect(urls.some(u => u.includes('name=_dmarc.test&'))).toBe(true);
+    });
+
+    it('un subdominio sin BIMI propio muestra el del dominio organizativo', async () => {
+        await runFlow('shop.acme.test');
+        await waitFor(() => document.getElementById('bimi-body').textContent.includes('v=BIMI1'));
+        const urls = global.fetch.mock.calls.map(([u]) => String(u));
+        expect(urls.some(u => u.includes('name=default._bimi.shop.acme.test&'))).toBe(true);
+        expect(urls.some(u => u.includes('name=default._bimi.acme.test&'))).toBe(true);
+        expect(document.getElementById('bimi-body').textContent).toContain('Heredado de acme.test');
+    });
+
+    it('con el ajuste de contacto activado, descarga la política MTA-STS', async () => {
+        const { saveSettings, DEFAULT_SETTINGS } = await import('./settings.js');
+        saveSettings({ contactAuditedHosts: true });
+        try {
+            await runFlow('acme.test');
+            // Se comprueba la PETICIÓN y no el panel: cada test re-importa bootstrap.js y
+            // los listeners de DOMContentLoaded de los tests anteriores siguen vivos, así
+            // que varias instancias del módulo (cada una con su copia de los ajustes)
+            // compiten por pintar el resultado.
+            await waitFor(() => global.fetch.mock.calls.some(([u]) => String(u).includes('mta-sts.acme.test/.well-known')));
+        } finally {
+            saveSettings({ contactAuditedHosts: DEFAULT_SETTINGS.contactAuditedHosts });
+        }
     });
 
     it('normaliza la entrada (email → dominio) y actualiza el campo', async () => {

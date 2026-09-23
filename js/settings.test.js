@@ -56,6 +56,22 @@ describe('settings', () => {
         expect(resolverChain('ex.com', 'TXT')[0].url).toContain('dns.google');
     });
 
+    it('Google DoH va sin ECS: la red del auditor no llega a los DNS del dominio auditado', () => {
+        expect(resolverChain('ex.com', 'TXT')[0].url).toContain('edns_client_subnet=0.0.0.0/0');
+    });
+
+    it('por defecto no se contacta con los servidores del dominio auditado', () => {
+        expect(getSettings().contactAuditedHosts).toBe(false);
+    });
+
+    it('el logo BIMI se carga por defecto y se puede apagar aparte', () => {
+        expect(getSettings().loadBimiLogos).toBe(true);
+        saveSettings({ loadBimiLogos: false });
+        resetSettingsCache();
+        expect(getSettings().loadBimiLogos).toBe(false);
+        expect(getSettings().contactAuditedHosts).toBe(false);
+    });
+
     it('escapa el nombre consultado en la URL', () => {
         const chain = resolverChain('ex ample.com', 'TXT');
         expect(chain[0].url).toContain('ex%20ample.com');

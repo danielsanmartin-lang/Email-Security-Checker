@@ -3,6 +3,155 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [4.0.0] - 2026-09-23
+
+Dos cambios de fondo. El análisis DMARC se adapta a **RFC 9989, 9990 y 9991** (DMARCbis),
+publicados en mayo de 2026, que sustituyen a RFC 7489. Y la puntuación se rediseña: la
+anterior mezclaba cosas que no se pueden sumar, y daba notas bajas a dominios que un receptor
+protege de verdad. La 3.4.0 nunca llegó a publicarse: su contenido está aquí.
+
+### ⚠️ Cambio incompatible: nueva puntuación
+
+La nota deja de ser una suma de todo lo que se ve en el DNS. Ahora contesta a una sola
+pregunta: **¿puede alguien poner este dominio en el From de un correo y que llegue?** El
+transporte se evalúa aparte.
+
+- **Dos ejes.** El anillo y la letra son la **protección contra suplantación**: DMARC 50,
+  SPF 20, DKIM 20 e informes 10. La **seguridad del transporte** (MTA-STS 40, TLS-RPT 15,
+  DNSSEC 25 y DANE 20) sale en una pastilla aparte, y solo se evalúa si el dominio recibe
+  correo. Un nombre sin MX, o con Null MX, sale como "No aplica".
+- **Nivel en vez de postura:** Protegido, Parcial o Suplantable. La postura "Fuerte" exigía un
+  gateway detectable, MTA-STS verificado y `-all`: ninguno de los 24 dominios medidos llegaba.
+- **Sin enforcement la nota no pasa de 45 (D):** con `p=none` cualquiera suplanta el dominio,
+  por bien que esté el resto.
+- **A+ exige evidencia completa:** reject en todos los niveles, SPF y DKIM evaluados y al
+  máximo, e informes. Lo que no se puede verificar desde fuera no resta, pero limita a A (94).
+  El desglose muestra la suma sin topes y dice cuándo y por qué se ha aplicado uno.
+- **`~all` vale lo mismo que `-all` si DMARC aplica política** (RFC 9989 §7.1). Sin
+  enforcement, `-all` sigue valiendo más.
+- **Una clave DKIM revocada** (`p=` vacío) es un hallazgo informativo, no un fallo: retirarla
+  así es lo correcto. Si solo aparecen claves revocadas, DKIM queda sin evaluar.
+- **Un nombre que no envía correo** (sin MX ni SPF) cubierto por DMARC en enforcement no se
+  penaliza por no tener SPF. Se recomienda `v=spf1 -all` y Null MX.
+- **BIMI sale de la nota:** es marca, no seguridad. Si el dominio no publica BIMI, se consulta
+  el del dominio organizativo, que es lo que hace el receptor.
+- **MTA-STS publicado pero no descargado** cuenta como "publicado, sin verificar" (25 de 40),
+  no como ausente.
+
+Medido sobre los mismos dominios, solo por DNS y con los ajustes por defecto:
+
+| Dominio | v3.3.0 | v4.0.0 | Transporte |
+|---|---|---|---|
+| telefonica.com | 54 D (débil) | 45 D · Suplantable | F |
+| support.apple.com | 32 F (débil) | 94 A · Protegido | No aplica |
+| apple.com | 65 C | 93 A · Protegido | F |
+| iberdrola.es | 54 D | 94 A · Protegido | F |
+| santander.com | 60 C | 94 A · Protegido | F |
+| github.com | 61 C | 93 A · Protegido | F |
+| google.com | 81 A | 94 A · Protegido | D |
+| paypal.com | 73 B | 94 A · Protegido | F |
+| mailbox.org | 93 A+ | 94 A · Protegido | A |
+| posteo.de | 63 C (débil) | 26 F · Suplantable | A |
+| ncsc.gov.uk | 87 A | 100 A+ · Protegido | D |
+
+posteo.de baja porque publica `p=none`: su transporte es ejemplar, pero su dominio se puede
+suplantar. telefonica.com, igual. support.apple.com sube porque `sp=reject` de apple.com lo
+protege aunque no tenga MX ni SPF propios.
+
+### DMARCbis: qué política cuenta
+
+Durante la transición conviven receptores de las dos normas: a 23/09/2026, dmarcdkim.com
+contabiliza 114 de 4.958 emisores de informes (un 2,3 %) con el formato nuevo. GMX, WEB.DE y
+mail.com ya lo usan al 100 %; Google, Microsoft y Yahoo, todavía no. Por eso la nota es
+**conservadora**: cuenta la política más débil que aplicaría alguna de las dos generaciones de
+receptores.
+
+- **`t=y` (modo prueba, RFC 9989 §4.7):** la política cuenta un nivel menos (reject →
+  quarantine, quarantine → none).
+- **`pct=0`:** cuenta como la política inferior, que es lo que aplican los receptores RFC 7489
+  (§6.6.4). Un pct parcial resta 5 puntos.
+- **Subdominios que heredan la política:** se puntúan con `sp` (RFC 9989 §4.10.1), no con `p`.
+  En el propio dominio organizativo, `sp=none` resta 12 y `np=none`, 6.
+- **quarantine y reject son enforcement** (RFC 9989 §3.2.9): 46 y 50 puntos. §7.4 desaconseja
+  reject en dominios cuyos usuarios escriben a listas de correo.
+- **Valores de política no válidos** (§4.10.1): el registro cuenta como `p=none`, o sin efecto
+  si no hay ningún rua válido. `p=Reject` en mayúsculas, que la ABNF admite, puntúa como reject.
+- **Varios registros DMARC en el mismo nombre** se descartan todos (§4.10): no cuentan ni su
+  política ni sus `rua`.
+- **Informes:** exigen un `rua` válido. No cuentan `rua=dmarc@dominio` sin `mailto:` ni tener
+  solo `ruf`. Un destino externo sin autorizar (RFC 9990 §4) resta 4.
+- **SPF con `redirect=`:** el `all` efectivo sale del registro de destino (antes, un falso
+  "sin all").
+- **Varios registros SPF, un include roto, más de dos consultas vacías, más de 10 lookups o un
+  mecanismo con errata** (`inlcude:`, `-all;`) son PermError: 0 puntos.
+- **MTA-STS en `mode: testing`** deja de ser un error rojo: es un aviso con 15 de 40.
+- **DNSSEC:** puntúa solo si la zona valida (flag AD). DANE solo se evalúa si valida la zona
+  del dominio, y solo puntúa si también validan los TLSA.
+
+### Añadido
+
+- **DNS Tree Walk (RFC 9989 §4.10) sobre DoH.** `discoverDmarcPolicy()` descubre la política
+  aplicable y el dominio organizativo sin Public Suffix List y sin backend. Entiende `psd=n` y
+  `psd=y`, y marca la búsqueda como incompleta si un nivel no responde. En un dominio típico
+  cuesta una consulta más (`_dmarc.<tld>`), que queda en caché.
+- **`js/dmarc.js`**, un módulo puro con la semántica de RFC 9989 y su convivencia con RFC 7489.
+- **Etiquetas `t` y `psd`** en el panel y en el informe, más un bloque "Política que se aplica a
+  este dominio" que muestra la herencia y lo que aplica cada generación de receptores.
+- **Hallazgos nuevos:** `pct` y `ri`/`rf` eliminados, `fo` sin `ruf`, etiquetas desconocidas,
+  `psd`, `rua` sin esquema, `p=none` sin `rua` y la nota de §7.4 para reject.
+- **MTA-STS comprobado por DNS:** si `mta-sts.<dominio>` no resuelve, la política está rota para
+  cualquier MTA. Es un hallazgo de error que se obtiene sin mandar ni una petición al dominio.
+- **El MX de Exchange Online con DNSSEC/DANE** (`*.x-v1.mx.microsoft`) se reconoce como
+  Microsoft 365; antes salía como "MX externo no identificado".
+- **Claves DKIM sin `v=DKIM1`**: esa etiqueta es opcional según RFC 6376 §3.6.1.
+
+### Privacidad
+
+- **Nuevo ajuste "Descargar la política MTA-STS", apagado por defecto.** Esa petición es CORS:
+  deja en los registros del prospecto la IP del auditor y el `Origin` de la app. Sin ella,
+  MTA-STS se comprueba por DNS.
+- **Nuevo ajuste "Cargar logotipos BIMI", encendido por defecto.** Una imagen no envía
+  `Origin` y la página va sin Referer, así que el servidor del logo (casi siempre una CDN) solo
+  ve la IP. Apagado, el logo se carga con un clic.
+- **Google DoH con `edns_client_subnet=0.0.0.0/0`:** la red del auditor ya no llega a los DNS
+  autoritativos del prospecto.
+- **`<meta name="referrer" content="no-referrer">`** en la página.
+
+### Corregido
+
+- **Inyección de HTML en el informe exportado** (PDF, Word y Google Docs). `p`, `sp` y `pct` del
+  registro DMARC, y la política del resumen, entraban sin escapar, así que un registro con
+  marcado (`p=<img src=https://…>`) quedaba insertado en el informe. Hay un test de regresión
+  en `render.dom.test.js`, comprobado contra el código anterior: allí falla.
+- **Verificación de destinos externos** (RFC 9990 §4): ahora se antepone el dominio donde se
+  encontró la política. En los subdominios que la heredaban salía un falso "no autorizado".
+- **Heurística de dominio raíz:** una marca de tres letras o menos bajo un ccTLD (ine.es,
+  dhl.de, abc.es) ya no se toma por sufijo público. Provocaba MX propios presentados como
+  "externos", DMARC sin heredar y destinos propios "no autorizados".
+- **Hospedaje:** un TLSA en un MX de Microsoft 365 ya no cuenta como indicio de servidor propio.
+- **Analizador de cabeceras:** `sophosmail.com` hacía pasar por simulación de Sophos Phish Threat
+  cualquier correo filtrado por el gateway Sophos Email.
+- **Awareness:** usa el árbol SPF del análisis principal, así que su PermError ya no contradice
+  al panel SPF. Además, los selectores DKIM de cada vendor se sondean en paralelo.
+- **`parseSPF`:** reconoce mecanismos en mayúsculas, `a/24` y `mx//64` (antes desaparecían de la
+  tabla) y `exp=`. `redirect=` se ignora si el registro tiene `all`.
+- **Contaminación del prototipo** desde un JSON de firmas (`__proto__`).
+- **Service worker:** ya no guarda un 404 o un 5xx como página de inicio sin conexión.
+- **Panel de MTA-STS:** el cuerpo de la política ya no se escapa dos veces.
+
+### Textos
+
+- Las citas pasan a RFC 9989/9990: herencia (§4.10.1), destinos externos (RFC 9990 §4) y
+  registros múltiples (§4.10).
+- El texto de `pct` decía que el resto del correo "se entrega sin aplicar la política". Es falso
+  también con RFC 7489: ese resto recibe la política inferior.
+
+### Calidad
+
+- Tests: 408 → **528**, con casos de calibración sacados de dominios reales. Cobertura global
+  del 91,8 %, con un umbral propio para `js/dmarc.js`.
+- La CI pasa a Node 22 y 24: Node 20 dejó de tener soporte en abril de 2026.
+
 ## [3.3.0] - 2026-09-17
 
 ### Añadido

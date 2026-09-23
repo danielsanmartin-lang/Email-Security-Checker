@@ -46,7 +46,7 @@
  */
 
 import { KB } from './knowledge.js';
-import { extractRootDomain } from './utils.js';
+import { extractRootDomain, isSameOrSubdomain } from './utils.js';
 
 // Umbrales idénticos a los de _segLevel en analyzer.js: la confianza debe significar lo
 // mismo en toda la interfaz. No se importa de allí porque analyzer.js importa este módulo
@@ -101,6 +101,9 @@ export function asnMatchesBrand(asName, domain) {
 /** ¿Dos nombres cuelgan del mismo dominio raíz? */
 function sameRoot(hostA, domain) {
     if (!hostA || !domain) return false;
+    // Por etiquetas primero: autodiscover.ine.es es de ine.es aunque la heurística de
+    // dominio raíz dude con marcas cortas.
+    if (isSameOrSubdomain(hostA, domain)) return true;
     const a = extractRootDomain(String(hostA).toLowerCase());
     const b = extractRootDomain(String(domain).toLowerCase());
     return !!a && !!b && a === b;
@@ -265,8 +268,15 @@ export function classifyMailHosting(signals = {}) {
     }
 
     // --- 4. Señales de refuerzo ----------------------------------------------------
-    // DANE: Microsoft y Google no publican TLSA. Quien lo hace gestiona su propio MTA.
-    const daneHosts = Object.keys(daneRecords || {}).filter(h => (daneRecords[h] || []).length);
+    // DANE: solo cuenta si el TLSA está en un MX PROPIO. Microsoft 365 sí publica TLSA en
+    // sus MX con DNSSEC (*.mx.microsoft), así que "hay TLSA" ya no implica "MTA
+    // autogestionado": leerlo así clasificaba como on-premise a clientes de M365.
+    const selfMx = new Set(mxIds
+        .filter(id => id.type === 'self')
+        .map(id => String(id.host || id.name || '').toLowerCase())
+        .filter(Boolean));
+    const daneHosts = Object.keys(daneRecords || {})
+        .filter(h => (daneRecords[h] || []).length && selfMx.has(h.toLowerCase()));
     if (daneHosts.length) push(own, 'dane', daneHosts[0]);
 
     // Certificate Transparency: un certificado prueba que el nombre existió, no que el

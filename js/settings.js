@@ -14,6 +14,16 @@ export const DEFAULT_SETTINGS = {
     // Por defecto DESACTIVADO: envía el dominio auditado a un tercero. Sin él, la
     // política que el navegador no pueda descargar queda "no evaluable" (no penaliza).
     allowCorsProxy: false,
+    // Descarga DIRECTA de la política MTA-STS desde el navegador. Por defecto APAGADO: la
+    // herramienta perfila a un tercero antes de hablar con él, y esa petición es CORS, así
+    // que lleva siempre el Origin de esta app (no se puede quitar) además de la IP del
+    // auditor; y casi siempre la bloquea CORS igualmente. Sin ella, MTA-STS se comprueba
+    // por DNS y se acredita como "publicada, sin verificar".
+    contactAuditedHosts: false,
+    // Carga automática del logotipo BIMI. Por defecto ENCENDIDO: una imagen no envía
+    // Origin y la página va sin Referer, así que el servidor del logo (casi siempre una
+    // CDN) solo ve la IP del auditor. Apagado, el logo se carga con un clic.
+    loadBimiLogos: true,
     // URL de un JSON de fingerprints de awareness para mantener las firmas al día.
     fingerprintsUrl: '',
 
@@ -39,7 +49,10 @@ export const ADVANCED_TOOLS = [
 export const RESOLVERS = {
     google: {
         label: 'Google',
-        url: (name, type) => `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`
+        // edns_client_subnet=0.0.0.0/0: sin él, Google envía una aproximación de la red
+        // del cliente (su /24) a los servidores DNS autoritativos, es decir, a los del
+        // dominio auditado. Cloudflare y dns.quad9.net no envían ECS.
+        url: (name, type) => `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}&edns_client_subnet=0.0.0.0/0`
     },
     cloudflare: {
         label: 'Cloudflare',

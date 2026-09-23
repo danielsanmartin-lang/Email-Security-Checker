@@ -66,10 +66,13 @@ export function renderSpfPanel(result) {
         let resultText = spfRes.text;
         
         if (entry.type === 'v') { resultText = ''; prefixClass = 'spf-prefix--neutral'; }
+        // exp= es un modificador (no decide nada) y un término desconocido rompe la evaluación.
+        if (entry.type === 'exp') { resultText = ''; prefixClass = 'spf-prefix--neutral'; }
+        if (entry.type === 'unknown') { resultText = 'PermError'; prefixClass = 'spf-prefix--fail'; }
         if (entry.type === 'all' && entry.qualifier === '-') { resultText = 'Fail'; prefixClass = 'spf-prefix--fail'; }
         if (entry.type === 'all' && entry.qualifier === '~') { resultText = 'SoftFail'; prefixClass = 'spf-prefix--softfail'; }
 
-        const resultClass = resultText === 'Pass' ? 'spf-result--pass' : resultText === 'Fail' ? 'spf-result--fail' : 'spf-result--softfail';
+        const resultClass = resultText === 'Pass' ? 'spf-result--pass' : (resultText === 'Fail' || resultText === 'PermError') ? 'spf-result--fail' : 'spf-result--softfail';
 
         // Tooltip for qualifier
         const qualifierTooltip = t[`spf_qualifier_${entry.qualifier || '+'}`] || '';

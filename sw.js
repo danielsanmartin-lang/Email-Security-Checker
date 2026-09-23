@@ -9,7 +9,7 @@
  */
 // Generación de la caché, no la versión de la app: se sube cada vez que cambia el
 // app shell para que los clientes descarten lo viejo.
-const SW_VERSION = 'v3.3.0';
+const SW_VERSION = 'v4.0.0';
 const CACHE = `esc-shell-${SW_VERSION}`;
 
 // Núcleo mínimo para arrancar sin red. El resto de módulos ES se cachea sobre la
@@ -64,8 +64,12 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(request)
                 .then(res => {
-                    const copy = res.clone();
-                    caches.open(CACHE).then(c => c.put('./index.html', copy));
+                    // Solo una respuesta correcta sustituye al index de la caché: un 404 o
+                    // un 5xx puntual del hosting dejaba la app rota también sin conexión.
+                    if (res && res.ok) {
+                        const copy = res.clone();
+                        caches.open(CACHE).then(c => c.put('./index.html', copy));
+                    }
                     return res;
                 })
                 .catch(() => caches.match('./index.html').then(r => r || Response.error()))

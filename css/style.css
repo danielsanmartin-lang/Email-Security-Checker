@@ -371,6 +371,14 @@ body {
 .tag--seg { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
 .tag--ices { background: rgba(139,92,246,0.15); color: var(--accent-violet); }
 .tag--unknown { background: rgba(100,116,139,0.15); color: var(--text-muted); }
+.tag--warning { background: rgba(245,158,11,0.15); color: var(--accent-amber); }
+.tag--danger { background: rgba(239,68,68,0.15); color: var(--accent-rose); }
+/* Etiquetas de la tarjeta de puntuación: nivel de suplantación y nota de transporte. */
+.score-card__chip {
+    display: inline-block; margin-left: 12px; vertical-align: middle;
+    padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 600;
+}
+.score-cat--na .score-cat__value { color: var(--text-muted); font-weight: 500; }
 
 /* Provider / Security info blocks */
 .info-block { padding: 14px 16px; border-radius: var(--radius-sm); background: rgba(15,23,42,0.4); margin-bottom: 10px; }
@@ -444,6 +452,19 @@ body {
 .dmarc-item__value { font-size: 0.9rem; font-weight: 700; margin-top: 4px; font-family: var(--font-mono); }
 .dmarc-policy--reject { color: var(--accent-emerald); }
 .dmarc-policy--quarantine { color: var(--accent-amber); }
+/* Etiqueta eliminada en RFC 9989 (pct): sigue rigiendo en receptores RFC 7489. */
+.dmarc-tag-removed {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--text-muted);
+    vertical-align: middle;
+}
+.dmarc-applicable__warn { color: var(--accent-rose); }
 .dmarc-policy--none { color: var(--accent-rose); }
 
 .reporting-item { margin-bottom: 12px; padding: 12px 14px; border-radius: var(--radius-sm); background: rgba(15,23,42,0.4); }
@@ -928,6 +949,11 @@ body {
 .badge--neutral {
     background: rgba(100, 116, 139, 0.15);
     color: var(--text-muted);
+}
+/* Válido pero sin aplicar: MTA-STS en testing, DNSSEC firmado sin validar. */
+.badge--warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-amber);
 }
 .advanced-dns-section__body {
     padding: 12px 16px;
@@ -1458,6 +1484,10 @@ body {
         background: #f3f4f6 !important;
         color: #374151 !important;
     }
+    .badge--warning {
+        background: #fef3c7 !important;
+        color: #92400e !important;
+    }
 
     * {
         -webkit-print-color-adjust: exact !important;
@@ -1558,6 +1588,7 @@ body {
 .bimi-error { color: var(--accent-rose, #ef4444); }
 .bimi-vmc-missing { color: var(--accent-amber, #d97706); font-style: italic; }
 .bimi-logo-wrap { margin-top: 16px; }
+.bimi-logo-load { font-size: 0.8rem; padding: 6px 12px; }
 .bimi-logo {
     max-width: 120px;
     max-height: 120px;
@@ -1684,6 +1715,12 @@ body {
     font-size: 11.5px;
     line-height: 1.45;
     color: var(--text-muted);
+}
+.score-cat__cap {
+    margin: -4px 0 10px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--accent-amber);
 }
 .score-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
 .score-check {

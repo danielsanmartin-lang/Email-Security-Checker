@@ -1,5 +1,5 @@
-import { getMX, getSPF, getDMARC, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists, getAutodiscover, getIpIntel, getDkimSelectorChain } from './api.js';
-import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT, extractRootDomain } from './analyzer.js';
+import { getMX, getSPF, discoverDmarcPolicy, getDKIM, getBIMI, getSPFLookupTree, getIPAddresses, checkRBL, getAllTXT, getMTASTS, getTLSRPT, getNS, getSRV, getDANE, getDNSSEC, checkDMARCExternalAuth, checkDomainExists, getAutodiscover, getIpIntel, getDkimSelectorChain } from './api.js';
+import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyNSProvider, analyzeTLSRPT } from './analyzer.js';
 import { renderResults, renderAwarenessVendors, showSection, setStep } from './ui.js';
 import { KB } from './knowledge.js';
 import { getLanguage } from './lang.js';
@@ -29,21 +29,11 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
 
     const mxP = getMX(domain).then(r => { onStep('step-mx', 'done'); return r; });
     const spfP = getSPF(domain);
-    // DMARC con herencia del dominio organizativo (RFC 7489 §6.6.3): si el
-    // subdominio no publica registro, la política se hereda del dominio raíz.
-    const dmarcP = getDMARC(domain).then(async (r) => {
-        if (!r.record) {
-            const org = extractRootDomain(domain);
-            if (org && org !== domain) {
-                const orgDmarc = await getDMARC(org);
-                if (orgDmarc.record) {
-                    orgDmarc.inherited = true;
-                    orgDmarc.inheritedFrom = org;
-                    onStep('step-dmarc', 'done');
-                    return orgDmarc;
-                }
-            }
-        }
+    // DMARC con el DNS Tree Walk de RFC 9989 §4.10: política del propio dominio o, si no
+    // publica, la de su dominio organizativo (o su PSD). El organizativo se DESCUBRE por
+    // DNS en vez de estimarse con una lista de sufijos, que fallaba con marcas cortas bajo
+    // un ccTLD (correo.abc.es no heredaba nada).
+    const dmarcP = discoverDmarcPolicy(domain).then((r) => {
         onStep('step-dmarc', 'done');
         return r;
     });
@@ -90,7 +80,13 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     const spfUnavailable = spfS.status === 'rejected';
     const dmarcData = dmarcS.status === 'fulfilled' ? dmarcS.value : { record: null, records: [], multiple: false };
     const dmarcUnavailable = dmarcS.status === 'rejected';
-    const bimiRecord = bimiS.status === 'fulfilled' ? bimiS.value : null;
+    let bimiRecord = bimiS.status === 'fulfilled' ? bimiS.value : null;
+    // Sin BIMI propio, el receptor lo busca en el dominio organizativo (borrador BIMI,
+    // "Organizational Domain" fallback): un subdominio hereda el logo de su marca.
+    if (!(bimiRecord && bimiRecord.record) && dmarcData.orgDomain && dmarcData.orgDomain !== domain) {
+        const orgBimi = await getBIMI(dmarcData.orgDomain).catch(() => null);
+        if (orgBimi && orgBimi.record) bimiRecord = { ...orgBimi, inheritedFrom: dmarcData.orgDomain };
+    }
     const advanced = advS.status === 'fulfilled' ? advS.value : [[], null, null, [], {}, null];
 
     // Marca los pasos que fallaron para que no queden girando indefinidamente.
@@ -182,6 +178,10 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
         dmarcData,
         dmarcInherited: dmarcData.inherited || false,
         dmarcInheritedFrom: dmarcData.inheritedFrom || null,
+        dmarcSource: dmarcData.source || null,
+        dmarcPolicyDomain: dmarcData.policyDomain || null,
+        dmarcOrgDomain: dmarcData.orgDomain || null,
+        dmarcWalkIncomplete: !!dmarcData.incomplete,
         spfUnavailable,
         dmarcUnavailable,
         nullMx: !!mxRecords.nullMx,
@@ -197,10 +197,17 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     result.bimiRecord = bimiRecord;
     result.rblResults = rblResults;
 
-    // Autorización de destinos de informe DMARC externos (RFC 7489 §7.1).
-    const dmarcUris = [...(result.dmarcRua || []), ...(result.dmarcRuf || [])];
+    // Autorización de destinos de informe DMARC externos (RFC 9990 §4). Solo los URIs
+    // válidos del registro que aplica: se antepone el dominio DONDE se encontró la política
+    // y se compara contra su dominio organizativo.
+    const ev = result.dmarcEval;
+    const dmarcUris = ev ? [...ev.rua.valid, ...ev.ruf.valid] : [];
     try {
-        result.dmarcExternalAuth = await checkDMARCExternalAuth(domain, dmarcUris);
+        result.dmarcExternalAuth = await checkDMARCExternalAuth(
+            result.dmarcPolicyDomain || domain,
+            dmarcUris,
+            { orgDomain: result.dmarcOrgDomain }
+        );
     } catch (err) {
         console.warn('DMARC external auth check failed:', err);
         result.dmarcExternalAuth = [];
@@ -216,7 +223,9 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     // Awareness / Phishing Simulation: la parte más lenta (CT logs). Se devuelve
     // como promesa para poder renderizar el resto de resultados sin esperarla.
     onStep('step-awareness', 'active');
-    const awarenessPromise = detectAwarenessVendors(domain)
+    // Se le pasa el árbol SPF ya resuelto: así el PermError del panel de awareness sale
+    // de la misma cuenta de lookups que el panel SPF, en vez de contradecirlo.
+    const awarenessPromise = detectAwarenessVendors(domain, { spfTree })
         .catch((err) => { console.warn('Awareness detection failed:', err); return null; })
         .then((a) => { onStep('step-awareness', 'done'); return a; });
 

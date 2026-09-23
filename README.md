@@ -14,24 +14,24 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 * **Hospedaje del correo — nube, híbrido u on-premise:** El MX identifica quién **filtra** el correo entrante, no dónde **viven** los buzones: con un gateway delante (Proofpoint, Mimecast, Hornetsecurity…) las dos respuestas son distintas. Un eje aparte resuelve la segunda pregunta a partir de `autodiscover`, el CNAME de DKIM (que revela el tenant de Microsoft 365) y el mapeo IP→ASN de Team Cymru —cuando una empresa anuncia sus propios rangos, el ASN lleva literalmente su nombre—. Cada veredicto va con su evidencia y su nivel de confianza, y **"no determinable" es un resultado de primera clase**: se dice cuando el DNS público no da para más, en vez de conjeturar. No afecta a la puntuación: on-premise no es inseguro per se.
 * **Awareness-Vendor Detector:** Módulo dedicado que detecta plataformas de concienciación de seguridad y simulación de phishing (KnowBe4, Proofpoint SAT, Cofense, Hoxhunt, Barracuda PhishLine, etc.) a partir de señales DNS, con score de confianza y evidencia estructurada. Distingue **"tiene el gateway del vendor"** de **"usa el módulo de awareness"** (confirmación de producto), y se enriquece con dos fuentes de Certificate Transparency (crt.sh + Certspotter).
 * **Análisis por cabeceras de correo:** Pega las cabeceras de un correo de simulación recibido y la herramienta detecta el vendor con **alta confianza** por dominios de envío y X-headers propietarias (`X-PHISHTEST`, `X-Gophish-*`, `simulator.office.com`…). Cubre **Microsoft Attack Simulation Training**, que no deja rastro en DNS. 100% local.
-* **Evaluación de Seguridad:** Diagnóstico visual del estado de las políticas de autenticación (A+ a F, 0–100 puntos).
+* **Evaluación de Seguridad:** nota de **protección contra suplantación** (A+ a F, 0–100) con un nivel —Protegido, Parcial o Suplantable— y, aparte, la nota de **seguridad del transporte** (o "No aplica" si el dominio no recibe correo).
 * **Análisis profundo de autenticación:**
-  - **DMARC**: política de subdominios (`sp`), **subdominios inexistentes (`np`, DMARCbis)**, porcentaje (`pct`, ya obsoleto), alineación (`adkim`/`aspf`), opciones de informe (`fo`/`ri`) y **autorización de destinos de informe externos** (`_report._dmarc`, RFC 7489).
+  - **DMARC (RFC 9989/9990, DMARCbis)**: política **efectiva** —la que aplica cada generación de receptores durante la transición—, **modo prueba (`t=y`)**, `pct` (eliminado en RFC 9989, pero aún vigente en receptores RFC 7489), subdominios (`sp`) e **inexistentes (`np`)**, `psd`, **enforcement** en el sentido de RFC 9989 §3.2.9, valores no válidos (que convierten el registro en `p=none`), destinos `rua` sin `mailto:`, alineación (`adkim`/`aspf`) y **autorización de destinos de informe externos** (`_report._dmarc`, RFC 9990 §4).
   - **DKIM**: validación de la **fuerza de la clave** (RSA y **Ed25519**, RFC 8463), claves **revocadas** (`p=` vacío) y **modo de prueba** (`t=y`). Admite varios selectores separados por coma. La ausencia de DKIM no penaliza (detección *best-effort* por selectores comunes).
   - **SPF**: **PermError por `include`/`redirect` cuyo destino no publica SPF** (el fallo silencioso más común), contaje de **void lookups** (RFC 7208 §4.6.4), mecanismos inalcanzables tras `all`, varios `all`, longitud >255 caracteres, ausencia de `all` y uso de `ptr`.
-  - **MTA-STS**: **cobertura de los MX reales por la lista `mx:` de la política** (RFC 8461 §4.1, el fallo que rompe la entrega tras un cambio de proveedor) y validación de `max_age`.
+  - **MTA-STS**: **cobertura de los MX reales por la lista `mx:` de la política** (RFC 8461 §4.1, el fallo que rompe la entrega tras un cambio de proveedor), validación de `max_age`, modo `testing` (válido, pero no se aplica) y comprobación **solo por DNS** de que `mta-sts.<dominio>` existe.
   - **TLS-RPT**: validación de que los destinos `rua` son `mailto:` o `https:` (RFC 8460).
-  - **BIMI**: certificado **VMC/CMC** (`a=`), declinación explícita (`l=` vacío) y aviso si la URL no es HTTPS.
+  - **BIMI**: certificado **VMC/CMC** (`a=`), declinación explícita (`l=` vacío), aviso si la URL no es HTTPS y **herencia del dominio organizativo** cuando el subdominio no publica el suyo. Es informativo: no puntúa.
   - **MTA-STS**: validación de `max_age` (presencia y valor recomendado, RFC 8461).
   - **DNSSEC**: detección de zona firmada (DNSKEY + flag `AD`) que protege la integridad de SPF/DMARC/DKIM.
 * **Reputación y Listas Negras (RBL):** Verificación en tiempo real de IPs de servidores MX contra listas globales, con interpretación de los códigos de respuesta (`listado` / `limpio` / `no concluyente`) y aviso *best-effort* — muchas DNSBL rechazan consultas vía resolvers DoH públicos.
 * **Exportaciones:** Informes en Google Docs, Word (.doc) y PDF con score, hallazgos, SPF tree, DMARC detallado, **DNSSEC, DANE, SRV y autorización DMARC externa**. Los tres formatos comparten una única fuente de contenido (el PDF se genera del mismo informe que Word/Docs).
-* **Motor DNS resiliente:** Consultas con **degradación elegante** (un fallo transitorio no tumba el análisis completo), **validación del `Status` DoH** (distingue SERVFAIL/REFUSED de "sin registros"), **herencia DMARC del dominio organizativo** para subdominios (RFC 7489 §6.6.3), reconocimiento de **Null MX** (RFC 7505), contaje correcto de lookups SPF con máscara CIDR y deduplicación de consultas en vuelo.
+* **Motor DNS resiliente:** Consultas con **degradación elegante** (un fallo transitorio no tumba el análisis completo), **validación del `Status` DoH** (distingue SERVFAIL/REFUSED de "sin registros"), **DNS Tree Walk de RFC 9989 §4.10** para descubrir la política y el dominio organizativo (sin Public Suffix List y sin backend), reconocimiento de **Null MX** (RFC 7505), contaje correcto de lookups SPF con máscara CIDR y deduplicación de consultas en vuelo.
 * **Validación de entrada y errores claros:** Normalización de dominios **IDN → punycode**, tolerancia a FQDN con punto final, validación de formato y mensajes de error diferenciados (dominio inexistente / sin conexión / **problema de resolución DNS** / formato inválido).
 * **Multilingüe y accesible:** Interfaz completa en Español, Inglés y Alemán con persistencia por `localStorage`, `<html lang>` y `aria-label` sincronizados, regiones `aria-live`, etiquetas de formulario para lector de pantalla, **tooltips accesibles por teclado** (foco, Escape, `aria-describedby`), modales con trampa de foco y contraste WCAG AA.
 * **Render progresivo:** Los resultados principales se muestran de inmediato; el panel de Awareness (lo más lento, por los CT logs) se rellena solo al terminar, sin bloquear la vista.
 
-* **Puntuación por categorías ponderadas (v3):** Autenticación 60 / Transporte 25 / Higiene 15, con **desglose visible** de qué aporta cada control. El grado está **acotado por la categoría de Autenticación**: DNSSEC, DANE o BIMI ya no compensan un dominio suplantable (`p=none` o un PermError de SPF no llegan a A). Los controles que no se pueden medir (DKIM no detectado, política MTA-STS inalcanzable) **salen del denominador** en vez de contar como fallo.
+* **Puntuación en dos ejes (v4):** la nota principal contesta a *¿se puede suplantar este dominio?*: DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10. Sin DMARC en enforcement no pasa de 45 (D), y A+ exige tenerlo todo verificado. El **transporte** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20) va aparte y solo se evalúa si el dominio tiene MX: un transporte ejemplar no compensa un dominio suplantable, ni al revés. `~all` vale lo mismo que `-all` con enforcement (RFC 9989 §7.1), una clave DKIM revocada no resta y BIMI no puntúa. Los controles que no se pueden medir desde fuera (DKIM no detectado) **salen del denominador**, con **desglose visible** de cada control.
 * **Visor de informes agregados DMARC (RUA):** arrastra un `.xml`, `.xml.gz` o `.zip` y obtén quién envía en nombre del dominio, con qué volumen y qué porcentaje autentica. Descompresión y parseo **en el navegador**, sin subir el fichero a ningún sitio.
 * **Ajustes de privacidad:** resolver DoH elegible (Google / Cloudflare / Quad9 / propio), proxy CORS público **opt-in** y botón de refresco forzado que salta la caché de 5 minutos.
 * **Instalable (PWA) y sin terceros para renderizar:** service worker del *app shell*, tipografías autoalojadas y CSP declarada.
@@ -66,6 +66,7 @@ js/
 │   ├── advancedDnsPanel.js  # MTA-STS, TLS-RPT, DNSSEC, DANE, SRV, NS
 │   ├── awarenessPanel.js    # Detector de awareness + analizador de cabeceras
 │   └── dmarcReportPanel.js  # Visor de informes agregados (RUA)
+├── dmarc.js             # Semántica RFC 9989: Tree Walk, t/pct, enforcement (módulo puro)
 ├── dmarcReport.js       # Descompresión (.gz/.zip) y agregación de informes RUA — 100% local
 ├── awarenessDetector.js # Detector de plataformas de Awareness/PhishSim (DNS + CT logs)
 ├── headerAnalyzer.js    # Detección por cabeceras de correo (cubre el punto ciego DNS)
@@ -101,10 +102,19 @@ confidenciales.
 * **DNS-over-HTTPS:** todas las consultas DNS. Por defecto Google (`dns.google`) con
   Cloudflare y Quad9 como respaldo. En **Ajustes** puedes elegir el resolver o poner el
   tuyo; con un resolver propio **no se usa ningún resolver público de respaldo**, así que
-  el dominio auditado no sale de tu infraestructura.
+  el dominio auditado no sale de tu infraestructura. A Google se le pide
+  `edns_client_subnet=0.0.0.0/0`: sin eso reenviaría una aproximación de tu red a los DNS
+  autoritativos del dominio auditado.
+* **Servidores del dominio auditado.** La descarga directa de la política MTA-STS es una
+  petición CORS: dejaría en los registros del prospecto tu IP y el `Origin` de la app. Viene
+  **apagada** (ajuste *Descargar la política MTA-STS*): MTA-STS se comprueba solo por DNS y
+  se acredita como "publicada, sin verificar". El **logotipo BIMI sí se carga por defecto**
+  (ajuste *Cargar logotipos BIMI*): una imagen no lleva `Origin` y la página va sin
+  `Referer`, así que el servidor del logo —casi siempre una CDN— solo ve tu IP. Apagado, se
+  carga con un clic. Ninguna petición lleva `Referer`.
 * **Proxy CORS `api.allorigins.win`** (descarga de la política MTA-STS cuando el navegador
   la bloquea por CORS): **desactivado por defecto**. Sin él, una política que no se pueda
-  descargar queda marcada como *no evaluable* y **no penaliza la nota**. Se activa en Ajustes.
+  descargar cuenta como *publicada, sin verificar*. Se activa en Ajustes.
 * **Certificate Transparency (`crt.sh` y `api.certspotter.com`):** solo el módulo de
   Awareness; el dominio viaja como parámetro de búsqueda.
 * **Tipografías:** autoalojadas en `css/fonts/`. La app **no hace ninguna petición a
@@ -159,7 +169,7 @@ npm run lint       # ESLint sobre js/ (recommended, --max-warnings=0)
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**343 tests**, cobertura ~89 %) cubre el módulo de Awareness (fixtures DNS
+La suite (**512 tests**, cobertura ~91 %) cubre el módulo de Awareness (fixtures DNS
 mockeados), el análisis por cabeceras (`headerAnalyzer`), los parsers y validadores
 (`parseSPF` con índices, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`,
 `analyzeDKIMRecord` con RSA y Ed25519, `validateTlsRptRua`, `checkMtaStsMxCoverage`),
@@ -184,7 +194,7 @@ Además hay dos niveles de pruebas con **jsdom**:
 
 Cada push/PR ejecuta en CI mediante GitHub Actions:
 * **`ci.yml`** — lint (**bloqueante**) + tests con cobertura (**umbrales bloqueantes**) +
-  `npm audit` (informativo), en Node 20 y 22. El informe de cobertura se publica como artefacto.
+  `npm audit` (informativo), en Node 22 y 24. El informe de cobertura se publica como artefacto.
 * **`pages.yml`** — despliegue a GitHub Pages **solo si pasan lint y tests**, publicando
   únicamente `index.html`, `css/` (con las fuentes), `js/` (sin los `*.test.js`), el
   service worker, el manifest y el icono. Requiere configurar
@@ -198,7 +208,18 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 > El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
 
-### v3.3.0 — Hospedaje del correo: nube, híbrido u on-premise (Actual)
+### v4.0.0 — DMARCbis, puntuación en dos ejes y privacidad del auditor (Actual)
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la nota deja de sumar
+transporte y marca a la autenticación y pasa a contestar si el dominio se puede suplantar,
+contando la política DMARC que **de verdad** se aplica según RFC 9989 (`t=y`, `pct`, herencia
+por `sp`, valores no válidos, registros duplicados) con el Tree Walk del RFC. El transporte
+va en una nota aparte. support.apple.com pasa de F a A, iberdrola.es de D a A y posteo.de, que
+publica `p=none`, de C a F. Además se cierra una inyección de HTML en el informe exportado y
+la política MTA-STS deja de descargarse por defecto. **Las notas de v4 no son comparables
+con las de v3.**
+
+### v3.3.0 — Hospedaje del correo: nube, híbrido u on-premise
 
 Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la herramienta deducía el
 proveedor del registro MX, pero el MX es el **filtro de entrada** y no la **plataforma de

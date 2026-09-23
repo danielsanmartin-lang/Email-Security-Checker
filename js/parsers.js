@@ -28,48 +28,56 @@ export function extractTxtValue(data) {
 // Cada entry lleva `index` = su posición dentro del registro. Sin él no se puede
 // detectar que hay mecanismos DESPUÉS de `all` (inalcanzables: el evaluador para en
 // el primer match, RFC 7208 §5.1) ni distinguir el primer `all` de los siguientes.
+//
+// Los nombres de mecanismo no distinguen mayúsculas (RFC 7208 §4.6.1, vía ABNF). Un
+// MECANISMO desconocido —una errata como `inlcude:` o un `-all;` con punto y coma— es
+// PermError (§5) y se devuelve como `type: 'unknown'` para poder avisar; un
+// MODIFICADOR desconocido (`nombre=valor`) se ignora, como manda §6.
 export function parseSPF(raw) {
     if (!raw) return [];
-    const tokens = raw.split(/\s+/);
+    const tokens = raw.split(/\s+/).filter(Boolean);
     const entries = [];
     const push = (entry) => entries.push({ ...entry, index: entries.length });
     for (const token of tokens) {
-        if (token === 'v=spf1') {
+        if (token.toLowerCase() === 'v=spf1') {
             push({ prefix: '', type: 'v', value: 'spf1', qualifier: '' });
             continue;
         }
         let qualifier = '+';
         let t = token;
         if (/^[+\-~?]/.test(t)) { qualifier = t[0]; t = t.substring(1); }
-        
-        if (t.startsWith('include:')) {
-            push({ prefix: qualifier, type: 'include', value: t.substring(8), qualifier });
-        } else if (t.startsWith('a:')) {
-            push({ prefix: qualifier, type: 'a', value: t.substring(2), qualifier });
-        } else if (t.startsWith('mx:')) {
-            push({ prefix: qualifier, type: 'mx', value: t.substring(3), qualifier });
-        } else if (t.startsWith('ip4:')) {
-            push({ prefix: qualifier, type: 'ip4', value: t.substring(4), qualifier });
-        } else if (t.startsWith('ip6:')) {
-            push({ prefix: qualifier, type: 'ip6', value: t.substring(4), qualifier });
-        } else if (t.startsWith('redirect=')) {
-            push({ prefix: qualifier, type: 'redirect', value: t.substring(9), qualifier });
-        } else if (t.startsWith('exists:')) {
-            push({ prefix: qualifier, type: 'exists', value: t.substring(7), qualifier });
-        } else if (t === 'a') {
-            push({ prefix: qualifier, type: 'a', value: '(self)', qualifier });
-        } else if (t === 'mx') {
-            push({ prefix: qualifier, type: 'mx', value: '(self)', qualifier });
-        } else if (t === 'all') {
-            push({ prefix: qualifier, type: 'all', value: '', qualifier });
-        } else if (t === 'ptr') {
-            push({ prefix: qualifier, type: 'ptr', value: '', qualifier });
-        } else if (t.startsWith('ptr:')) {
-            push({ prefix: qualifier, type: 'ptr', value: t.substring(4), qualifier });
+        const lower = t.toLowerCase();
+        const mech = (type, value) => push({ prefix: qualifier, type, value, qualifier });
+
+        if (lower.startsWith('include:')) mech('include', t.substring(8));
+        else if (lower.startsWith('a:')) mech('a', t.substring(2));
+        else if (lower.startsWith('mx:')) mech('mx', t.substring(3));
+        else if (lower.startsWith('ip4:')) mech('ip4', t.substring(4));
+        else if (lower.startsWith('ip6:')) mech('ip6', t.substring(4));
+        else if (lower.startsWith('exists:')) mech('exists', t.substring(7));
+        else if (lower.startsWith('ptr:')) mech('ptr', t.substring(4));
+        else if (lower.startsWith('redirect=')) mech('redirect', t.substring(9));
+        else if (lower.startsWith('exp=')) mech('exp', t.substring(4));
+        // `a` y `mx` sobre el propio dominio, con o sin máscara: a, a/24, mx//64, a/24//64.
+        else if (/^(a|mx)(\/\d{1,2})?(\/\/\d{1,3})?$/.test(lower)) {
+            const m = lower.match(/^(a|mx)(.*)$/);
+            mech(m[1], `(self)${m[2]}`);
         }
+        else if (lower === 'all') mech('all', '');
+        else if (lower === 'ptr') mech('ptr', '');
+        // Modificador desconocido: se ignora (RFC 7208 §6).
+        else if (/^[a-z][a-z0-9_.-]*=/.test(lower)) continue;
+        else mech('unknown', token);
     }
     return entries;
 }
+
+// Etiquetas DMARC cuyo valor es una palabra clave. La ABNF de RFC 9989 §4.8 las escribe
+// como cadenas literales, que en ABNF no distinguen mayúsculas: `p=Reject` es tan válido
+// como `p=reject`. Se normalizan aquí para que el resto del código compare sin sorpresas
+// (antes `p=Reject` puntuaba 8/23 sin ningún hallazgo). `v` NO entra: su valor es
+// sensible a mayúsculas (`%s"DMARC1"`).
+const DMARC_KEYWORD_TAGS = new Set(['p', 'sp', 'np', 't', 'psd', 'adkim', 'aspf', 'fo']);
 
 export function parseDMARC(raw) {
     if (!raw) return null;
@@ -78,10 +86,25 @@ export function parseDMARC(raw) {
     for (const tag of tags) {
         const eq = tag.indexOf('=');
         if (eq > 0) {
-            result[tag.substring(0, eq).trim()] = tag.substring(eq + 1).trim();
+            const key = tag.substring(0, eq).trim().toLowerCase();
+            const value = tag.substring(eq + 1).trim();
+            result[key] = DMARC_KEYWORD_TAGS.has(key) ? value.toLowerCase() : value;
         }
     }
     return result;
+}
+
+/**
+ * ¿La zona está firmada Y la validación DNSSEC ha tenido éxito? Un resolver que valida
+ * (Google, Cloudflare, Quad9) marca AD en las respuestas validadas; DNSKEY sin AD es una
+ * zona firmada sin cadena de confianza (falta el DS en la zona padre o está rota), que no
+ * protege nada. Con un resolver propio no se sabe si valida, así que se da por buena la
+ * firma; con results sin estos campos (tests, versiones previas), también.
+ * @param {{signed?: boolean, hasDnskey?: boolean, ad?: boolean, validationKnown?: boolean}|null} dnssec
+ */
+export function isDnssecValidated(dnssec) {
+    if (!dnssec || !dnssec.signed) return false;
+    return !(dnssec.hasDnskey === true && dnssec.ad === false && dnssec.validationKnown !== false);
 }
 
 /** Parse RFC 8461 MTA-STS policy file (https://mta-sts.domain/.well-known/mta-sts.txt) */

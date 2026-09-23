@@ -18,11 +18,15 @@ import {
     mailHostingEvidence,
     mailHostingNotes,
     resolveFindingText,
-    displayDmarcPolicy,
+    dmarcPolicySummary,
+    mtaStsState,
+    MTA_STS_STATE_VIEW,
+    dnssecState,
     serviceDescription,
     rblListedCount,
     spfQualifierResult,
-    rblCheckStatus
+    rblCheckStatus,
+    postureText
 } from './viewmodel.js';
 
 // Árbol de lookups SPF en tema claro (para el informe exportado, no la UI oscura).
@@ -257,7 +261,9 @@ export function generateReportHTML() {
     }
 
     const providerDisplay = displayProvider(currentResult, t);
-    const dmarcPolicyText = displayDmarcPolicy(t, currentResult.dmarcPolicy);
+    // Viene del DNS del dominio auditado cuando la política no es una palabra conocida
+    // (p. ej. `p=<img …>`): se escapa en el punto de uso, como todo lo externo.
+    const dmarcPolicyText = escapeHtml(dmarcPolicySummary(currentResult, t));
 
     const mainTitle = t.report_main_title;
     const dateLabel = t.report_date_label;
@@ -300,6 +306,14 @@ export function generateReportHTML() {
             `;
         }).join('');
     }
+
+    // Transporte: nota propia, o "no aplica" si el dominio no recibe correo.
+    const transport = currentResult.scoreCard && currentResult.scoreCard.transport;
+    const transportLine = !transport
+        ? '—'
+        : transport.applicable
+            ? `${escapeHtml(transport.grade)} (${transport.score}/100)`
+            : escapeHtml(t.transport_not_applicable);
 
     let gradeBg = '#059669';
     const grade = currentResult.scoreCard ? currentResult.scoreCard.grade : 'F';
@@ -358,11 +372,11 @@ export function generateReportHTML() {
     
     // MTA-STS
     advDnsHtml += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: left;">`;
-    const mtaPolicyValid = currentResult.mtaSts?.policy?.valid;
-    const mtaStsStatusColor = mtaPolicyValid ? '#059669' : (currentResult.mtaSts ? '#dc2626' : '#64748b');
-    const mtaStsStatusLabel = mtaPolicyValid
-        ? (t.adv_mta_sts_enforced || 'Enforce active')
-        : (currentResult.mtaSts ? (t.adv_mta_sts_policy_invalid || 'Invalid HTTPS policy') : (t.adv_mta_sts_not_configured || 'Not configured'));
+    // Mismo estado que el panel (mtaStsState): una política en testing o que no se ha
+    // descargado a propósito no se presenta como "inválida".
+    const mtaView = MTA_STS_STATE_VIEW[mtaStsState(currentResult)];
+    const mtaStsStatusColor = mtaView.color;
+    const mtaStsStatusLabel = t[mtaView.key];
     advDnsHtml += `<h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b;">${t.adv_mta_sts_title || 'MTA-STS'} - <span style="color: ${mtaStsStatusColor}; font-size: 13px;">${mtaStsStatusLabel}</span></h4>`;
     if (currentResult.mtaSts) {
         const policy = currentResult.mtaSts.policy || {};
@@ -452,15 +466,13 @@ export function generateReportHTML() {
     // DNSSEC
     const dnssec = currentResult.dnssec;
     if (dnssec) {
-        const signed = !!dnssec.signed;
-        advDnsHtml += advBox(
-            t.adv_dnssec_title,
-            signed ? t.adv_dnssec_signed : t.adv_dnssec_unsigned,
-            signed ? '#059669' : '#64748b',
-            signed
-                ? advText(t.adv_dnssec_signed_desc) + (dnssec.ad ? advText(t.adv_dnssec_validated, '#059669') : '')
-                : advText(t.adv_dnssec_desc, '#64748b')
-        );
+        const status = dnssecState(dnssec);
+        const view = {
+            validated: [t.adv_dnssec_signed, '#059669', advText(t.adv_dnssec_signed_desc) + (dnssec.ad ? advText(t.adv_dnssec_validated, '#059669') : '')],
+            unvalidated: [t.adv_dnssec_unvalidated, '#d97706', advText(t.adv_dnssec_unvalidated_desc, '#b45309')],
+            unsigned: [t.adv_dnssec_unsigned, '#64748b', advText(t.adv_dnssec_desc, '#64748b')]
+        }[status];
+        advDnsHtml += advBox(t.adv_dnssec_title, view[0], view[1], view[2]);
     }
 
     // DANE / TLSA
@@ -486,6 +498,43 @@ export function generateReportHTML() {
             ? srvKeys.map(k => srv[k].map(r => advText(`<strong>${escapeHtml(k)}</strong>: ${escapeHtml(r.target || '')}:${escapeHtml(String(r.port || ''))}`)).join('')).join('')
             : advText(t.adv_srv_none, '#64748b')
     );
+
+    // Tabla DMARC. Todo valor sale del DNS del dominio auditado y se escapa: antes p, sp y
+    // pct iban crudos, y un registro con marcado (`p=<img src=…>`) lo inyectaba en el
+    // PDF, en el .doc y en Google Docs.
+    let dmarcDetailsHtml = '';
+    if (currentResult.dmarcParsed) {
+        const d = currentResult.dmarcParsed;
+        const ev = currentResult.dmarcEval;
+        const policyColor = (v) => (v === 'reject' ? '#dc2626' : v === 'quarantine' ? '#d97706' : '#2563eb');
+        const row = (label, valueHtml, color) => `
+                                <tr>
+                                    <td style="width: 180px; font-weight: bold; color: #475569;">${label}:</td>
+                                    <td style="${color ? `font-weight: bold; color: ${color}; text-transform: uppercase;` : ''}">${valueHtml}</td>
+                                </tr>`;
+        const rows = [row(t.dmarc_policy_p, escapeHtml(d.p || 'none'), policyColor(d.p))];
+        if (d.sp) rows.push(row(t.dmarc_policy_sp, escapeHtml(d.sp), policyColor(d.sp)));
+        if (d.np) rows.push(row(t.dmarc_policy_np, escapeHtml(d.np), policyColor(d.np)));
+        if (d.t) rows.push(row(t.dmarc_policy_t, escapeHtml(d.t === 'y' ? t.dmarc_testing_yes : t.dmarc_testing_no)));
+        if (d.psd) rows.push(row(t.dmarc_policy_psd, escapeHtml(d.psd)));
+        if (d.pct) rows.push(row(t.dmarc_policy_pct, `${escapeHtml(d.pct)}% <span style="color: #64748b; font-size: 11px;">(${escapeHtml(t.dmarc_tag_removed_badge)})</span>`));
+        if (d.adkim) rows.push(row(t.dmarc_alignment_dkim, escapeHtml(d.adkim === 's' ? t.strict_label : t.relaxed_label)));
+        if (d.aspf) rows.push(row(t.dmarc_alignment_spf, escapeHtml(d.aspf === 's' ? t.strict_label : t.relaxed_label)));
+        if (ev) {
+            const applied = ev.processing === 'full' ? ev.effective.floor : 'none';
+            rows.push(row(t.dmarc_applicable_label, escapeHtml(dmarcPolicySummary(currentResult, t)), policyColor(applied)));
+        }
+        if (currentResult.dmarcOrgDomain && currentResult.dmarcOrgDomain !== String(currentDomain).toLowerCase()) {
+            rows.push(row(t.dmarc_org_domain_label, `<code>${escapeHtml(currentResult.dmarcOrgDomain)}</code>`));
+        }
+        dmarcDetailsHtml = `
+                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
+                            <h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b; font-size: 14px;">${t.report_dmarc_config_analyzed}</h4>
+                            <table border="0" cellpadding="6" cellspacing="0" style="width: 100%; font-family: sans-serif; font-size: 13px; text-align: left;">
+                                ${rows.join('')}
+                            </table>
+                        </div>`;
+    }
 
     return `
         <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; text-align: left;">
@@ -516,7 +565,8 @@ export function generateReportHTML() {
             <!-- Executive Summary -->
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">📋 ${execSummaryLabel}</h2>
             <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13.5px; color: #334155; line-height: 1.6; text-align: left;">
-                <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100)</li>
+                <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100) — ${escapeHtml(postureText(t, currentResult.scoreCard && currentResult.scoreCard.posture))}</li>
+                <li><strong>${t.transport_chip_label}:</strong> ${transportLine}</li>
                 <li><strong>${t.summary_provider}:</strong> ${escapeHtml(providerDisplay)} <br><small style="color: #64748b;">(${escapeHtml(formatProviderSource(currentResult.providerSource, t))})</small></li>
                 ${mh ? `<li><strong>${t.summary_mail_hosting}:</strong> ${escapeHtml(displayMailHosting(mh, t))}</li>` : ''}
                 <li><strong>${t.summary_dmarc}:</strong> ${dmarcPolicyText}</li>
@@ -587,7 +637,8 @@ export function generateReportHTML() {
                     let resultText = spfRes.text;
                     let resultColor = SPF_RESULT_COLOR[spfRes.kind];
 
-                    if (e.type === 'v') { resultText = ''; }
+                    if (e.type === 'v' || e.type === 'exp') { resultText = ''; }
+                    if (e.type === 'unknown') { resultText = 'PermError'; resultColor = '#dc2626'; }
                     if (e.type === 'all' && e.qualifier === '-') { resultText = 'Fail'; resultColor = '#dc2626'; }
                     if (e.type === 'all' && e.qualifier === '~') { resultText = 'SoftFail'; resultColor = '#d97706'; }
 
@@ -611,47 +662,8 @@ export function generateReportHTML() {
             </div>
 
             <!-- Parsed DMARC Details Grid -->
-            ${(() => {
-                if (currentResult.dmarcParsed) {
-                    const d = currentResult.dmarcParsed;
-                    const pClassColor = d.p === 'reject' ? '#dc2626' : d.p === 'quarantine' ? '#d97706' : '#2563eb';
-                    const spClassColor = d.sp === 'reject' ? '#dc2626' : d.sp === 'quarantine' ? '#d97706' : '#2563eb';
-                    
-                    return `
-                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
-                            <h4 style="margin-top: 0; margin-bottom: 10px; font-family: sans-serif; color: #1e293b; font-size: 14px;">${t.report_dmarc_config_analyzed}</h4>
-                            <table border="0" cellpadding="6" cellspacing="0" style="width: 100%; font-family: sans-serif; font-size: 13px; text-align: left;">
-                                <tr>
-                                    <td style="width: 180px; font-weight: bold; color: #475569;">${t.dmarc_policy_p || 'Política (p)'}:</td>
-                                    <td style="font-weight: bold; color: ${pClassColor}; text-transform: uppercase;">${d.p || 'none'}</td>
-                                </tr>
-                                ${d.sp ? `
-                                <tr>
-                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_policy_sp || 'Subdominios (sp)'}:</td>
-                                    <td style="font-weight: bold; color: ${spClassColor}; text-transform: uppercase;">${d.sp}</td>
-                                </tr>` : ''}
-                                ${d.pct ? `
-                                <tr>
-                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_policy_pct || 'Porcentaje (pct)'}:</td>
-                                    <td>${d.pct}%</td>
-                                </tr>` : ''}
-                                ${d.adkim ? `
-                                <tr>
-                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_alignment_dkim || 'Alineación DKIM'}:</td>
-                                    <td>${d.adkim === 's' ? t.strict_label : t.relaxed_label}</td>
-                                </tr>` : ''}
-                                ${d.aspf ? `
-                                <tr>
-                                    <td style="font-weight: bold; color: #475569;">${t.dmarc_alignment_spf || 'Alineación SPF'}:</td>
-                                    <td>${d.aspf === 's' ? t.strict_label : t.relaxed_label}</td>
-                                </tr>` : ''}
-                            </table>
-                        </div>
-                    `;
-                }
-                return '';
-            })()}
-            
+            ${dmarcDetailsHtml}
+
             <p style="font-family: sans-serif; font-size: 13.5px; color: #334155; font-weight: bold; margin-bottom: 5px; text-align: left;">${t.panel_dmarc_reporting_title}</p>
             <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5; text-align: left;">
                 ${currentResult.dmarcRua.length > 0 ? currentResult.dmarcRua.map(r => {
@@ -817,7 +829,8 @@ export function exportToPDF() {
     doc.documentElement.lang = lang;
     doc.title = fileTitle;
     // reportHtml es el informe que genera esta misma app: todos los valores externos
-    // que contiene ya han pasado por escapeHtml en generateReportHTML().
+    // que contiene pasan por escapeHtml en generateReportHTML() (render.dom.test.js lo
+    // comprueba con un registro DMARC con marcado en cada etiqueta).
     doc.body.innerHTML = reportHtml;
 
     const printFrame = () => {

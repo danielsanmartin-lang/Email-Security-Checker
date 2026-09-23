@@ -10,7 +10,7 @@ export function renderScorePanel(result) {
     const t = translations[lang];
 
     // Retrieve Security Score from result.scoreCard
-    const { score, grade, cardClass, findings, posture } = result.scoreCard || { score: 0, grade: 'F', cardClass: 'danger', findings: [], posture: { grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' } };
+    const { score, grade, cardClass, findings, posture, transport } = result.scoreCard || { score: 0, grade: 'F', cardClass: 'danger', findings: [], posture: { key: 'unknown', class: 'warning' }, transport: null };
 
     // Render Score UI
     const scoreCard = document.getElementById('score-card');
@@ -21,7 +21,14 @@ export function renderScorePanel(result) {
         if (titleEl) {
             const postureLabel = t.posture_label;
             const postureGrade = postureText(t, posture);
-            titleEl.innerHTML = html`${raw(t.score_title_panel)} <span class="tag tag--${raw(posture.class === 'safe' ? 'provider' : posture.class)}" style="margin-left: 12px; vertical-align: middle; padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 600;">${postureLabel}: ${postureGrade}</span>`;
+            // La nota del anillo es la de SUPLANTACIÓN; el transporte se enseña aparte, con
+            // su propia letra o "no aplica" si el dominio no recibe correo.
+            const transportText = !transport
+                ? ''
+                : transport.applicable ? `${t.transport_chip_label}: ${transport.grade}` : `${t.transport_chip_label}: ${t.transport_not_applicable}`;
+            const transportTone = !transport || !transport.applicable ? 'unknown'
+                : (transport.grade === 'F' ? 'danger' : (transport.grade === 'D' || transport.grade === 'C') ? 'warning' : 'provider');
+            titleEl.innerHTML = html`${raw(t.score_title_panel)} <span class="tag tag--${raw(posture.class === 'safe' ? 'provider' : posture.class)} score-card__chip">${postureLabel}: ${postureGrade}</span>${transport ? html` <span class="tag tag--${raw(transportTone)} score-card__chip" title="${t.transport_chip_hint}">${transportText}</span>` : raw('')}`;
         }
 
         const scoreNumberEl = document.getElementById('score-number');
@@ -96,6 +103,16 @@ export function renderScoreBreakdown(result) {
     }
 
     const categories = breakdown.map(cat => {
+        // Transporte en un dominio que no recibe correo: no es un 0, es que no aplica.
+        if (cat.applicable === false) {
+            return html`<div class="score-cat score-cat--na">
+                <div class="score-cat__head">
+                    <span class="score-cat__name">${t[cat.labelKey] || cat.id}</span>
+                    <span class="score-cat__value">${t.transport_not_applicable}</span>
+                </div>
+                <p class="score-cat__desc">${t.finding_transport_not_applicable}</p>
+            </div>`;
+        }
         const pct = cat.max > 0 ? Math.round((cat.earned / cat.max) * 100) : 0;
         const tone = pct >= 90 ? 'good' : pct >= 50 ? 'mid' : 'bad';
         const checks = cat.checks.map(check => {
@@ -120,6 +137,7 @@ export function renderScoreBreakdown(result) {
             </div>
             <div class="score-cat__bar"><span class="score-cat__fill score-cat__fill--${raw(tone)}" style="width:${pct}%"></span></div>
             <p class="score-cat__desc">${t[`${cat.labelKey}_desc`] || ''}</p>
+            ${cat.cap ? html`<p class="score-cat__cap">${(t[`score_cap_${cat.cap.key}`] || '').split('{cap}').join(String(cat.cap.value))}</p>` : raw('')}
             <ul class="score-checks">${checks}</ul>
         </div>`;
     });

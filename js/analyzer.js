@@ -1,9 +1,26 @@
 import { KB } from './knowledge.js';
-import { extractRootDomain } from './utils.js';
-import { parseSPF, parseDMARC, analyzeDKIMRecord, validateTlsRptRua, checkMtaStsMxCoverage } from './parsers.js';
+import { extractRootDomain, isSameOrSubdomain } from './utils.js';
+import { parseSPF, parseDMARC, analyzeDKIMRecord, validateTlsRptRua, checkMtaStsMxCoverage, isDnssecValidated } from './parsers.js';
 import { classifyMailHosting } from './mailHosting.js';
+import { evaluateDmarc, lowerPolicy } from './dmarc.js';
 
-export function identifyMX(host, domain) {
+/**
+ * Dominio organizativo del Tree Walk, solo si es seguro usarlo para decidir qué es
+ * "propio". Un TLD que publicara DMARC sin psd=y convertiría en organizativo al propio TLD
+ * (RFC 9989 §4.10.2, regla 3), y con él cualquier MX bajo .com pasaría por propio. Se
+ * exige que sea el dominio auditado o un antepasado suyo, y que no sea más corto que su
+ * dominio registrable estimado.
+ */
+function trustedOrgDomain(domain, orgDomain) {
+    if (!domain || !orgDomain) return null;
+    const d = domain.toLowerCase();
+    const org = orgDomain.toLowerCase();
+    if (!isSameOrSubdomain(d, org)) return null;
+    if (org.split('.').length < extractRootDomain(d).split('.').length) return null;
+    return org;
+}
+
+export function identifyMX(host, domain, orgDomain = null) {
     const h = host.toLowerCase();
     // First label of the MX hostname (e.g. "esa01" from "esa01.arquia.es")
     const firstLabel = h.split('.')[0];
@@ -11,11 +28,22 @@ export function identifyMX(host, domain) {
         if (entry.matchType === 'hostname_prefix') {
             // Match if the first hostname label starts with the pattern (e.g. "esa" matches "esa01", "esa1", "esa-gw")
             if (firstLabel.startsWith(entry.pattern)) return entry;
+        } else if (entry.matchType === 'suffix') {
+            // Sufijo exacto: '.mx.microsoft' casa con 'acme-com.l-v1.mx.microsoft' pero no
+            // con 'mx.microsoft.com'.
+            if (h.endsWith(entry.pattern)) return entry;
         } else {
             if (h.includes(entry.pattern)) return entry;
         }
     }
     if (domain) {
+        // Un MX que cuelga del propio dominio (o de su dominio organizativo) es propio, sin
+        // pasar por la heurística de dominio raíz: mx.ine.es es de ine.es aunque "ine" sea
+        // corto.
+        const org = trustedOrgDomain(domain, orgDomain);
+        if (isSameOrSubdomain(h, domain) || (org && isSameOrSubdomain(h, org))) {
+            return { name: host, type: 'self' };
+        }
         const mxRoot = extractRootDomain(h);
         const domainRoot = extractRootDomain(domain.toLowerCase());
         // If MX root matches the analyzed domain root, it's the company's own mail server — not a SEG
@@ -72,8 +100,9 @@ export function isSameBrand(rootA, rootB) {
 export { extractRootDomain } from './utils.js';
 
 export function identifySPFService(value) {
-    if (!value || value === '(self)') return null;
-    const v = value.toLowerCase();
+    if (!value || value.startsWith('(self)')) return null;
+    // La máscara CIDR (`a:mail.acme.com/24`) no forma parte del nombre del servicio.
+    const v = value.toLowerCase().replace(/(\/\d{1,3})?(\/\/\d{1,3})?$/, '');
     for (const entry of KB.spf) {
         if (v.includes(entry.pattern)) return entry;
     }
@@ -216,6 +245,7 @@ function _segLevel(score) {
 export function detectSecurityLayers(signals = {}) {
     const {
         domain = '',
+        orgDomain = null,
         mxRecords = [],
         spfEntries = [],
         spfNestedDomains = [],
@@ -243,13 +273,13 @@ export function detectSecurityLayers(signals = {}) {
 
     // 1. MX (correo entrante por el gateway)
     for (const mx of mxRecords) {
-        const id = identifyMX(mx.host, domain);
+        const id = identifyMX(mx.host, domain, orgDomain);
         if (id.type === 'seg' || id.type === 'ices') add(id.name, id.type, 'mx', mx.host, W.mx);
     }
 
     // 2. MTA-STS: hostnames MX autorizados en la política
     for (const pattern of mtaStsMx) {
-        const id = identifyMX(String(pattern).toLowerCase(), domain);
+        const id = identifyMX(String(pattern).toLowerCase(), domain, orgDomain);
         if (id.type === 'seg' || id.type === 'ices') add(id.name, id.type, 'mta_sts', pattern, W.mta_sts);
     }
 
@@ -303,7 +333,7 @@ export function detectSecurityLayers(signals = {}) {
     // Vendors cuyo MX real confirma presencia en el flujo de correo (por identidad canónica).
     const mxVendorCanon = new Set(
         mxRecords
-            .map(mx => identifyMX(mx.host, domain))
+            .map(mx => identifyMX(mx.host, domain, orgDomain))
             .filter(id => id.type === 'seg' || id.type === 'ices')
             .map(id => canonVendor(id.name))
             .filter(Boolean)
@@ -344,6 +374,9 @@ export function detectSecurityLayers(signals = {}) {
 
 export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     const domain = advancedData.domain || '';
+    // Dominio organizativo que ha dado el DNS Tree Walk (RFC 9989 §4.10). Sirve también
+    // para reconocer como propios los MX que cuelgan de él.
+    const orgDomain = advancedData.dmarcOrgDomain || null;
     const spfEntries = parseSPF(spfRaw);
     const dmarcParsed = parseDMARC(dmarcRaw);
 
@@ -353,7 +386,7 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     let providerSource = null;
     // Detección de proveedor de correo (MX primero, luego SPF)
     for (const mx of mxRecords) {
-        const id = identifyMX(mx.host, domain);
+        const id = identifyMX(mx.host, domain, orgDomain);
         if (id.type === 'provider' && !provider) {
             provider = id.name;
             providerSource = { key: 'evidence_mx', arg: mx.host };
@@ -379,6 +412,7 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     // Detección ponderada multi-señal de capas de seguridad (SEG / ICES).
     const { segList, icesList } = detectSecurityLayers({
         domain,
+        orgDomain,
         mxRecords,
         spfEntries,
         spfNestedDomains: collectSpfDomains(advancedData.spfTree),
@@ -399,32 +433,40 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         providerSource = { key: 'provider_none' };
     }
 
-    let dmarcPolicy = 'No configurado';
-    let dmarcPolicyClass = '';
     let dmarcRua = [];
     let dmarcRuf = [];
     let dmarcDetails = {};
-    
     if (dmarcParsed) {
-        const p = dmarcParsed.p || 'none';
-        dmarcPolicy = p;
-        dmarcPolicyClass = p;
         dmarcDetails = dmarcParsed;
-        
         if (dmarcParsed.rua) {
-            dmarcRua = dmarcParsed.rua.split(',').map(s => s.trim());
+            dmarcRua = dmarcParsed.rua.split(',').map(s => s.trim()).filter(Boolean);
         }
         if (dmarcParsed.ruf) {
-            dmarcRuf = dmarcParsed.ruf.split(',').map(s => s.trim());
+            dmarcRuf = dmarcParsed.ruf.split(',').map(s => s.trim()).filter(Boolean);
         }
     }
+
+    const dmarcData = advancedData.dmarcData || { record: dmarcRaw, records: dmarcRaw ? [dmarcRaw] : [], multiple: false };
+    const dmarcSource = advancedData.dmarcSource || (advancedData.dmarcInherited ? 'org' : 'author');
+    // Semántica RFC 9989 del registro que APLICA al dominio auditado (null si no aplica
+    // ninguno: no hay, o los que hay en su nombre se descartan por ser varios).
+    const dmarcEval = computeDmarcEval({
+        dmarcRaw, dmarcParsed, dmarcData, dmarcSource, dmarcRua, dmarcRuf,
+        dmarcIsOrgDomain: orgDomain ? orgDomain === domain.toLowerCase() : undefined
+    });
+    // dmarcPolicy es la política EFECTIVA y conservadora: la más débil que aplicaría
+    // alguna de las dos generaciones de receptores (RFC 7489 y RFC 9989). La solicitada
+    // queda en dmarcPolicyRequested para poder decir "reject en modo prueba".
+    const dmarcPolicy = dmarcEval ? dmarcEval.effective.floor : 'No configurado';
+    const dmarcPolicyClass = dmarcEval ? dmarcEval.effective.floor : '';
+    const dmarcPolicyRequested = dmarcEval ? dmarcEval.applicable : null;
 
     // Eje de la PLATAFORMA DE BUZÓN, independiente del filtro de entrada que se acaba de
     // calcular. Las señales las resuelve app.js (esto es síncrono y puro); aquí solo se
     // aporta la identificación de los MX, que ya vive en este módulo.
     const mailHosting = classifyMailHosting({
         domain,
-        mxIds: mxRecords.map(mx => ({ ...identifyMX(mx.host, domain), host: mx.host })),
+        mxIds: mxRecords.map(mx => ({ ...identifyMX(mx.host, domain, orgDomain), host: mx.host })),
         segFronting: segList.some(s => (s.evidence || []).some(e => e.signal === 'mx')),
         ...(advancedData.mailHostingSignals || {})
     });
@@ -434,10 +476,17 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         mailHosting,
         spfRaw, spfEntries, spfServices,
         spfData: advancedData.spfData || { record: spfRaw, records: spfRaw ? [spfRaw] : [], multiple: false },
-        dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass,
+        dmarcRaw, dmarcParsed, dmarcPolicy, dmarcPolicyClass, dmarcPolicyRequested,
         dmarcRua, dmarcRuf, dmarcDetails,
-        dmarcData: advancedData.dmarcData || { record: dmarcRaw, records: dmarcRaw ? [dmarcRaw] : [], multiple: false },
-        // DMARC heredado del dominio organizativo (RFC 7489 §6.6.3) al analizar un subdominio.
+        dmarcData,
+        dmarcEval,
+        // Dónde se encontró la política y cuál es el dominio organizativo (Tree Walk,
+        // RFC 9989 §4.10). Al analizar un subdominio sin registro propio, la política se
+        // hereda y le corresponde su sp (§4.10.1).
+        dmarcSource,
+        dmarcPolicyDomain: advancedData.dmarcPolicyDomain || (dmarcRaw ? domain : null),
+        dmarcOrgDomain: orgDomain,
+        dmarcWalkIncomplete: !!advancedData.dmarcWalkIncomplete,
         dmarcInherited: !!advancedData.dmarcInherited,
         dmarcInheritedFrom: advancedData.dmarcInheritedFrom || null,
         // Consultas que no se pudieron resolver (fallo transitorio): no se penalizan.
@@ -459,90 +508,151 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     };
 }
 
-// ===== Scoring por categorías ponderadas =====
-// El modelo aditivo anterior saturaba: SPF + DMARC reject + DKIM ya sumaban 95/100,
-// así que MTA-STS, DNSSEC, DANE y BIMI no movían la nota. Ahora cada control tiene un
-// presupuesto dentro de una categoría y la nota final se normaliza sobre lo que se ha
-// podido EVALUAR (ver `unevaluable`), no sobre un máximo teórico.
+// ===== Puntuación en dos ejes (v4) =====
+// Una sola nota mezclaba dos amenazas distintas: que alguien envíe correo en nombre del
+// dominio (suplantación) y que alguien lea o altere el correo entrante en tránsito
+// (transporte). El resultado era engañoso en los dos sentidos: un dominio con la
+// autenticación perfecta sacaba una C por no tener DNSSEC ni MTA-STS —controles que casi
+// ninguna gran empresa despliega—, y uno suplantable quedaba a una sola letra.
+//
+// Ahora hay dos notas. La de SUPLANTACIÓN es el titular (anillo, letra y nivel) y la de
+// TRANSPORTE va aparte, o "no aplica" si el dominio no recibe correo. Cada una se
+// normaliza sobre lo que se ha podido EVALUAR (ver `unevaluable`). BIMI no puntúa: es
+// marca, no seguridad.
 export const SCORE_CATEGORIES = {
-    auth: { max: 60, labelKey: 'score_cat_auth' },
-    transport: { max: 25, labelKey: 'score_cat_transport' },
-    hygiene: { max: 15, labelKey: 'score_cat_hygiene' }
+    antispoof: { max: 100, labelKey: 'score_cat_antispoof' },
+    transport: { max: 100, labelKey: 'score_cat_transport' }
 };
 
 // Presupuesto de cada check. La suma por categoría cuadra con SCORE_CATEGORIES.
-// Un check sin entrada aquí (p. ej. `srv`) es puramente informativo: aporta findings
-// pero no puntúa.
+// Un check sin entrada aquí (bimi, srv) es puramente informativo: aporta findings pero
+// no puntúa.
 export const CHECK_BUDGETS = {
-    spf:            { category: 'auth', max: 22, labelKey: 'score_check_spf' },
-    dmarc:          { category: 'auth', max: 23, labelKey: 'score_check_dmarc' },
-    dkim:           { category: 'auth', max: 15, labelKey: 'score_check_dkim' },
-    mtaSts:         { category: 'transport', max: 10, labelKey: 'score_check_mta_sts' },
-    dnssec:         { category: 'transport', max: 8, labelKey: 'score_check_dnssec' },
-    dane:           { category: 'transport', max: 7, labelKey: 'score_check_dane' },
-    dmarcReporting: { category: 'hygiene', max: 8, labelKey: 'score_check_reporting' },
-    tlsRpt:         { category: 'hygiene', max: 4, labelKey: 'score_check_tls_rpt' },
-    bimi:           { category: 'hygiene', max: 3, labelKey: 'score_check_bimi' }
+    dmarc:          { category: 'antispoof', max: 50, labelKey: 'score_check_dmarc' },
+    spf:            { category: 'antispoof', max: 20, labelKey: 'score_check_spf' },
+    dkim:           { category: 'antispoof', max: 20, labelKey: 'score_check_dkim' },
+    dmarcReporting: { category: 'antispoof', max: 10, labelKey: 'score_check_reporting' },
+    mtaSts:         { category: 'transport', max: 40, labelKey: 'score_check_mta_sts' },
+    tlsRpt:         { category: 'transport', max: 15, labelKey: 'score_check_tls_rpt' },
+    dnssec:         { category: 'transport', max: 25, labelKey: 'score_check_dnssec' },
+    dane:           { category: 'transport', max: 20, labelKey: 'score_check_dane' }
 };
 
-// Aportes de cada señal dentro del presupuesto de su check (positivos = suman,
-// negativos = restan). Un check nunca supera su `max`; la categoría no baja de 0.
+// Puntos de cada señal. Un check queda siempre entre 0 y su `max`.
 export const SCORE_WEIGHTS = {
-    // --- SPF (22) ---
-    spfPresent: 10,
-    spfAllHardfail: 8,
-    spfAllSoftfail: 6,
-    spfAllNeutral: -3,
-    spfAllPass: -12,
-    spfNoAll: -3,
-    spfMultiple: -6,
+    // --- DMARC (50): la política que un receptor aplica de verdad al From visible ---
+    // quarantine y reject son los dos "enforcement" (RFC 9989 §3.2.9). reject conserva
+    // una prima pequeña, pero §7.4 lo desaconseja si los usuarios escriben a listas.
+    dmarcReject: 50,
+    dmarcQuarantine: 46,
+    dmarcNoneWithReports: 10,   // modo monitorización: no protege, pero prepara el paso
+    dmarcNone: 5,
+    dmarcAsNone: 5,             // valor no válido con rua: se trata como p=none
+    dmarcSpNone: -12,           // subdominios existentes sin protección
+    dmarcNpNone: -6,            // subdominios inexistentes sin protección
+    dmarcPctPartial: -5,
+    dmarcMultiple: -10,
+    dmarcVersionInvalid: -10,
+    // --- SPF (20) ---
+    // Con DMARC en enforcement, ~all y -all protegen lo mismo, y RFC 9989 §7.1 advierte
+    // de que -all puede rechazar correo legítimo reenviado antes de evaluar DMARC.
+    spfPass: 20,
+    spfSoftfailNoDmarc: 16,     // sin enforcement, el receptor solo tiene el SPF
+    spfNeutral: 8,              // ?all o sin all
     spfPtr: -2,
-    spfLookupsOk: 4,
-    spfIncludePermError: -22,
-    spfVoidLookups: -4,
-    spfMultipleAll: -3,
-    spfTermsAfterAll: -2,
-    // --- DMARC (23) ---
-    dmarcPresent: 8,
-    dmarcReject: 15,
-    dmarcQuarantine: 9,
-    dmarcNone: 0,
-    dmarcMultiple: -6,
-    dmarcVersionInvalid: -4,
-    dmarcPolicyInvalid: -8,
-    dmarcSpWeak: -3,
-    dmarcNpWeak: -3,
-    dmarcPctPartial: -2,
-    // --- DKIM (15) ---
-    dkim: 10,
-    dkimStrongKey: 5,
-    dkimKey1024: 2,
-    dkimWeakKey: -5,
-    dkimRevoked: -3,
-    dkimMalformed: -2,
-    // --- MTA-STS (10) ---
-    mtaStsValid: 8,
-    mtaStsMaxAgeOk: 2,
-    mtaStsInvalid: -5,
-    mtaStsMxMismatch: -8,
-    // --- Transporte ---
-    dane: 7,
-    dnssec: 8,
-    // --- Higiene: reporting (8) ---
-    dmarcReporting: 5,
-    dmarcExternalAuthorized: 3,
-    dmarcExternalUnauthorized: -3,
+    spfMultipleAll: -2,
+    spfTermsAfterAll: -1,
+    // --- DKIM (20): solo las claves ACTIVAS ---
+    dkimStrong: 20,
+    dkim1024: 17,
+    dkimMalformed: 10,
+    dkimWeak: 5,
+    // --- Informes (10) ---
+    dmarcReporting: 10,
+    dmarcExternalUnauthorized: -4,
     dmarcRuaTooMany: -1,
-    // --- Higiene: TLS-RPT (4) y BIMI (3) ---
-    tlsRptPresent: 4,
-    tlsRptRuaInvalid: -2,
-    bimi: 2,
-    bimiVmc: 1,
-    bimiInsecureUrl: -1
+    // --- Transporte (100) ---
+    mtaStsEnforce: 36,
+    mtaStsMaxAgeOk: 4,
+    mtaStsMxMismatchCap: 10,    // enforce, pero con MX sin cubrir: rompe la entrega
+    mtaStsUnverified: 25,       // TXT publicado y host existente; política sin descargar
+    mtaStsTesting: 15,
+    tlsRpt: 15,
+    tlsRptRuaInvalid: 5,
+    dnssec: 25,
+    dane: 20
 };
 
-function dkimCountOf(result) {
-    return result.dkimRecords && result.dkimRecords.records ? result.dkimRecords.records.length : 0;
+// Techo de la nota de suplantación sin DMARC en enforcement: sin él, cualquiera puede
+// poner el dominio en el From visible y los receptores no lo bloquean por DMARC.
+const NO_ENFORCEMENT_CAP = 45;
+// Techo cuando no todo se ha podido VERIFICAR: A+ exige evidencia completa.
+const UNVERIFIED_CAP = 94;
+
+export function letterGrade(score) {
+    if (score >= 95) return 'A+';
+    if (score >= 85) return 'A';
+    if (score >= 70) return 'B';
+    if (score >= 55) return 'C';
+    if (score >= 40) return 'D';
+    return 'F';
+}
+
+/** ¿El dominio recibe correo? Sin MX (o con Null MX), nada de transporte le aplica. */
+function receivesMailOf(result) {
+    return (result.mxRecords || []).length > 0 && !result.nullMx;
+}
+
+/** DMARC en enforcement para el dominio auditado (quarantine o reject efectivos). */
+function isEnforcedOf(ev) {
+    return !!ev && ev.processing === 'full' && ev.effective.floor !== 'none';
+}
+
+/**
+ * Evaluación RFC 9989 del registro DMARC que aplica al dominio auditado, o null si no
+ * aplica ninguno. Varios registros en el MISMO nombre se descartan todos (§4.10, paso 2):
+ * si lo que queda es un registro del propio dominio, es como no tener DMARC.
+ */
+function computeDmarcEval(result) {
+    if (!result.dmarcRaw || !result.dmarcParsed) return null;
+    const source = result.dmarcSource || (result.dmarcInherited ? 'org' : 'author');
+    if (result.dmarcData && result.dmarcData.multiple && source === 'author') return null;
+    return evaluateDmarc(result.dmarcParsed, {
+        source,
+        isOrgDomain: result.dmarcIsOrgDomain,
+        rua: result.dmarcRua,
+        ruf: result.dmarcRuf
+    });
+}
+
+// analyze() deja la evaluación en el result; los results montados a mano (tests, informes
+// de versiones anteriores) no la traen y se calcula al vuelo.
+function dmarcEvalOf(result) {
+    return 'dmarcEval' in result ? result.dmarcEval : computeDmarcEval(result);
+}
+
+/**
+ * Mecanismo `all` que rige de verdad. Sin `all` propio manda el `redirect=` (RFC 7208
+ * §6.1): la política por defecto es la del registro de destino, así que se busca en el
+ * subárbol del redirect. Antes, `v=spf1 redirect=_spf.x.com` daba un falso "sin all" y
+ * perdía los puntos del calificador aunque el destino terminara en -all.
+ * @returns {{ entry: object|null, via: string|null }}
+ */
+function effectiveSpfAll(result) {
+    const own = (result.spfEntries || []).find(e => e.type === 'all');
+    if (own) return { entry: own, via: null };
+    let tree = result.spfTree;
+    let via = null;
+    for (let depth = 0; tree && depth < 10; depth++) {
+        const child = (tree.children || []).find(c => c.type === 'redirect' && c.tree);
+        if (!child) break;
+        via = child.target;
+        if (!child.tree.record) break;
+        const all = parseSPF(child.tree.record).find(e => e.type === 'all');
+        if (all) return { entry: all, via };
+        tree = child.tree;
+    }
+    return { entry: null, via };
 }
 
 function hasDaneOf(result) {
@@ -562,42 +672,73 @@ const SCORE_CHECKS = [
             findings.push({ status: 'info', key: 'finding_spf_unavailable' });
             return { points, findings, unevaluable: true };
         }
+        const enforced = isEnforcedOf(dmarcEvalOf(result));
         if (!result.spfRaw) {
+            // Un nombre que no recibe correo y al que DMARC ya protege en enforcement (el
+            // típico subdominio web, como support.apple.com) no necesita SPF para no ser
+            // suplantable: se recomienda, pero no se puntúa como un fallo.
+            if (!receivesMailOf(result) && enforced) {
+                findings.push({ status: 'info', key: 'finding_spf_not_needed' });
+                return { points, findings, unevaluable: true };
+            }
             findings.push({ status: 'error', key: 'finding_spf_err' });
             return { points, findings };
         }
+        // Varios registros SPF son un PermError (RFC 7208 §4.5): ningún receptor evalúa
+        // ninguno, así que nada de lo que digan cuenta.
         if (result.spfData && result.spfData.multiple) {
-            points += SCORE_WEIGHTS.spfMultiple;
             findings.push({ status: 'error', key: 'finding_spf_multiple' });
-        } else {
-            points += SCORE_WEIGHTS.spfPresent;
-            findings.push({ status: 'success', key: 'finding_spf_ok' });
+            return { points: 0, findings };
         }
-        const allEntry = result.spfEntries && result.spfEntries.find(e => e.type === 'all');
+        findings.push({ status: 'success', key: 'finding_spf_ok' });
+
+        const { entry: allEntry, via: allVia } = effectiveSpfAll(result);
+        if (allEntry && allVia) {
+            findings.push({
+                status: 'info',
+                key: 'finding_spf_all_via_redirect',
+                replacements: { '{target}': allVia, '{all}': `${allEntry.qualifier || '+'}all` }
+            });
+        }
+        const q = allEntry ? allEntry.qualifier : null;
         if (allEntry) {
-            const q = allEntry.qualifier;
             if (q === '+') {
-                points += SCORE_WEIGHTS.spfAllPass;
                 findings.push({ status: 'error', key: 'finding_spf_all_pass' });
             } else if (q === '?' || q === '') {
-                points += SCORE_WEIGHTS.spfAllNeutral;
                 findings.push({ status: 'warning', key: 'finding_spf_all_neutral' });
             } else if (q === '~') {
-                points += SCORE_WEIGHTS.spfAllSoftfail;
                 findings.push({ status: 'success', key: 'finding_spf_all_softfail' });
             } else if (q === '-') {
-                points += SCORE_WEIGHTS.spfAllHardfail;
                 findings.push({ status: 'success', key: 'finding_spf_all_hardfail' });
             }
-        } else {
+        } else if (!allVia) {
             // Sin mecanismo 'all' ⇒ política por defecto neutral (?all): no protege.
-            points += SCORE_WEIGHTS.spfNoAll;
+            // (Con un redirect cuyo destino no resuelve, el PermError ya lo cuenta abajo.)
             findings.push({ status: 'warning', key: 'finding_spf_no_all' });
+        }
+        // Puntos del calificador. Con DMARC en enforcement, ~all vale lo mismo que -all.
+        if (q === '-' || q === '~') {
+            points = (q === '-' || enforced) ? SCORE_WEIGHTS.spfPass : SCORE_WEIGHTS.spfSoftfailNoDmarc;
+        } else if (q === '+') {
+            points = 0;
+        } else {
+            points = SCORE_WEIGHTS.spfNeutral;
         }
         // El mecanismo 'ptr' está desaconsejado (RFC 7208 §5.5): lento y poco fiable.
         if (result.spfEntries && result.spfEntries.some(e => e.type === 'ptr')) {
             points += SCORE_WEIGHTS.spfPtr;
             findings.push({ status: 'warning', key: 'finding_spf_ptr' });
+        }
+        // Un mecanismo desconocido —una errata— hace fallar TODA la evaluación (RFC 7208 §5).
+        const unknownTerms = (result.spfEntries || []).filter(e => e.type === 'unknown');
+        let permError = false;
+        if (unknownTerms.length > 0) {
+            permError = true;
+            findings.push({
+                status: 'error',
+                key: 'finding_spf_unknown_mechanism',
+                replacements: { '{terms}': unknownTerms.map(e => e.value).join(', ') }
+            });
         }
 
         // Varios 'all' (solo cuenta el primero) y mecanismos DESPUÉS del 'all'
@@ -611,7 +752,7 @@ const SCORE_CHECKS = [
         if (allEntries.length > 0) {
             const firstAllIndex = allEntries[0].index;
             // 'redirect'/'exp' son modificadores: su posición es irrelevante.
-            const unreachable = entries.filter(e => e.index > firstAllIndex && e.type !== 'all' && e.type !== 'redirect');
+            const unreachable = entries.filter(e => e.index > firstAllIndex && !['all', 'redirect', 'exp', 'unknown'].includes(e.type));
             if (unreachable.length > 0) {
                 points += SCORE_WEIGHTS.spfTermsAfterAll;
                 findings.push({
@@ -632,7 +773,7 @@ const SCORE_CHECKS = [
         // registro y exceso de void lookups.
         const issues = collectSpfTreeIssues(result.spfTree);
         if (issues.noRecord.length > 0) {
-            points += SCORE_WEIGHTS.spfIncludePermError;
+            permError = true;
             findings.push({
                 status: 'error',
                 key: 'finding_spf_include_permerror',
@@ -640,7 +781,7 @@ const SCORE_CHECKS = [
             });
         }
         if (issues.voids.length > 2) {
-            points += SCORE_WEIGHTS.spfVoidLookups;
+            permError = true;
             findings.push({
                 status: 'error',
                 key: 'finding_spf_void_lookups',
@@ -650,12 +791,15 @@ const SCORE_CHECKS = [
 
         const spfLookups = result.spfLookups || 0;
         if (spfLookups <= 10) {
-            points += SCORE_WEIGHTS.spfLookupsOk;
             findings.push({ status: 'success', key: 'finding_spf_lookups_ok', replacements: { '{lookups}': spfLookups } });
         } else {
+            permError = true;
             findings.push({ status: 'error', key: 'finding_spf_lookups_err', replacements: { '{lookups}': spfLookups } });
         }
-        return { points, findings };
+        // Un PermError (include roto, errata, >2 void lookups, >10 lookups) hace que
+        // ningún receptor pueda evaluar el SPF: vale lo mismo que no tenerlo.
+        if (permError) points = 0;
+        return { points: Math.max(0, points), findings };
     },
 
     function dmarc(result) {
@@ -667,89 +811,148 @@ const SCORE_CHECKS = [
             findings.push({ status: 'info', key: 'finding_dmarc_unavailable' });
             return { points, findings, unevaluable: true };
         }
-        if (!result.dmarcRaw) {
-            findings.push({ status: 'error', key: 'finding_dmarc_err' });
-            return { points, findings };
-        }
-        if (result.dmarcData && result.dmarcData.multiple) {
+        const multiple = !!(result.dmarcData && result.dmarcData.multiple);
+        const ev = dmarcEvalOf(result);
+        // Varios registros en un mismo nombre se descartan TODOS (RFC 9989 §4.10, paso 2).
+        // En el propio dominio eso equivale a no tener DMARC; en un subdominio la búsqueda
+        // sigue hacia arriba y puede aplicar la política de su dominio organizativo.
+        if (multiple) {
             points += SCORE_WEIGHTS.dmarcMultiple;
             findings.push({ status: 'error', key: 'finding_dmarc_multiple' });
+        }
+        if (!ev) {
+            if (!multiple) findings.push({ status: 'error', key: 'finding_dmarc_err' });
+            return { points: 0, findings };
+        }
+        const P = (v) => String(v || 'none').toUpperCase();
+
+        // Versión: api.js ya exige v=DMARC1, así que esto solo salta con results montados a mano.
+        if (result.dmarcParsed && result.dmarcParsed.v !== 'DMARC1') {
+            points += SCORE_WEIGHTS.dmarcVersionInvalid;
+            findings.push({ status: 'error', key: 'finding_dmarc_version_invalid' });
+        }
+
+        // Un p no válido (o un sp/np no válidos) cambia la política de TODO el registro
+        // (RFC 9989 §4.10.1): p=none si hay un rua válido; ningún DMARC si no lo hay. Es
+        // fácil de pasar por alto porque el registro "parece" publicado: `sp=rejct` basta
+        // para que un p=reject deje de proteger nada.
+        if (ev.processing !== 'full') {
+            points = ev.processing === 'as_none' ? SCORE_WEIGHTS.dmarcAsNone : 0;
+            const bad = ev.invalidTags.filter(k => ['p', 'sp', 'np'].includes(k));
+            findings.push({
+                status: 'error',
+                key: ev.processing === 'as_none' ? 'finding_dmarc_invalid_as_none' : 'finding_dmarc_no_effect',
+                replacements: { '{tags}': bad.map(k => `${k}=${ev.requested[k]}`).join(', ') }
+            });
+            return { points: Math.max(0, points), findings };
+        }
+
+        const applicable = ev.applicable;
+        const floor = ev.effective.floor;
+        findings.push({ status: 'success', key: 'finding_dmarc_ok', replacements: { '{policy}': P(applicable) } });
+        if (ev.requested.p == null) findings.push({ status: 'info', key: 'finding_dmarc_p_missing' });
+
+        // Se puntúa la política EFECTIVA y conservadora: la más débil que aplicaría alguna de
+        // las dos generaciones de receptores. quarantine y reject son ambas enforcement.
+        points += floor === 'reject'
+            ? SCORE_WEIGHTS.dmarcReject
+            : floor === 'quarantine'
+                ? SCORE_WEIGHTS.dmarcQuarantine
+                : (ev.rua.valid.length > 0 ? SCORE_WEIGHTS.dmarcNoneWithReports : SCORE_WEIGHTS.dmarcNone);
+        const lowered = { '{p}': P(applicable), '{lower}': P(floor) };
+        if (floor !== applicable) {
+            // t=y (RFC 9989) y pct=0 (RFC 7489) rebajan un nivel la política solicitada.
+            if (ev.testing && ev.pct === 0) {
+                findings.push({ status: 'warning', key: 'finding_dmarc_pct_zero_with_t', replacements: lowered });
+            } else if (ev.testing) {
+                findings.push({ status: 'warning', key: 'finding_dmarc_testing_t', replacements: lowered });
+            } else {
+                findings.push({ status: 'warning', key: 'finding_dmarc_pct_zero', replacements: lowered });
+            }
+        } else if (floor === 'reject') {
+            findings.push({ status: 'success', key: 'finding_dmarc_policy_reject' });
+            // RFC 9989 §7.4: reject exige DKIM y choca con las listas de correo.
+            findings.push({ status: 'info', key: 'finding_dmarc_reject_notes' });
+        } else if (floor === 'quarantine') {
+            findings.push({ status: 'success', key: 'finding_dmarc_policy_quarantine' });
         } else {
-            points += SCORE_WEIGHTS.dmarcPresent;
-            const policy = result.dmarcPolicy || 'none';
-            findings.push({ status: 'success', key: 'finding_dmarc_ok', replacements: { '{policy}': policy.toUpperCase() } });
-            if (policy === 'reject') {
-                points += SCORE_WEIGHTS.dmarcReject;
-                findings.push({ status: 'success', key: 'finding_dmarc_policy_reject' });
-            } else if (policy === 'quarantine') {
-                points += SCORE_WEIGHTS.dmarcQuarantine;
-                findings.push({ status: 'warning', key: 'finding_dmarc_policy_quarantine' });
-            } else if (policy === 'none') {
-                points += SCORE_WEIGHTS.dmarcNone;
-                findings.push({ status: 'warning', key: 'finding_dmarc_policy_none' });
-            }
+            // p=none sin rua ni siquiera es "modo monitorización" (RFC 9989 §3.2.12).
+            findings.push({ status: 'warning', key: ev.rua.valid.length > 0 ? 'finding_dmarc_policy_none' : 'finding_dmarc_none_no_rua' });
         }
-        // Validación de sintaxis (se evalúa aunque haya múltiples registros)
-        if (result.dmarcParsed) {
-            const v = result.dmarcParsed.v;
-            const p = result.dmarcParsed.p;
-            if (v !== 'DMARC1') {
-                points += SCORE_WEIGHTS.dmarcVersionInvalid;
-                findings.push({ status: 'error', key: 'finding_dmarc_version_invalid' });
-            }
-            if (!p || !['none', 'quarantine', 'reject'].includes(p.toLowerCase())) {
-                points += SCORE_WEIGHTS.dmarcPolicyInvalid;
-                findings.push({ status: 'error', key: 'finding_dmarc_policy_invalid' });
-            }
+
+        // pct: RFC 9989 lo elimina (los receptores actualizados lo ignoran). Con RFC 7489, el
+        // correo que queda fuera del porcentaje recibe la política INMEDIATAMENTE INFERIOR,
+        // no "se entrega sin política".
+        if (ev.effective.partialPct != null && applicable !== 'none') {
+            points += SCORE_WEIGHTS.dmarcPctPartial;
+            findings.push({
+                status: 'warning',
+                key: 'finding_dmarc_pct_partial',
+                replacements: { '{pct}': String(ev.effective.partialPct), '{p}': P(applicable), '{lower}': P(lowerPolicy(applicable)) }
+            });
+        } else if (ev.pct != null && (ev.pct === 100 || applicable === 'none')) {
+            findings.push({ status: 'info', key: 'finding_dmarc_pct_removed' });
         }
-        // Política de subdominios (sp): un sp más débil que p abre un hueco en *.dominio
-        if (result.dmarcParsed) {
-            const p = (result.dmarcParsed.p || 'none').toLowerCase();
-            const sp = result.dmarcParsed.sp ? result.dmarcParsed.sp.toLowerCase() : null;
+        const removed = ev.obsoleteTags.filter(k => k !== 'pct');
+        if (removed.length > 0) {
+            findings.push({ status: 'info', key: 'finding_dmarc_tag_removed', replacements: { '{tags}': removed.join(', ') } });
+        }
+
+        // sp/np solo rigen en el registro del dominio organizativo (RFC 9989 §4.7). Al
+        // auditar el propio dominio organizativo restan, porque dejan un hueco en sus
+        // subdominios; al auditar un subdominio que hereda, sp YA es la política que se ha
+        // puntuado, así que solo se explica.
+        if (ev.orgLevel) {
             const rank = { none: 0, quarantine: 1, reject: 2 };
-            if (sp && rank[sp] != null && rank[p] != null && rank[sp] < rank[p]) {
-                points += SCORE_WEIGHTS.dmarcSpWeak;
-                findings.push({ status: 'warning', key: 'finding_dmarc_sp_weak', replacements: { '{sp}': sp.toUpperCase(), '{p}': p.toUpperCase() } });
+            const p = ev.policies.p.requested;
+            const sp = ev.requested.sp != null ? ev.policies.sp.requested : null;
+            const np = ev.requested.np != null ? ev.policies.np.requested : null;
+            // Resta cuando el hueco es real (el subdominio queda en none tras la transición)
+            // y solo al auditar el propio dominio organizativo: al heredar, sp YA se puntúa.
+            const penalize = ev.source === 'author' && floor !== 'none';
+            if (penalize && ev.policies.sp.floor === 'none') points += SCORE_WEIGHTS.dmarcSpNone;
+            else if (penalize && ev.policies.np.floor === 'none') points += SCORE_WEIGHTS.dmarcNpNone;
+            if (sp && rank[sp] < rank[p]) {
+                findings.push({ status: 'warning', key: 'finding_dmarc_sp_weak', replacements: { '{sp}': P(sp), '{p}': P(p) } });
             }
-            // np (DMARCbis): política para SUBDOMINIOS INEXISTENTES, el vector habitual
-            // de suplantación (nadie vigila lo que no existe). Un np más débil que p
-            // deja ese hueco abierto; si falta, se hereda sp/p y no se penaliza.
-            const np = result.dmarcParsed.np ? result.dmarcParsed.np.toLowerCase() : null;
-            if (np && rank[np] != null) {
-                const effective = sp && rank[sp] != null ? sp : p;
-                if (rank[np] < rank[effective]) {
-                    points += SCORE_WEIGHTS.dmarcNpWeak;
-                    findings.push({ status: 'warning', key: 'finding_dmarc_np_weak', replacements: { '{np}': np.toUpperCase(), '{p}': effective.toUpperCase() } });
+            // np: SUBDOMINIOS INEXISTENTES, el vector habitual de suplantación (nadie vigila lo
+            // que no existe). Si falta, se hereda sp/p y no se penaliza.
+            if (np) {
+                const reference = sp || p;
+                if (rank[np] < rank[reference]) {
+                    findings.push({ status: 'warning', key: 'finding_dmarc_np_weak', replacements: { '{np}': P(np), '{p}': P(reference) } });
                 } else {
-                    findings.push({ status: 'success', key: 'finding_dmarc_np_ok', replacements: { '{np}': np.toUpperCase() } });
+                    findings.push({ status: 'success', key: 'finding_dmarc_np_ok', replacements: { '{np}': P(np) } });
                 }
-            }
-            // pct < 100: la política solo se aplica a una fracción del correo
-            const pct = result.dmarcParsed.pct != null ? parseInt(result.dmarcParsed.pct, 10) : 100;
-            if (Number.isFinite(pct) && pct < 100) {
-                points += SCORE_WEIGHTS.dmarcPctPartial;
-                findings.push({ status: 'warning', key: 'finding_dmarc_pct_partial', replacements: { '{pct}': String(pct) } });
-            } else if (result.dmarcParsed.pct != null) {
-                // pct= está marcado como obsoleto en DMARCbis: sigue siendo válido pero
-                // conviene retirarlo del registro una vez completado el despliegue.
-                findings.push({ status: 'info', key: 'finding_dmarc_pct_deprecated' });
-            }
-            // Opciones de informe forense (fo) e intervalo de agregados (ri): informativo.
-            if (result.dmarcParsed.fo) {
-                findings.push({ status: 'info', key: 'finding_dmarc_fo', replacements: { '{fo}': String(result.dmarcParsed.fo) } });
-            }
-            if (result.dmarcParsed.ri) {
-                findings.push({ status: 'info', key: 'finding_dmarc_ri', replacements: { '{ri}': String(result.dmarcParsed.ri) } });
-            }
-            // Alineación estricta (adkim/aspf = s) — informativo
-            const adkim = (result.dmarcParsed.adkim || 'r').toLowerCase();
-            const aspf = (result.dmarcParsed.aspf || 'r').toLowerCase();
-            if (adkim === 's' && aspf === 's') {
-                findings.push({ status: 'info', key: 'finding_dmarc_alignment_strict' });
             }
         }
 
-        return { points, findings };
+        if (ev.psd === 'n') findings.push({ status: 'info', key: 'finding_dmarc_psd_n' });
+        if (ev.psd === 'y') findings.push({ status: 'warning', key: 'finding_dmarc_psd_y' });
+
+        // Opciones de informe de fallo: sin ruf no tienen efecto (RFC 9989 §4.7).
+        if (ev.foIgnored) {
+            findings.push({ status: 'info', key: 'finding_dmarc_fo_ignored', replacements: { '{fo}': String(result.dmarcParsed.fo) } });
+        } else if (result.dmarcParsed && result.dmarcParsed.fo) {
+            findings.push({ status: 'info', key: 'finding_dmarc_fo', replacements: { '{fo}': String(result.dmarcParsed.fo) } });
+        }
+        if (ev.unknownTags.length > 0) {
+            findings.push({ status: 'info', key: 'finding_dmarc_unknown_tags', replacements: { '{tags}': ev.unknownTags.join(', ') } });
+        }
+        const otherInvalid = ev.invalidTags.filter(k => !['p', 'sp', 'np'].includes(k));
+        if (otherInvalid.length > 0) {
+            findings.push({
+                status: 'info',
+                key: 'finding_dmarc_tag_invalid',
+                replacements: { '{tags}': otherInvalid.map(k => `${k}=${result.dmarcParsed[k]}`).join(', ') }
+            });
+        }
+        // Alineación estricta (adkim/aspf = s) — informativo
+        if (ev.adkim === 's' && ev.aspf === 's') {
+            findings.push({ status: 'info', key: 'finding_dmarc_alignment_strict' });
+        }
+
+        return { points: Math.max(0, points), findings };
     },
 
     // Observabilidad: sin informes agregados no hay forma de saber quién envía en tu
@@ -761,22 +964,34 @@ const SCORE_CHECKS = [
         if (result.dmarcUnavailable) {
             return { points, findings, unevaluable: true };
         }
-        const hasRua = result.dmarcRua && result.dmarcRua.length > 0;
-        const hasRuf = result.dmarcRuf && result.dmarcRuf.length > 0;
-        if (hasRua || hasRuf) {
+        // Solo cuentan los destinos del registro que APLICA: los de unos registros
+        // descartados (varios en el mismo nombre) no reciben nada.
+        const ev = dmarcEvalOf(result);
+        const rua = ev ? ev.rua : { valid: [], invalid: [] };
+        const ruf = ev ? ev.ruf : { valid: [], invalid: [] };
+        if (rua.valid.length > 0) {
             points += SCORE_WEIGHTS.dmarcReporting;
             findings.push({ status: 'success', key: 'finding_dmarc_reporting_ok' });
+        } else if (ruf.valid.length > 0) {
+            // Los informes de fallo casi no se envían (privacidad): sin rua no hay visibilidad.
+            findings.push({ status: 'warning', key: 'finding_dmarc_ruf_only' });
         } else {
             findings.push({ status: 'warning', key: 'finding_dmarc_reporting_err' });
         }
-        // RFC 7489 §6.3: un receptor puede limitar el número de destinos a los que
-        // envía informes. Más de dos rua es habitual que acabe en informes perdidos.
-        if (result.dmarcRua && result.dmarcRua.length > 2) {
+        // `rua=dmarc@dominio` sin `mailto:` no es un URI: los receptores lo descartan en
+        // silencio y el dominio cree que recibe informes.
+        const invalid = [...rua.invalid, ...ruf.invalid];
+        if (invalid.length > 0) {
+            findings.push({ status: 'warning', key: 'finding_dmarc_rua_invalid_uri', replacements: { '{uris}': invalid.join(', ') } });
+        }
+        // RFC 7489 §6.2 permitía a los receptores limitarse a DOS destinos; RFC 9989 §4.6
+        // pide enviar a todos, pero mientras dure la transición se puede perder alguno.
+        if (rua.valid.length > 2) {
             points += SCORE_WEIGHTS.dmarcRuaTooMany;
-            findings.push({ status: 'warning', key: 'finding_dmarc_rua_too_many', replacements: { '{count}': String(result.dmarcRua.length) } });
+            findings.push({ status: 'warning', key: 'finding_dmarc_rua_too_many', replacements: { '{count}': String(rua.valid.length) } });
         }
 
-        // Autorización de destinos de informe EXTERNOS (RFC 7489 §7.1)
+        // Autorización de destinos de informe EXTERNOS (RFC 9990 §4)
         if (Array.isArray(result.dmarcExternalAuth) && result.dmarcExternalAuth.length > 0) {
             const unauthorized = result.dmarcExternalAuth.filter(d => d.authorized === false);
             const unverifiable = result.dmarcExternalAuth.filter(d => d.authorized === null);
@@ -784,14 +999,10 @@ const SCORE_CHECKS = [
                 points += SCORE_WEIGHTS.dmarcExternalUnauthorized;
                 findings.push({ status: 'error', key: 'finding_dmarc_rua_unauthorized', replacements: { '{dest}': unauthorized.map(d => d.destDomain).join(', ') } });
             } else if (unverifiable.length === 0) {
-                points += SCORE_WEIGHTS.dmarcExternalAuthorized;
                 findings.push({ status: 'success', key: 'finding_dmarc_rua_authorized' });
             }
-        } else if (hasRua || hasRuf) {
-            // Todos los destinos son del propio dominio: no requieren autorización.
-            points += SCORE_WEIGHTS.dmarcExternalAuthorized;
         }
-        return { points, findings };
+        return { points: Math.max(0, points), findings };
     },
 
     function dkim(result) {
@@ -821,39 +1032,46 @@ const SCORE_CHECKS = [
             };
         }
 
-        let points = SCORE_WEIGHTS.dkim;
         const findings = [{ status: 'success', key: 'finding_dkim_ok', replacements: { '{count}': count } }];
 
         const analyses = records.map(r => ({ selector: r.selector, ...analyzeDKIMRecord(r.record) }));
         const revoked = analyses.filter(a => a.revoked);
+        const active = analyses.filter(a => !a.revoked);
         // El umbral de bits SOLO aplica a RSA: una clave Ed25519 son 256 bits y
         // equivale a ~3000 de RSA, así que compararla con 1024 la marcaría como débil
         // siendo la opción más fuerte de las dos (RFC 8463).
-        const rsaKeys = analyses.filter(a => !a.revoked && a.algorithm === 'rsa');
+        const rsaKeys = active.filter(a => a.algorithm === 'rsa');
         const weak = rsaKeys.filter(a => a.keyBits != null && a.keyBits < 1024);
         const deprecated = rsaKeys.filter(a => a.keyBits === 1024);
-        const ed25519 = analyses.filter(a => !a.revoked && a.algorithm === 'ed25519' && !a.malformed);
-        const malformed = analyses.filter(a => !a.revoked && a.malformed);
+        const ed25519 = active.filter(a => a.algorithm === 'ed25519' && !a.malformed);
+        const malformed = active.filter(a => a.malformed);
         const testing = analyses.filter(a => a.testing);
 
+        // Una clave revocada (p= vacío) es la forma CORRECTA de retirarla (RFC 6376
+        // §3.6.1): se informa, no resta. Si solo aparecen claves revocadas, el selector
+        // activo es otro que no se ha encontrado, y el control queda sin evaluar.
         if (revoked.length > 0) {
-            points += SCORE_WEIGHTS.dkimRevoked;
-            findings.push({ status: 'warning', key: 'finding_dkim_revoked', replacements: { '{selectors}': revoked.map(a => a.selector).join(', ') } });
+            findings.push({ status: 'info', key: 'finding_dkim_revoked', replacements: { '{selectors}': revoked.map(a => a.selector).join(', ') } });
         }
+        if (active.length === 0) {
+            return {
+                points: 0,
+                unevaluable: true,
+                findings: [...findings.slice(1), { status: 'info', key: 'finding_dkim_besteffort' }, ...zoneFindings]
+            };
+        }
+        let points = SCORE_WEIGHTS.dkimStrong;
         if (weak.length > 0) {
-            points += SCORE_WEIGHTS.dkimWeakKey;
+            points = SCORE_WEIGHTS.dkimWeak;
             const w = weak[0];
             findings.push({ status: 'error', key: 'finding_dkim_weak_key', replacements: { '{selector}': w.selector, '{bits}': String(w.keyBits) } });
+        } else if (malformed.length > 0) {
+            points = SCORE_WEIGHTS.dkimMalformed;
+        } else if (deprecated.length > 0) {
+            points = SCORE_WEIGHTS.dkim1024;
         }
         if (deprecated.length > 0) {
-            points += SCORE_WEIGHTS.dkimKey1024;
             findings.push({ status: 'warning', key: 'finding_dkim_key_1024', replacements: { '{selectors}': deprecated.map(a => a.selector).join(', ') } });
-        } else if (weak.length === 0 && revoked.length === 0) {
-            // Todas las claves detectadas son fuertes: RSA ≥2048 o Ed25519.
-            points += SCORE_WEIGHTS.dkimStrongKey;
-        }
-        if (malformed.length > 0) {
-            points += SCORE_WEIGHTS.dkimMalformed;
         }
         if (ed25519.length > 0) {
             findings.push({ status: 'success', key: 'finding_dkim_ed25519', replacements: { '{selectors}': ed25519.map(a => a.selector).join(', ') } });
@@ -867,33 +1085,36 @@ const SCORE_CHECKS = [
         return { points, findings: [...findings, ...zoneFindings] };
     },
 
+    // BIMI es MARCA, no seguridad: no puntúa (requiere un certificado VMC de pago y no
+    // impide suplantar nada). Se queda como hallazgos informativos.
     function bimi(result) {
         const bimiRecord = result.bimiRecord;
         const hasBimi = bimiRecord && !bimiRecord.error && bimiRecord.record;
         if (!hasBimi) {
             return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_err' }] };
         }
-        // l= vacío es una declaración explícita de NO participar en BIMI (no un error):
-        // publica el registro para bloquear el logo, así que no puntúa ni penaliza.
-        if (bimiRecord.declined) {
-            return { points: 0, findings: [{ status: 'info', key: 'finding_bimi_declined' }], unevaluable: true };
+        const findings = [];
+        // El receptor busca BIMI en el dominio del remitente y, si no hay, en su dominio
+        // organizativo: un subdominio sin registro propio hereda el logo.
+        if (bimiRecord.inheritedFrom) {
+            findings.push({ status: 'info', key: 'finding_bimi_inherited', replacements: { '{org}': bimiRecord.inheritedFrom } });
         }
-
-        let points = SCORE_WEIGHTS.bimi;
-        const findings = [{ status: 'success', key: 'finding_bimi_ok' }];
+        // l= vacío es una declaración explícita de NO participar en BIMI (no un error).
+        if (bimiRecord.declined) {
+            return { points: 0, findings: [...findings, { status: 'info', key: 'finding_bimi_declined' }] };
+        }
+        findings.push({ status: 'success', key: 'finding_bimi_ok' });
         if (bimiRecord.logoInsecure || bimiRecord.vmcInsecure) {
-            points += SCORE_WEIGHTS.bimiInsecureUrl;
-            findings.push({ status: 'error', key: 'finding_bimi_insecure_url' });
+            findings.push({ status: 'warning', key: 'finding_bimi_insecure_url' });
         }
         // Sin a= (VMC/CMC) los principales buzones —Gmail, Apple Mail— no pintan el
         // logo aunque el SVG sea correcto: el registro queda a medias.
         if (!bimiRecord.vmc) {
             findings.push({ status: 'warning', key: 'finding_bimi_no_vmc' });
         } else {
-            points += SCORE_WEIGHTS.bimiVmc;
             findings.push({ status: 'success', key: 'finding_bimi_vmc_ok' });
         }
-        return { points, findings };
+        return { points: 0, findings };
     },
 
     function mtaSts(result) {
@@ -906,13 +1127,13 @@ const SCORE_CHECKS = [
         // Si un MX no está listado, los MTA que aplican la política RECHAZAN la entrega
         // a ese host: es el fallo más común y el más caro (correo entrante perdido).
         const mxCoverageFindings = [];
-        let mxCoveragePoints = 0;
+        let mxUncovered = false;
         const policyMx = policyFetch.parsed?.mx || [];
         const mxHosts = (result.mxRecords || []).map(r => r.host);
         if (policyMx.length > 0 && mxHosts.length > 0) {
             const { uncovered, unused } = checkMtaStsMxCoverage(policyMx, mxHosts);
             if (uncovered.length > 0) {
-                mxCoveragePoints += SCORE_WEIGHTS.mtaStsMxMismatch;
+                mxUncovered = true;
                 mxCoverageFindings.push({
                     status: 'error',
                     key: 'finding_mta_sts_mx_mismatch',
@@ -930,20 +1151,31 @@ const SCORE_CHECKS = [
             }
         }
 
-        // La política no se pudo DESCARGAR (CORS sin proxy, red, timeout): no sabemos
-        // si es válida. Informar, nunca penalizar — lo contrario castigaría a dominios
-        // correctamente configurados por una limitación del navegador.
+        // La política no se ha podido (CORS, red) o no se ha querido (privacidad) descargar,
+        // pero el TXT está publicado y el host de la política existe en DNS: se acredita
+        // como "publicada, sin verificar". Dejarla fuera del cálculo convertía el transporte
+        // en "solo DNSSEC" justo en los dominios que sí despliegan MTA-STS.
         if (policyFetch.validationReason === 'fetch_failed') {
             return {
-                points: 0,
-                unevaluable: true,
+                points: SCORE_WEIGHTS.mtaStsUnverified,
                 findings: [{ status: 'info', key: 'finding_mta_sts_unreachable' }, ...mxCoverageFindings]
+            };
+        }
+        if (policyFetch.validationReason === 'not_fetched') {
+            return { points: SCORE_WEIGHTS.mtaStsUnverified, findings: [{ status: 'info', key: 'finding_mta_sts_not_fetched' }] };
+        }
+        // El host de la política no existe en DNS: ningún MTA puede obtenerla. Es un fallo
+        // del dominio comprobado sin haberle mandado una sola petición.
+        if (policyFetch.validationReason === 'host_missing') {
+            return {
+                points: 0,
+                findings: [{ status: 'error', key: 'finding_mta_sts_host_missing', replacements: { '{host}': policyFetch.host || '' } }]
             };
         }
 
         if (result.mtaSts.policy?.valid) {
             const findings = [{ status: 'success', key: 'finding_mta_sts_ok' }];
-            let points = SCORE_WEIGHTS.mtaStsValid + mxCoveragePoints;
+            let points = SCORE_WEIGHTS.mtaStsEnforce;
             const maxAge = result.mtaSts.policy.maxAge;
             // RFC 8461: max_age es obligatorio; se recomienda ≥ 604800 s (1 semana).
             if (maxAge == null || Number.isNaN(maxAge)) {
@@ -953,9 +1185,25 @@ const SCORE_CHECKS = [
             } else {
                 points += SCORE_WEIGHTS.mtaStsMaxAgeOk;
             }
+            // Un MX fuera de la lista hace que los MTA que aplican la política RECHACEN la
+            // entrega a ese host: la política existe, pero rompe el correo entrante.
+            if (mxUncovered) points = Math.min(points, SCORE_WEIGHTS.mtaStsMxMismatchCap);
             return { points, findings: [...findings, ...mxCoverageFindings] };
         }
         const policy = result.mtaSts.policy || {};
+        // mode: testing es una política VÁLIDA (RFC 8461 §5) que aún no se aplica: solo
+        // genera informes TLS-RPT. Presentarla como "inválida" era una afirmación falsa ante
+        // el prospecto. No suma, pero tampoco resta; y un MX sin cubrir aún no rompe nada,
+        // así que se avisa sin penalizar.
+        const wellFormedNotEnforced = policy.validationReason === 'mode_not_enforce' && policy.httpStatus === 200;
+        if (wellFormedNotEnforced && policy.mode === 'testing') {
+            const coverage = mxCoverageFindings.map(f => (f.status === 'error' ? { ...f, status: 'warning' } : f));
+            return { points: SCORE_WEIGHTS.mtaStsTesting, findings: [{ status: 'warning', key: 'finding_mta_sts_testing' }, ...coverage] };
+        }
+        // mode: none es la forma correcta de RETIRAR una política (RFC 8461 §5).
+        if (wellFormedNotEnforced && policy.mode === 'none') {
+            return { points: 0, findings: [{ status: 'info', key: 'finding_mta_sts_mode_none' }] };
+        }
         const replacements = {};
         if (policy.httpStatus != null && policy.httpStatus !== 200) {
             replacements['{status}'] = String(policy.httpStatus);
@@ -963,7 +1211,7 @@ const SCORE_CHECKS = [
             replacements['{mode}'] = policy.mode;
         }
         return {
-            points: SCORE_WEIGHTS.mtaStsInvalid + mxCoveragePoints,
+            points: 0,
             findings: [{
                 status: 'error',
                 id: 'MTA_STS_POLICY_INVALID',
@@ -980,12 +1228,12 @@ const SCORE_CHECKS = [
             return { points: 0, findings: [{ status: 'info', key: 'finding_tls_rpt_err' }] };
         }
         const findings = [{ status: 'success', key: 'finding_tls_rpt_ok' }];
-        let points = SCORE_WEIGHTS.tlsRptPresent;
+        let points = SCORE_WEIGHTS.tlsRpt;
         // RFC 8460 §3: rua debe ser mailto: o https:. Con otro esquema los informes
         // de fallo TLS no llegan a ninguna parte y el registro solo aparenta cobertura.
         const { invalid } = validateTlsRptRua(result.tlsRpt.rua);
         if (invalid.length > 0) {
-            points += SCORE_WEIGHTS.tlsRptRuaInvalid;
+            points = SCORE_WEIGHTS.tlsRptRuaInvalid;
             findings.push({
                 status: 'error',
                 key: 'finding_tls_rpt_rua_invalid',
@@ -996,15 +1244,27 @@ const SCORE_CHECKS = [
     },
 
     function dane(result) {
+        const zoneValidated = isDnssecValidated(result.dnssec);
         if (hasDaneOf(result)) {
+            // RFC 7672 §2.2: un MTA solo usa DANE si el MX del dominio se resuelve de forma
+            // SEGURA (zona firmada y validada) y el TLSA también llega validado. Con TLSA pero
+            // sin DNSSEC en la zona del dominio —el caso típico de un MX en *.mx.microsoft
+            // con la zona del cliente sin firmar— los TLSA existen, pero nadie los usa.
+            const tlsaAd = (result.daneRecords && result.daneRecords.validated) || {};
+            const tlsaUnvalidated = Object.keys(tlsaAd).some(h => tlsaAd[h] === false);
+            if (!zoneValidated) {
+                return { points: 0, unevaluable: true, findings: [{ status: 'info', key: 'finding_dane_unusable' }] };
+            }
+            if (tlsaUnvalidated) {
+                return { points: 0, findings: [{ status: 'warning', key: 'finding_dane_unusable' }] };
+            }
             return { points: SCORE_WEIGHTS.dane, findings: [{ status: 'success', key: 'finding_dane_ok' }] };
         }
         // DANE (RFC 7672) se APOYA en DNSSEC: sin la zona firmada los registros TLSA no
         // son fiables y ningún MTA los usa, así que no es desplegable. Restarle puntos a
-        // un dominio sin DNSSEC sería cobrarle dos veces la misma carencia (8 por DNSSEC
-        // + 7 por DANE = 15 de los 25 de Transporte por una sola causa). Queda sin
+        // un dominio sin DNSSEC sería cobrarle dos veces la misma carencia. Queda sin
         // evaluar y sale del denominador; con DNSSEC activo sí se exige.
-        if (!result.dnssec || !result.dnssec.signed) {
+        if (!zoneValidated) {
             return {
                 points: 0,
                 unevaluable: true,
@@ -1016,6 +1276,12 @@ const SCORE_CHECKS = [
 
     function dnssec(result) {
         if (result.dnssec && result.dnssec.signed) {
+            // Claves publicadas pero respuesta sin validar: falta el DS en la zona padre o la
+            // cadena está rota. Una zona así no protege nada, y darle los puntos premiaba la
+            // mitad del trabajo.
+            if (!isDnssecValidated(result.dnssec)) {
+                return { points: 0, findings: [{ status: 'warning', key: 'finding_dnssec_unvalidated' }] };
+            }
             return { points: SCORE_WEIGHTS.dnssec, findings: [{ status: 'success', key: 'finding_dnssec_ok' }] };
         }
         return { points: 0, findings: [{ status: 'info', key: 'finding_dnssec_err' }] };
@@ -1030,42 +1296,26 @@ const SCORE_CHECKS = [
     }
 ];
 
-function determinePosture(result) {
-    const hasSpf = !!result.spfRaw;
-    const hasDmarc = !!result.dmarcRaw;
-    const dmarcPolicy = result.dmarcPolicy || 'none';
-    const hasSegOrIces = (result.segList && result.segList.length > 0) || (result.icesList && result.icesList.length > 0);
-    const allEntry = result.spfEntries && result.spfEntries.find(e => e.type === 'all');
-    const allQualifier = allEntry ? (allEntry.qualifier || '') : '';
-    const hasDkim = dkimCountOf(result) > 0;
-    const hasMtaSts = result.mtaSts && result.mtaSts.policy?.valid;
-
-    // posture.key es un identificador neutral de idioma; la UI lo traduce.
-    if (hasSpf && allQualifier === '-' && hasDmarc && dmarcPolicy === 'reject' && hasSegOrIces && hasDkim && hasMtaSts) {
-        return { key: 'strong', grade: 'Fuerte', color: 'green', class: 'safe', label: 'Fuerte' };
-    }
-    // La AUSENCIA de SEG/ICES no baja la postura a "débil": los ICES modernos son
-    // API-based y no dejan ni un rastro en DNS (punto ciego documentado del análisis),
-    // y muchas organizaciones filtran con el propio proveedor de correo. Su presencia
-    // suma para llegar a "fuerte", pero no detectarla solo significa que no se ve.
-    if (!hasSpf || allQualifier === '+' || allQualifier === '?' || !hasDmarc || dmarcPolicy === 'none') {
-        return { key: 'weak', grade: 'Débil', color: 'red', class: 'danger', label: 'Débil' };
-    }
-    return { key: 'moderate', grade: 'Moderada', color: 'yellow', class: 'warning', label: 'Moderada' };
+// Nivel de protección contra suplantación, en términos de RFC 9989 §3.2.9:
+//   protected — enforcement (quarantine/reject) en el dominio y en sus subdominios
+//   partial   — el dominio está en enforcement, pero sus subdominios (sp/np) o una parte
+//               del correo (pct parcial) no
+//   spoofable — sin DMARC aplicable en enforcement: nada bloquea un From suplantado
+//   unknown   — la consulta DMARC falló: no se puede afirmar nada
+// Sustituye a la antigua "postura", que exigía además un gateway detectado, MTA-STS
+// verificado y -all, y que por eso no alcanzaba ningún dominio real.
+function protectionLevelOf(result, ev) {
+    if (result.dmarcUnavailable) return 'unknown';
+    if (!isEnforcedOf(ev)) return 'spoofable';
+    return ev.enforcement ? 'protected' : 'partial';
 }
 
-// Umbrales sobre la escala normalizada, ACOTADOS por la categoría de Autenticación.
-// Sin ese tope, un dominio suplantable (DMARC en p=none, SPF con PermError) alcanzaba
-// A+ a base de DNSSEC, DANE y BIMI: controles que no impiden que alguien envíe en su
-// nombre. Un A+ exige autenticación íntegra + transporte endurecido + observabilidad:
-// auth 60 + MTA-STS 10 + DNSSEC 8 + reporting 8 + TLS-RPT 4 = 90.
-function determineGrade(score, authRatio) {
-    if (score >= 90 && authRatio >= 0.95) return { grade: 'A+', cardClass: 'safe' };
-    if (score >= 80 && authRatio >= 0.85) return { grade: 'A', cardClass: 'safe' };
-    if (score >= 70 && authRatio >= 0.70) return { grade: 'B', cardClass: 'safe' };
-    if (score >= 60 && authRatio >= 0.50) return { grade: 'C', cardClass: 'warning' };
-    if (score >= 45) return { grade: 'D', cardClass: 'warning' };
-    return { grade: 'F', cardClass: 'danger' };
+const LEVEL_CLASS = { protected: 'safe', partial: 'warning', spoofable: 'danger', unknown: 'warning' };
+
+function cardClassOf(grade) {
+    if (grade === 'A+' || grade === 'A' || grade === 'B') return 'safe';
+    if (grade === 'F') return 'danger';
+    return 'warning';
 }
 
 export function calculateScoreAndFindings(result) {
@@ -1075,60 +1325,125 @@ export function calculateScoreAndFindings(result) {
     if (result.nullMx) {
         findings.push({ status: 'info', key: 'finding_null_mx' });
     }
-    // DMARC heredado del dominio organizativo: aclara que la protección proviene
-    // del dominio raíz, no del subdominio analizado.
+    // DMARC heredado del dominio organizativo: al subdominio le corresponde la etiqueta sp
+    // del registro (RFC 9989 §4.10.1), y así se dice.
+    const ev = dmarcEvalOf(result);
     if (result.dmarcInherited && result.dmarcInheritedFrom) {
-        findings.push({ status: 'info', key: 'finding_dmarc_inherited', replacements: { '{org}': result.dmarcInheritedFrom } });
+        findings.push({
+            status: 'info',
+            key: 'finding_dmarc_inherited',
+            replacements: {
+                '{org}': result.dmarcInheritedFrom,
+                '{tag}': ev ? ev.applicableTag : 'p',
+                '{policy}': String(ev ? ev.applicable : 'none').toUpperCase()
+            }
+        });
+    }
+    // El Tree Walk no se completó (un ancestro no respondió): el dominio organizativo
+    // puede no ser el real. Se dice, en vez de dar por buena una búsqueda a medias.
+    if (result.dmarcWalkIncomplete) {
+        findings.push({ status: 'info', key: 'finding_dmarc_walk_incomplete' });
     }
 
-    // Un check nunca supera su presupuesto, pero SÍ puede quedar en negativo: una
-    // política rota debe puntuar peor que su ausencia. El suelo se aplica al total de
-    // la categoría, no a cada check.
+    // Un dominio que no recibe correo no tiene nada que proteger en tránsito: MTA-STS,
+    // TLS-RPT, DANE y DNSSEC-para-el-MX no le aplican. Se dice una vez, en vez de listar
+    // cuatro "no configurado" que no son carencias.
+    const transportApplies = receivesMailOf(result);
+    if (!transportApplies) {
+        findings.push({ status: 'info', key: 'finding_transport_not_applicable' });
+    }
+
     const checkResults = [];
     for (const check of SCORE_CHECKS) {
+        const budget = CHECK_BUDGETS[check.name];
+        if (budget && budget.category === 'transport' && !transportApplies) {
+            checkResults.push({
+                id: check.name, labelKey: budget.labelKey, category: budget.category,
+                max: budget.max, earned: 0, unevaluable: true, notApplicable: true
+            });
+            continue;
+        }
         const { points = 0, findings: sectionFindings = [], unevaluable = false } = check(result);
         findings.push(...sectionFindings);
-        const budget = CHECK_BUDGETS[check.name];
-        if (!budget) continue; // check informativo (p. ej. srv): no puntúa
+        if (!budget) continue; // check informativo (bimi, srv): no puntúa
         checkResults.push({
             id: check.name,
             labelKey: budget.labelKey,
             category: budget.category,
             max: budget.max,
-            earned: unevaluable ? 0 : Math.min(points, budget.max),
+            earned: unevaluable ? 0 : Math.max(0, Math.min(points, budget.max)),
             unevaluable
         });
     }
 
-    // Desglose por categoría: es lo que permite explicar la nota en vez de afirmarla.
+    // Desglose por eje: es lo que permite explicar la nota en vez de afirmarla. Cada eje
+    // se normaliza sobre lo EVALUABLE: lo que no se ha podido medir sale del denominador.
     const breakdown = Object.entries(SCORE_CATEGORIES).map(([id, cat]) => {
         const checks = checkResults.filter(c => c.category === id);
         const evaluable = checks.filter(c => !c.unevaluable);
         const max = evaluable.reduce((sum, c) => sum + c.max, 0);
-        const raw = evaluable.reduce((sum, c) => sum + c.earned, 0);
+        const earned = evaluable.reduce((sum, c) => sum + c.earned, 0);
         return {
             id,
             labelKey: cat.labelKey,
             max,
-            earned: Math.max(0, Math.min(max, raw)),
+            earned,
+            score: max > 0 ? Math.round((earned / max) * 100) : 0,
+            applicable: id !== 'transport' || transportApplies,
             checks
         };
     });
+    const anti = breakdown.find(c => c.id === 'antispoof');
+    const transportCat = breakdown.find(c => c.id === 'transport');
 
-    // Normalización sobre lo EVALUABLE: si un control no se ha podido medir (DKIM no
-    // detectado, SPF/DMARC sin resolver, política MTA-STS inalcanzable), su presupuesto
-    // sale del denominador en vez de contar como cero.
-    const totalMax = breakdown.reduce((sum, c) => sum + c.max, 0);
-    const totalEarned = breakdown.reduce((sum, c) => sum + c.earned, 0);
-    const score = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
+    // --- Nota de SUPLANTACIÓN: el titular ---
+    let score = anti.score;
+    const enforced = isEnforcedOf(ev);
+    // Sin enforcement, SPF y DKIM impecables no impiden suplantar el From visible: techo D.
+    // (Si la consulta DMARC falló no se puede concluir, y no se aplica.)
+    let cap = null;
+    if (!enforced && !result.dmarcUnavailable && score > NO_ENFORCEMENT_CAP) {
+        score = NO_ENFORCEMENT_CAP;
+        cap = { key: 'no_enforcement', value: NO_ENFORCEMENT_CAP };
+    }
+    // A+ exige evidencia completa: reject en todos los niveles, SPF y DKIM EVALUADOS y
+    // al máximo, e informes. Lo que no se ha podido verificar (p. ej. DKIM con selector
+    // desconocido) limita a A: no es un fallo, pero tampoco una prueba.
+    const byId = (id) => checkResults.find(c => c.id === id);
+    const full = (id) => { const c = byId(id); return !!c && !c.unevaluable && c.earned === c.max; };
+    const verified = enforced && ev.effective.floor === 'reject' && ev.enforcement
+        && full('spf') && full('dkim') && full('dmarcReporting') && full('dmarc');
+    if (!verified && score > UNVERIFIED_CAP) {
+        score = UNVERIFIED_CAP;
+        cap = { key: 'unverified', value: UNVERIFIED_CAP };
+    }
+    // El desglose muestra la suma sin topes; el motivo del tope viaja con él para que
+    // "97/100" junto a un anillo de 94 no parezca un error.
+    anti.cap = cap;
+    const grade = letterGrade(score);
 
-    // Ratio de autenticación (SPF+DMARC+DKIM): es el tope de la nota. Si no hay nada
-    // evaluable en esa categoría no se puede afirmar que esté mal, así que no acota.
-    const auth = breakdown.find(c => c.id === 'auth');
-    const authRatio = auth && auth.max > 0 ? auth.earned / auth.max : 1;
+    const level = protectionLevelOf(result, ev);
+    // `posture` se mantiene por compatibilidad con quien lo lee (postureText, informe):
+    // ahora ES el nivel de protección contra suplantación.
+    const posture = { key: level, class: LEVEL_CLASS[level] };
 
-    const posture = determinePosture(result);
-    const { grade, cardClass } = determineGrade(score, authRatio);
+    // --- Nota de TRANSPORTE: aparte, o "no aplica" ---
+    const transport = transportApplies
+        ? { applicable: true, score: transportCat.score, grade: letterGrade(transportCat.score), evaluable: transportCat.max > 0 }
+        : { applicable: false, score: null, grade: null, evaluable: false };
 
-    return { score, grade, cardClass, findings, posture, breakdown, totalEarned, totalMax, authRatio };
+    return {
+        score,
+        grade,
+        cap,
+        cardClass: cardClassOf(grade),
+        findings,
+        posture,
+        level,
+        transport,
+        breakdown,
+        totalEarned: anti.earned,
+        totalMax: anti.max,
+        authRatio: anti.max > 0 ? anti.earned / anti.max : 1
+    };
 }
