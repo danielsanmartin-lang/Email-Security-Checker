@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSPF, parseDMARC, parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, analyzeDKIMRecord, parseMaxAge, validateTlsRptRua, checkMtaStsMxCoverage } from './parsers.js';
+import { parseSPF, parseDMARC, parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, analyzeDKIMRecord, parseMaxAge, validateTlsRptRua, checkMtaStsMxCoverage, isDnssecValidated } from './parsers.js';
 
 // Claves públicas RSA reales (SPKI DER en base64 = valor del tag p= de un registro DKIM)
 const RSA_1024 = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDHKI9Hv9UXFuaCMiUm4ByPZYWK4CySUGGnMLiUksN5v0eN7MlEbY1C3O8tU4yvGMGGrtJ279KC1EJi8twRn1bqVt5TsffmluZ6r5wZUndUHOLUmNubZdcaG8jW0uXy9w2pOJhr8sz+UAvXvthBnok0Ld8NL37wHC7lNePzrMYwGQIDAQAB';
@@ -207,5 +207,45 @@ describe('checkMtaStsMxCoverage', () => {
     it('normaliza mayúsculas y el punto final del FQDN', () => {
         const r = checkMtaStsMxCoverage(['MX1.Example.com.'], ['mx1.example.com.']);
         expect(r.uncovered).toEqual([]);
+    });
+});
+
+describe('parseDMARC: normalización (RFC 9989 §4.8)', () => {
+    it('nombres de etiqueta y valores de palabra clave sin distinguir mayúsculas', () => {
+        const d = parseDMARC('v=DMARC1; P=Reject; SP=Quarantine; t=Y; ADKIM=S; rua=mailto:Dmarc@Example.com');
+        expect(d).toMatchObject({ p: 'reject', sp: 'quarantine', t: 'y', adkim: 's' });
+        // Los URIs y la versión no se tocan.
+        expect(d.rua).toBe('mailto:Dmarc@Example.com');
+        expect(d.v).toBe('DMARC1');
+    });
+});
+
+describe('parseSPF: sintaxis completa (RFC 7208)', () => {
+    it('reconoce mecanismos sin distinguir mayúsculas', () => {
+        const e = parseSPF('v=spf1 Include:_spf.google.com IP4:192.0.2.0/24 -ALL');
+        expect(e.map(x => x.type)).toEqual(['v', 'include', 'ip4', 'all']);
+        expect(e[1].value).toBe('_spf.google.com');
+    });
+
+    it('no pierde a/mx con máscara sobre el propio dominio', () => {
+        const e = parseSPF('v=spf1 a/24 mx//64 a/24//64 -all');
+        expect(e.filter(x => x.type === 'a' || x.type === 'mx').map(x => x.value)).toEqual(['(self)/24', '(self)//64', '(self)/24//64']);
+    });
+
+    it('marca como desconocido un mecanismo con errata y ignora los modificadores desconocidos', () => {
+        const e = parseSPF('v=spf1 inlcude:_spf.google.com foo=bar exp=explain.example.com -all;');
+        expect(e.filter(x => x.type === 'unknown').map(x => x.value)).toEqual(['inlcude:_spf.google.com', '-all;']);
+        expect(e.some(x => x.value === 'bar')).toBe(false);
+        expect(e.find(x => x.type === 'exp').value).toBe('explain.example.com');
+    });
+});
+
+describe('isDnssecValidated', () => {
+    it('exige firma y validación cuando el resolver valida', () => {
+        expect(isDnssecValidated({ signed: true, hasDnskey: true, ad: true, validationKnown: true })).toBe(true);
+        expect(isDnssecValidated({ signed: true, hasDnskey: true, ad: false, validationKnown: true })).toBe(false);
+        expect(isDnssecValidated({ signed: true, hasDnskey: true, ad: false, validationKnown: false })).toBe(true);
+        expect(isDnssecValidated({ signed: false })).toBe(false);
+        expect(isDnssecValidated(null)).toBe(false);
     });
 });

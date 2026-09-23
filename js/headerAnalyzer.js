@@ -86,7 +86,10 @@ export const HEADER_FINGERPRINTS = {
         displayName: 'Sophos Phish Threat',
         weight: 0.75,
         headerPatterns: [],
-        textPatterns: ['phishthreat', 'sophosmail.com'],
+        // Sin 'sophosmail.com': es el dominio del GATEWAY Sophos Email y aparece en los
+        // Received de cualquier correo que filtra; tomarlo por una simulación era el mismo
+        // falso positivo "gateway ≠ módulo de awareness" que ya se corrigió en DNS.
+        textPatterns: ['phishthreat'],
     },
 };
 
@@ -184,10 +187,14 @@ export function detectFromHeaders(raw) {
 }
 
 /** Reload en caliente del diccionario de cabeceras (fusiona/añade vendors). */
+// Ver awarenessDetector.js: un vendor llamado "__proto__" contaminaría Object.prototype.
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function mergeHeaderFingerprints(externalFPs) {
     if (!externalFPs || typeof externalFPs !== 'object') return;
     for (const [key, fp] of Object.entries(externalFPs)) {
-        if (HEADER_FINGERPRINTS[key]) {
+        if (UNSAFE_KEYS.has(key) || !fp || typeof fp !== 'object') continue;
+        if (Object.prototype.hasOwnProperty.call(HEADER_FINGERPRINTS, key)) {
             Object.assign(HEADER_FINGERPRINTS[key], fp);
         } else {
             HEADER_FINGERPRINTS[key] = fp;

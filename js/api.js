@@ -1,6 +1,7 @@
-import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue } from './parsers.js';
+import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, parseDMARC } from './parsers.js';
 import { getSettings, resolverChain } from './settings.js';
-import { isValidDomain, extractRootDomain } from './utils.js';
+import { isValidDomain, extractRootDomain, isSameOrSubdomain } from './utils.js';
+import { treeWalkTargets, selectOrgDomain } from './dmarc.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -271,6 +272,16 @@ export async function getSPF(domain) {
     };
 }
 
+// Un registro DMARC empieza por la etiqueta v con el valor exacto DMARC1 (sensible a
+// mayúsculas), y la ABNF admite espacios alrededor del "=" (RFC 9989 §4.7 y §4.8). Con
+// startsWith('v=DMARC1') un `v = DMARC1;` válido se tomaba por "sin DMARC", y un
+// `v=DMARC10` se colaba como si lo fuera.
+const DMARC_RECORD_RE = /^v\s*=\s*DMARC1\s*(;|$)/;
+
+export function isDmarcRecord(txt) {
+    return DMARC_RECORD_RE.test(String(txt || ''));
+}
+
 export async function getDMARC(domain) {
     const data = await queryDNS(`_dmarc.${domain}`, 'TXT');
     if (!data.Answer) return { record: null, records: [], multiple: false };
@@ -278,7 +289,7 @@ export async function getDMARC(domain) {
     for (const a of data.Answer) {
         if (a.data) {
             const txt = extractTxtValue(a.data);
-            if (txt.startsWith('v=DMARC1')) {
+            if (isDmarcRecord(txt)) {
                 records.push(txt);
             }
         }
@@ -291,8 +302,106 @@ export async function getDMARC(domain) {
     };
 }
 
+const psdOf = (record) => {
+    const psd = (parseDMARC(record) || {}).psd;
+    return psd === 'y' || psd === 'n' ? psd : null;
+};
+
+/**
+ * Descubre la política DMARC aplicable y el Dominio Organizativo con el DNS Tree Walk de
+ * RFC 9989 §4.10, que sustituye a la Public Suffix List de RFC 7489. Se hace entero por
+ * DoH —sin backend y sin una PSL embebida que envejecería— y sobre queryDNS, así que
+ * hereda caché, deduplicación, semáforo y reintento.
+ *
+ * - Política (§4.10.1): la del propio dominio si publica UN registro válido; si no, la de
+ *   su dominio organizativo; si no, la de su sufijo público (PSD).
+ * - Varios registros en un mismo nombre se descartan todos (§4.10, paso 2).
+ * - Un fallo de DNS en un ANCESTRO no se lee como "no hay registro": deja `incomplete`.
+ *   El fallo en el propio dominio sí se propaga, como antes, para marcar DMARC como no
+ *   disponible en vez de "sin DMARC".
+ *
+ * En un dominio organizativo típico cuesta una consulta más (`_dmarc.<tld>`), cacheada.
+ *
+ * @returns {Promise<{record, records, multiple, policyDomain, source, orgDomain,
+ *   inherited, inheritedFrom, walked, incomplete}>}
+ */
+export async function discoverDmarcPolicy(domain) {
+    const start = String(domain || '').toLowerCase().replace(/\.$/, '');
+    const own = await getDMARC(start);
+    const found = [];
+    const walked = [{ name: start, status: own.multiple ? 'multiple' : (own.record ? 'record' : 'none') }];
+    if (own.record && !own.multiple) found.push({ name: start, record: own.record, psd: psdOf(own.record) });
+
+    let incomplete = false;
+    const stopsHere = (entry) => !!entry && (entry.psd === 'y' || entry.psd === 'n');
+    if (!stopsHere(found[0])) {
+        const targets = treeWalkTargets(start);
+        // Se lanzan en paralelo (son como mucho 7 y la piscina de 6 las ordena), pero se
+        // INTERPRETAN en orden: lo que haya por encima de un psd=n/psd=y no cuenta.
+        const answers = await Promise.allSettled(targets.map(t => getDMARC(t)));
+        for (let i = 0; i < targets.length; i++) {
+            const a = answers[i];
+            if (a.status === 'rejected') {
+                incomplete = true;
+                walked.push({ name: targets[i], status: 'error' });
+                continue;
+            }
+            const r = a.value;
+            walked.push({ name: targets[i], status: r.multiple ? 'multiple' : (r.record ? 'record' : 'none') });
+            if (r.record && !r.multiple) {
+                const entry = { name: targets[i], record: r.record, psd: psdOf(r.record) };
+                found.push(entry);
+                if (stopsHere(entry)) break;
+            }
+        }
+    }
+
+    const orgDomain = selectOrgDomain(found, start);
+    let applied = null;
+    let source = null;
+    if (own.record && !own.multiple) {
+        applied = found[0];
+        source = 'author';
+    } else {
+        applied = found.find(f => f.name === orgDomain && f.name !== start) || null;
+        if (applied) {
+            source = 'org';
+        } else {
+            applied = found.find(f => f.psd === 'y' && f.name !== start) || null;
+            if (applied) source = 'psd';
+        }
+    }
+
+    const inherited = source === 'org' || source === 'psd';
+    return {
+        record: applied ? applied.record : null,
+        // Para pintar: los registros en conflicto del propio dominio, o el aplicado.
+        records: own.multiple ? own.records : (applied ? [applied.record] : []),
+        multiple: own.multiple,
+        policyDomain: applied ? applied.name : null,
+        source,
+        orgDomain,
+        inherited,
+        inheritedFrom: inherited ? applied.name : null,
+        walked,
+        incomplete
+    };
+}
+
 
 export const COMMON_DKIM_SELECTORS = ['google', 'default', 's1', 's2', 'k1', 'k2', 'm1', 'mail', 'selector1'];
+
+/**
+ * ¿Es un registro de clave DKIM? `v=` es OPCIONAL (RFC 6376 §3.6.1): muchas claves se
+ * publican como `k=rsa; p=…` a secas, y exigir `v=DKIM1` las daba por inexistentes. Si
+ * `v=` aparece, debe ser la primera etiqueta y valer DKIM1; si no, basta con una lista
+ * de etiquetas que declare `p=` (la clave pública, vacía si está revocada).
+ */
+export function isDkimKeyRecord(txt) {
+    const s = String(txt || '').trim();
+    if (/^v\s*=/i.test(s)) return /^v\s*=\s*DKIM1\s*(;|$)/.test(s);
+    return /(^|;)\s*p\s*=/i.test(s);
+}
 
 export function discoverDKIMSelectors(spfRaw) {
     if (!spfRaw) return [];
@@ -352,8 +461,10 @@ export async function getDKIM(domain, customSelector = null, spfRaw = null, ices
             const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT');
             if (data && data.Answer) {
                 for (const a of data.Answer) {
+                    // Solo los TXT: en una cadena CNAME el destino también viene en Answer.
+                    if (a.type !== undefined && a.type !== 16) continue;
                     const txt = extractTxtValue(a.data);
-                    if (txt.startsWith('v=DKIM1')) {
+                    if (isDkimKeyRecord(txt)) {
                         results.push({ selector, record: txt });
                     }
                 }
@@ -477,8 +588,12 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx 
         node.record = spf;
 
         // Primera pasada: contabiliza mecanismos hoja y recoge include/redirect.
+        // Con un mecanismo `all` en el registro, `redirect=` se IGNORA (RFC 7208 §6.1): no
+        // se evalúa, así que ni cuenta como lookup ni aporta su árbol.
+        const tokens = spf.split(/\s+/).filter(Boolean);
+        const hasAll = tokens.some(tok => /^[+\-~?]?all$/i.test(tok));
         const nested = [];
-        for (const token of spf.split(/\s+/)) {
+        for (const token of tokens) {
             let t = token.toLowerCase();
             if (/^[+\-~?]/.test(t)) t = t.substring(1);
 
@@ -486,6 +601,7 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx 
                 node.lookups++;
                 nested.push({ type: 'include', target: t.substring(8) });
             } else if (t.startsWith('redirect=')) {
+                if (hasAll) continue;
                 node.lookups++;
                 nested.push({ type: 'redirect', target: t.substring(9) });
             } else if (t.startsWith('exists:')) {
@@ -633,7 +749,11 @@ export async function getAllTXT(domain) {
     }
 }
 
-export async function fetchMTASTSPolicyFile(domain) {
+// `opts.direct` = false salta la petición directa desde el navegador (que deja la IP del
+// auditor y el Origin de la app en los registros del dominio auditado) y va directamente
+// al proxy, si está permitido.
+export async function fetchMTASTSPolicyFile(domain, opts = {}) {
+    const direct = opts.direct !== false;
     // La URL se construye con el dominio auditado, que es justo lo que hace esta
     // comprobación. Aun así se valida AQUÍ, en el punto del fetch: la función es
     // exportada y no debe depender de que quien la llame haya validado antes.
@@ -671,6 +791,7 @@ export async function fetchMTASTSPolicyFile(domain) {
     });
 
     try {
+        if (!direct) throw new Error('Direct fetch disabled in settings');
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
         // redirect:'manual' expone el 3xx como respuesta opaca en vez de seguirlo.
@@ -678,6 +799,7 @@ export async function fetchMTASTSPolicyFile(domain) {
             method: 'GET',
             cache: 'no-store',
             redirect: 'manual',
+            referrerPolicy: 'no-referrer',
             signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -697,7 +819,7 @@ export async function fetchMTASTSPolicyFile(domain) {
                 validationReason: 'fetch_failed'
             };
         }
-        console.warn('Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.', e);
+        if (direct) console.warn('Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.', e);
         try {
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
             const controller = new AbortController();
@@ -758,6 +880,45 @@ export async function fetchMTASTSPolicyFile(domain) {
     }
 }
 
+/**
+ * ¿Resuelve `host` a alguna dirección? Solo por DoH: no toca el host.
+ * @returns {Promise<'ok'|'missing'|'unknown'>} 'unknown' = no se pudo consultar
+ */
+async function probeHostResolves(host) {
+    try {
+        const a = await queryDNS(host, 'A');
+        if ((a && a.Answer || []).some(r => r.type === 1)) return 'ok';
+        if (a && a.Status === 3) return 'missing';
+        const aaaa = await queryDNS(host, 'AAAA');
+        if ((aaaa && aaaa.Answer || []).some(r => r.type === 28)) return 'ok';
+        return 'missing';
+    } catch {
+        return 'unknown';
+    }
+}
+
+/**
+ * Política MTA-STS respetando la privacidad del auditor.
+ *
+ * Primero se comprueba POR DNS que `mta-sts.<dominio>` resuelva: si no, la política está
+ * rota para cualquier MTA del mundo, y eso se concluye sin mandar una sola petición al
+ * dominio auditado. Solo después se descarga, y únicamente si Ajustes lo permite: la
+ * descarga directa deja en SUS registros la IP del auditor y el Origin de esta app, y
+ * además casi siempre la bloquea CORS. Sin permiso, la política queda "no descargada"
+ * (no evaluable, no penaliza).
+ */
+async function resolveMtaStsPolicy(domain) {
+    const host = `mta-sts.${domain}`;
+    const notFetched = (validationReason) => ({
+        url: `https://${host}/.well-known/mta-sts.txt`, host, httpStatus: null, fetchOk: false, body: null,
+        parsed: null, mode: null, valid: false, error: null, validationReason
+    });
+    if (await probeHostResolves(host) === 'missing') return notFetched('host_missing');
+    const s = getSettings();
+    if (!s.contactAuditedHosts && !s.allowCorsProxy) return notFetched('not_fetched');
+    return fetchMTASTSPolicyFile(domain, { direct: !!s.contactAuditedHosts });
+}
+
 export async function getMTASTS(domain) {
     try {
         const data = await queryDNS(`_mta-sts.${domain}`, 'TXT');
@@ -770,7 +931,7 @@ export async function getMTASTS(domain) {
                     record: txt,
                     id: idMatch ? idMatch[1].trim() : null
                 };
-                result.policy = await fetchMTASTSPolicyFile(domain);
+                result.policy = await resolveMtaStsPolicy(domain);
                 return result;
             }
         }
@@ -844,52 +1005,76 @@ export async function getSRV(domain) {
 }
 
 // Detecta si el dominio está firmado con DNSSEC.
-//   signed : hay registros DNSKEY (type 48) publicados en el ápex
-//   ad     : el resolver marcó la respuesta como Authenticated Data (validada)
+//   signed          : hay registros DNSKEY (type 48) publicados en el ápex
+//   ad              : el resolver marcó la respuesta como Authenticated Data (validada)
+//   validationKnown : el resolver valida DNSSEC, así que un AD=false SIGNIFICA algo.
+//                     Google, Cloudflare y Quad9 validan; de un resolver propio no se sabe.
+// DNSKEY sin AD es una zona firmada cuya cadena de confianza no valida (falta el DS en
+// la zona padre, o está rota): no protege nada, y el scoring lo distingue.
 export async function getDNSSEC(domain) {
+    const validationKnown = getSettings().resolver !== 'custom';
     try {
         const data = await queryDNS(domain, 'DNSKEY');
         const hasDnskey = !!(data && data.Answer && data.Answer.some(a => a.type === 48));
         const ad = !!(data && data.AD);
-        return { signed: hasDnskey || ad, hasDnskey, ad };
+        return { signed: hasDnskey || ad, hasDnskey, ad, validationKnown };
     } catch (e) {
-        return { signed: false, hasDnskey: false, ad: false, error: e.message };
+        return { signed: false, hasDnskey: false, ad: false, validationKnown, error: e.message };
     }
 }
 
-// Verifica la autorización de destinos DMARC EXTERNOS (RFC 7489 §7.1):
-// si rua/ruf apunta a un dominio distinto del analizado, ese dominio debe publicar
-// `<dominio>._report._dmarc.<destino>` con un registro v=DMARC1, o los informes se descartan.
+// Verifica la autorización de destinos DMARC EXTERNOS (RFC 9990 §4, antes RFC 7489 §7.1):
+// si rua/ruf apunta fuera del dominio organizativo, el destino debe publicar
+// `<dominio-de-la-política>._report._dmarc.<host-destino>` con un registro v=DMARC1, o
+// los informes se descartan.
 //   authorized: true | false | null (null = no se pudo comprobar / error de red)
-export async function checkDMARCExternalAuth(domain, uris) {
+//
+// `policyDomain` es el dominio DONDE SE ENCONTRÓ la política (paso 3 del RFC: «prepend
+// the domain name from which the policy was retrieved»). Al analizar un subdominio que
+// hereda la política, ese nombre es el del dominio organizativo, no el del subdominio:
+// consultar `<subdominio>._report._dmarc…` acusaba de "no autorizado" a un destino que sí
+// lo estaba. `opts.orgDomain` es el dominio organizativo que ha dado el Tree Walk; sin él
+// se estima con extractRootDomain.
+export async function checkDMARCExternalAuth(policyDomain, uris, opts = {}) {
     const results = [];
     if (!uris || uris.length === 0) return results;
-    const analyzed = domain.toLowerCase().replace(/\.$/, '');
-    // El RFC compara DOMINIOS ORGANIZATIVOS, no cadenas exactas: «the Organizational
-    // Domain at which that record was discovered is not identical to the Organizational
-    // Domain of the host part [...] of a URI specified in the "rua" or "ruf" tag».
-    // Comparar literales acusaba de "destino externo no autorizado" a quien manda sus
-    // informes a un subdominio propio (rua=…@dmarc.suempresa.com), que es la práctica
-    // habitual: un error rojo y una penalización sobre una configuración correcta.
-    const analyzedOrg = extractRootDomain(analyzed);
+    const analyzed = String(policyDomain).toLowerCase().replace(/\.$/, '');
+    // El RFC compara DOMINIOS ORGANIZATIVOS, no cadenas exactas: comparar literales
+    // acusaba de "destino externo no autorizado" a quien manda sus informes a un
+    // subdominio propio (rua=…@dmarc.suempresa.com), que es la práctica habitual.
+    const analyzedOrg = opts.orgDomain
+        ? String(opts.orgDomain).toLowerCase().replace(/\.$/, '')
+        : extractRootDomain(analyzed);
     const seen = new Set();
     for (const uri of uris) {
-        const m = String(uri).match(/mailto:[^@\s]+@([^\s!,;]+)/i);
+        const m = String(uri).match(/^\s*mailto:[^@\s]+@([^\s!,;?]+)/i);
         if (!m) continue;
         const destDomain = m[1].toLowerCase().replace(/\.$/, '');
-        // Mismo dominio organizativo ⇒ no hace falta autorización.
-        if (extractRootDomain(destDomain) === analyzedOrg) continue;
+        // Dentro del dominio organizativo ⇒ no hace falta autorización. Se compara por
+        // etiquetas (sufijo) y no con la heurística de dominio raíz.
+        if (isSameOrSubdomain(destDomain, analyzedOrg)) continue;
+        if (!opts.orgDomain && extractRootDomain(destDomain) === analyzedOrg) continue;
         if (seen.has(destDomain)) continue;
         seen.add(destDomain);
         try {
             const data = await queryDNS(`${analyzed}._report._dmarc.${destDomain}`, 'TXT');
             let authorized = false;
+            let override = null;
             if (data && data.Answer) {
                 for (const a of data.Answer) {
-                    if (/^v=DMARC1/i.test(extractTxtValue(a.data))) { authorized = true; break; }
+                    const txt = extractTxtValue(a.data);
+                    // Paso 6: v=DMARC1 obligatorio y el primero (mismas reglas que el registro).
+                    if (isDmarcRecord(txt)) {
+                        authorized = true;
+                        // Paso 9: el receptor puede reescribir el destino, pero solo hacia el
+                        // mismo host; si no, ese rua no cuenta.
+                        const rua = (parseDMARC(txt) || {}).rua;
+                        if (rua) override = rua;
+                        break;
+                    }
                 }
             }
-            results.push({ uri, destDomain, authorized });
+            results.push({ uri, destDomain, authorized, ...(override ? { override } : {}) });
         } catch (e) {
             results.push({ uri, destDomain, authorized: null });
         }
@@ -897,9 +1082,15 @@ export async function checkDMARCExternalAuth(domain, uris) {
     return results;
 }
 
+// `validated` (no enumerable, para no alterar a quien recorre los hosts) guarda si cada
+// respuesta TLSA llegó validada por DNSSEC: un TLSA sin validar no lo usa ningún MTA
+// (RFC 7672 §2.2).
 export async function getDANE(mxHosts) {
     const daneRecords = {};
+    const validated = {};
+    Object.defineProperty(daneRecords, 'validated', { value: validated, enumerable: false });
     if (!mxHosts || mxHosts.length === 0) return daneRecords;
+    const validationKnown = getSettings().resolver !== 'custom';
     await Promise.all(mxHosts.map(async mx => {
         try {
             const data = await queryDNS(`_25._tcp.${mx}`, 'TLSA');
@@ -907,6 +1098,7 @@ export async function getDANE(mxHosts) {
                 daneRecords[mx] = data.Answer
                     .filter(a => a.type === 52 || a.type === 32768) // 52 is TLSA type
                     .map(a => a.data);
+                if (validationKnown) validated[mx] = !!data.AD;
             }
         } catch (e) {
             console.warn('Failed to query DANE for _25._tcp.%s', mx, e);
@@ -1050,7 +1242,7 @@ export async function getDkimSelectorChain(domain, selectors = ['selector1', 'se
                 if (a.type === 5 && a.data && !out.cname) {
                     out.cname = String(a.data).replace(/\.$/, '').toLowerCase();
                 }
-                if (a.type === 16 && extractTxtValue(a.data).startsWith('v=DKIM1')) out.hasKey = true;
+                if (a.type === 16 && isDkimKeyRecord(extractTxtValue(a.data))) out.hasKey = true;
             }
         } catch (e) {
             console.warn('Failed to resolve DKIM chain %s._domainkey.%s', selector, domain, e);

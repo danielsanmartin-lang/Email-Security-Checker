@@ -4,6 +4,7 @@
 // evitando que cada renderizador re-derive y re-traduzca la misma información.
 
 import { translations } from './i18n.js';
+import { isDnssecValidated } from './parsers.js';
 
 /**
  * Etiqueta de categoría de servicio localizada.
@@ -131,6 +132,75 @@ export function displayDmarcPolicy(t, policy) {
         default:
             return policy;
     }
+}
+
+const fill = (text, replacements) => {
+    let out = String(text || '');
+    for (const [k, v] of Object.entries(replacements)) out = out.split(k).join(v);
+    return out;
+};
+
+/**
+ * Política DMARC para los resúmenes (tarjeta y informe): la EFECTIVA —la más débil que
+ * aplicaría alguna generación de receptores— con el matiz que la explica: solicitada en
+ * modo prueba (t=y / pct=0), heredada del dominio organizativo o sin efecto por valores
+ * no válidos. Así el resumen no dice "Reject" de un registro que en la práctica no lo es.
+ */
+export function dmarcPolicySummary(result, t) {
+    const base = displayDmarcPolicy(t, result.dmarcPolicy);
+    const ev = result.dmarcEval;
+    if (!ev) return base;
+    if (ev.processing !== 'full') return t.dmarc_summary_invalid;
+    const notes = [];
+    if (ev.effective.floor !== ev.applicable) {
+        notes.push(fill(t.dmarc_summary_lowered, { '{requested}': ev.applicable.toUpperCase() }));
+    }
+    if (ev.inherited && result.dmarcInheritedFrom) {
+        notes.push(fill(t.dmarc_summary_inherited, { '{org}': result.dmarcInheritedFrom }));
+    }
+    return notes.length ? `${base} (${notes.join('; ')})` : base;
+}
+
+/**
+ * Estado de MTA-STS en un solo identificador, compartido por el panel y el informe para
+ * que ambos digan lo mismo. `testing` y `mode_none` son políticas VÁLIDAS que no se
+ * aplican; `unreachable` y `not_fetched` son límites del análisis, no fallos del dominio.
+ */
+export function mtaStsState(result) {
+    const m = result.mtaSts;
+    if (!m) return 'not_configured';
+    const p = m.policy || {};
+    if (p.valid) return 'enforced';
+    if (p.validationReason === 'fetch_failed') return 'unreachable';
+    if (p.validationReason === 'not_fetched') return 'not_fetched';
+    if (p.validationReason === 'host_missing') return 'host_missing';
+    if (p.validationReason === 'mode_not_enforce' && p.httpStatus === 200) {
+        if (p.mode === 'testing') return 'testing';
+        if (p.mode === 'none') return 'mode_none';
+    }
+    return 'invalid';
+}
+
+// Presentación de cada estado: tono de la insignia (UI), color (informe) y clave i18n.
+export const MTA_STS_STATE_VIEW = {
+    enforced: { tone: 'success', color: '#059669', key: 'adv_mta_sts_enforced' },
+    testing: { tone: 'warning', color: '#d97706', key: 'adv_mta_sts_testing' },
+    mode_none: { tone: 'neutral', color: '#64748b', key: 'adv_mta_sts_mode_none' },
+    unreachable: { tone: 'neutral', color: '#64748b', key: 'adv_mta_sts_unreachable' },
+    not_fetched: { tone: 'neutral', color: '#64748b', key: 'adv_mta_sts_not_fetched' },
+    host_missing: { tone: 'danger', color: '#dc2626', key: 'adv_mta_sts_host_missing' },
+    invalid: { tone: 'danger', color: '#dc2626', key: 'adv_mta_sts_policy_invalid' },
+    not_configured: { tone: 'neutral', color: '#64748b', key: 'adv_mta_sts_not_configured' }
+};
+
+/**
+ * Estado DNSSEC: 'validated' (firmada y la cadena valida), 'unvalidated' (hay DNSKEY pero
+ * el resolver no la valida: falta el DS en la zona padre o la cadena está rota) o
+ * 'unsigned'. Misma regla que el scoring (isDnssecValidated, en parsers.js).
+ */
+export function dnssecState(dnssec) {
+    if (!dnssec || !dnssec.signed) return 'unsigned';
+    return isDnssecValidated(dnssec) ? 'validated' : 'unvalidated';
 }
 
 /** Descripción de un servicio de terceros (informe). */

@@ -227,6 +227,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const customGroup = document.getElementById('settings-custom-group');
         const customUrl = document.getElementById('settings-custom-url');
         const corsProxy = document.getElementById('settings-cors-proxy');
+        const contactHosts = document.getElementById('settings-contact-hosts');
+        const loadBimi = document.getElementById('settings-load-bimi');
         const fingerprintsUrl = document.getElementById('settings-fingerprints-url');
         const toolInputs = {
             showDmarcReportViewer: document.getElementById('settings-tool-rua'),
@@ -250,6 +252,8 @@ document.addEventListener('DOMContentLoaded', () => {
             resolverSel.value = s.resolver;
             customUrl.value = s.customResolverUrl;
             corsProxy.checked = s.allowCorsProxy;
+            if (contactHosts) contactHosts.checked = !!s.contactAuditedHosts;
+            if (loadBimi) loadBimi.checked = !!s.loadBimiLogos;
             fingerprintsUrl.value = s.fingerprintsUrl;
             for (const [key, input] of Object.entries(toolInputs)) {
                 if (input) input.checked = !!s[key];
@@ -274,6 +278,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 resolver: resolverSel.value,
                 customResolverUrl: customUrl.value.trim(),
                 allowCorsProxy: corsProxy.checked,
+                contactAuditedHosts: !!contactHosts?.checked,
+                loadBimiLogos: !!loadBimi?.checked,
                 fingerprintsUrl: fingerprintsUrl.value.trim(),
                 showDmarcReportViewer: !!toolInputs.showDmarcReportViewer?.checked,
                 showDkimSelector: !!toolInputs.showDkimSelector?.checked,

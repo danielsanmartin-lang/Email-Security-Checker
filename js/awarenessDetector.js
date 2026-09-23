@@ -725,6 +725,33 @@ export async function flattenSpf(domain, budget = { lookups: 10 }, seen = new Se
     return out;
 }
 
+/**
+ * Mismo resultado que flattenSpf, pero a partir del árbol que ya resolvió el análisis
+ * principal (getSPFLookupTree). Evita repetir la cadena SPF entera y, sobre todo, que el
+ * PermError del panel de awareness se calcule con otra cuenta de lookups: flattenSpf solo
+ * cuenta include/redirect, y podía decir "PermError" donde el panel SPF decía "9/10".
+ */
+export function spfFromTree(tree) {
+    const out = { includes: [], ips: [], redirects: [], permError: false, domains: [] };
+    const visit = (node) => {
+        if (!node) return;
+        for (const token of String(node.record || '').split(/\s+/)) {
+            const lower = token.toLowerCase().replace(/^[+\-~?]/, '');
+            if (lower.startsWith('ip4:') || lower.startsWith('ip6:')) out.ips.push(lower.slice(4));
+        }
+        for (const child of node.children || []) {
+            if (child.type === 'include' || child.type === 'redirect') {
+                (child.type === 'include' ? out.includes : out.redirects).push(child.target);
+                out.domains.push(child.target);
+                visit(child.tree);
+            }
+        }
+    };
+    visit(tree);
+    out.permError = (tree && tree.lookups > 10) || false;
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // 5. HELPERS DE MATCHING
 // ---------------------------------------------------------------------------
@@ -905,12 +932,14 @@ const UNCONFIRMED_SCORE_CAP = 0.4;
  *   weight: number,
  * }
  */
-export async function detectAwarenessVendors(domain) {
+export async function detectAwarenessVendors(domain, opts = {}) {
     domain = domain.trim().toLowerCase();
 
     // --- DNS ---
     const dnsStats = _newDnsStats();
-    const spf = await flattenSpf(domain, { lookups: 10 }, new Set(), dnsStats);
+    const spf = opts.spfTree
+        ? spfFromTree(opts.spfTree)
+        : await flattenSpf(domain, { lookups: 10 }, new Set(), dnsStats);
     const mxHosts = await _getMxRaw(domain, dnsStats);
     const rootTxts = await _getTxt(domain, dnsStats);
 
@@ -955,6 +984,18 @@ export async function detectAwarenessVendors(domain) {
         if (txts.length > 0) {
             genericDkimResults[sel] = txts;
         }
+    }));
+
+    // --- Selectores DKIM propios de cada vendor ---
+    // Se consultan todos a la vez antes de puntuar. Antes se hacía dentro del bucle de
+    // vendors, uno detrás de otro: 17 consultas en serie que, con la zona auditada lenta,
+    // alargaban el panel varios segundos.
+    const vendorSelectors = [...new Set(Object.values(AWARENESS_FINGERPRINTS)
+        .filter(fp => fp.detectableViaDns)
+        .flatMap(fp => fp.dkimSelectors || []))];
+    const vendorDkimResults = {};
+    await Promise.all(vendorSelectors.map(async sel => {
+        vendorDkimResults[sel] = await _getTxt(`${sel}._domainkey.${domain}`, dnsStats);
     }));
 
     // --- SCORING ---
@@ -1044,7 +1085,7 @@ export async function detectAwarenessVendors(domain) {
         // (el cliente podría tener una clave propia en ese nombre).
         for (const sel of (fp.dkimSelectors || [])) {
             try {
-                const txts = await _getTxt(`${sel}._domainkey.${domain}`, dnsStats);
+                const txts = vendorDkimResults[sel] || [];
                 let signingMatch = false;
                 let hasKey = false;
                 for (const t of txts) {
@@ -1220,9 +1261,16 @@ export async function detectAwarenessVendors(domain) {
 // 8. RELOAD EN CALIENTE DEL DICCIONARIO
 //    Permite recibir un objeto externo (JSON cargado por el usuario) y fusionarlo.
 // ---------------------------------------------------------------------------
+// Claves que, usadas como nombre de vendor, alcanzarían Object.prototype: con
+// `AWARENESS_FINGERPRINTS['__proto__']` el Object.assign de abajo contaminaría el prototipo
+// de TODOS los objetos de la app desde un JSON de firmas.
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function mergeFingerprints(externalFPs) {
+    if (!externalFPs || typeof externalFPs !== 'object') return;
     for (const [key, fp] of Object.entries(externalFPs)) {
-        if (AWARENESS_FINGERPRINTS[key]) {
+        if (UNSAFE_KEYS.has(key) || !fp || typeof fp !== 'object') continue;
+        if (Object.prototype.hasOwnProperty.call(AWARENESS_FINGERPRINTS, key)) {
             Object.assign(AWARENESS_FINGERPRINTS[key], fp);
         } else {
             AWARENESS_FINGERPRINTS[key] = fp;

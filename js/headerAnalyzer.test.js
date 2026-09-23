@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseHeaders, detectFromHeaders } from './headerAnalyzer.js';
+import { parseHeaders, detectFromHeaders, mergeHeaderFingerprints } from './headerAnalyzer.js';
 
 describe('parseHeaders', () => {
     it('parsea cabeceras y des-pliega líneas continuadas (folding)', () => {
@@ -53,5 +53,22 @@ describe('detectFromHeaders', () => {
         const raw = 'From: jefe@empresa.com\nTo: yo@empresa.com\nSubject: reunion\nReceived: by mail.empresa.com';
         const r = detectFromHeaders(raw);
         expect(r.detectedVendors).toHaveLength(0);
+    });
+});
+
+describe('falsos positivos de gateway y endurecimiento', () => {
+    it('un correo que solo pasó por el gateway Sophos Email no es una simulación', () => {
+        const raw = [
+            'Received: from mail.eu-central-1.prod.hydra.sophos.com (outbound.sophosmail.com [198.51.100.7])',
+            'From: Ana <ana@acme.com>',
+            'Subject: Reunión'
+        ].join('\n');
+        const r = detectFromHeaders(raw);
+        expect(r.detectedVendors.map(v => v.vendor)).not.toContain('sophosPhishThreat');
+    });
+
+    it('mergeHeaderFingerprints ignora claves que alcanzarían el prototipo', () => {
+        mergeHeaderFingerprints(JSON.parse('{"__proto__": {"pollutedHeaders": true}}'));
+        expect({}.pollutedHeaders).toBeUndefined();
     });
 });

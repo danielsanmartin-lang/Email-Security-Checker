@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache, reverseIpForDns, getAutodiscover, getIpIntel, getDkimSelectorChain } from './api.js';
+import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache, reverseIpForDns, getAutodiscover, getIpIntel, getDkimSelectorChain, discoverDmarcPolicy, isDmarcRecord, isDkimKeyRecord, getMTASTS, getDANE } from './api.js';
 import { saveSettings, resetSettingsCache, DEFAULT_SETTINGS } from './settings.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
@@ -755,5 +755,240 @@ describe('getDkimSelectorChain', () => {
         const antes = global.fetch.mock.calls.length;
         await getDkimSelectorChain('acme.com', ['selector1']);
         expect(global.fetch.mock.calls.length).toBe(antes);
+    });
+});
+
+// ===========================================================================
+// RFC 9989 / 9990: Tree Walk, verificación de destinos externos y reconocimiento
+// ===========================================================================
+
+// Zona simulada: nombre → lista de TXT. Lo que no está responde NXDOMAIN.
+function txtZone(zone) {
+    return fetchMock((name, type) => {
+        if (type === 'TXT' && zone[name]) {
+            return { Status: 0, Answer: zone[name].map(v => ({ type: 16, data: `"${v}"` })) };
+        }
+        return { Status: 3 };
+    });
+}
+
+describe('isDmarcRecord (RFC 9989 §4.7/§4.8)', () => {
+    it('admite espacios alrededor del "=" y exige DMARC1 exacto', () => {
+        expect(isDmarcRecord('v=DMARC1; p=reject')).toBe(true);
+        expect(isDmarcRecord('v = DMARC1; p=reject')).toBe(true);
+        expect(isDmarcRecord('v=DMARC1')).toBe(true);
+        expect(isDmarcRecord('v=DMARC10; p=reject')).toBe(false);
+        expect(isDmarcRecord('v=dmarc1; p=reject')).toBe(false);
+        expect(isDmarcRecord('p=reject; v=DMARC1')).toBe(false);
+    });
+});
+
+describe('discoverDmarcPolicy (DNS Tree Walk)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('usa el registro propio y aun así determina el dominio organizativo', async () => {
+        global.fetch = txtZone({ '_dmarc.example.com': ['v=DMARC1; p=reject'] });
+        const r = await discoverDmarcPolicy('example.com');
+        expect(r).toMatchObject({ source: 'author', policyDomain: 'example.com', orgDomain: 'example.com', inherited: false });
+        expect(r.walked.map(w => w.name)).toEqual(['example.com', 'com']);
+    });
+
+    it('un subdominio sin registro hereda el del dominio organizativo', async () => {
+        global.fetch = txtZone({ '_dmarc.example.com': ['v=DMARC1; p=reject; sp=quarantine'] });
+        const r = await discoverDmarcPolicy('shop.example.com');
+        expect(r).toMatchObject({ source: 'org', policyDomain: 'example.com', orgDomain: 'example.com', inherited: true, inheritedFrom: 'example.com' });
+        expect(r.record).toContain('sp=quarantine');
+    });
+
+    it('funciona con marcas cortas bajo un ccTLD (la heurística no lo hacía)', async () => {
+        global.fetch = txtZone({ '_dmarc.abc.es': ['v=DMARC1; p=reject'] });
+        const r = await discoverDmarcPolicy('correo.abc.es');
+        expect(r).toMatchObject({ source: 'org', policyDomain: 'abc.es', orgDomain: 'abc.es' });
+    });
+
+    it('psd=n en un nivel intermedio lo declara organizativo y detiene la búsqueda', async () => {
+        global.fetch = txtZone({
+            '_dmarc.dept.example.com': ['v=DMARC1; p=quarantine; psd=n'],
+            '_dmarc.example.com': ['v=DMARC1; p=reject']
+        });
+        const r = await discoverDmarcPolicy('a.dept.example.com');
+        expect(r).toMatchObject({ source: 'org', orgDomain: 'dept.example.com', policyDomain: 'dept.example.com' });
+    });
+
+    it('varios registros en el propio dominio se descartan y se sube a buscar', async () => {
+        global.fetch = txtZone({
+            '_dmarc.shop.example.com': ['v=DMARC1; p=none', 'v=DMARC1; p=reject'],
+            '_dmarc.example.com': ['v=DMARC1; p=quarantine']
+        });
+        const r = await discoverDmarcPolicy('shop.example.com');
+        expect(r.multiple).toBe(true);
+        expect(r.records).toHaveLength(2);
+        expect(r).toMatchObject({ source: 'org', policyDomain: 'example.com' });
+    });
+
+    it('en el dominio organizativo, varios registros significan no tener política', async () => {
+        global.fetch = txtZone({ '_dmarc.example.com': ['v=DMARC1; p=none', 'v=DMARC1; p=reject'] });
+        const r = await discoverDmarcPolicy('example.com');
+        expect(r).toMatchObject({ multiple: true, record: null, source: null });
+    });
+
+    it('un ancestro que no responde deja la búsqueda incompleta, no "sin registro"', async () => {
+        global.fetch = fetchMock((name) => {
+            if (name === '_dmarc.com') return { Status: 2 };
+            if (name === '_dmarc.example.com') return { Status: 3 };
+            return { Status: 3 };
+        });
+        const r = await discoverDmarcPolicy('example.com');
+        expect(r.incomplete).toBe(true);
+        expect(r.walked.find(w => w.name === 'com').status).toBe('error');
+    });
+
+    it('un SERVFAIL en el propio dominio se propaga (DMARC "no disponible")', async () => {
+        global.fetch = fetchMock(() => ({ Status: 2 }));
+        await expect(discoverDmarcPolicy('rota.example')).rejects.toMatchObject({ code: 'servfail' });
+    });
+});
+
+describe('checkDMARCExternalAuth (RFC 9990 §4)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('antepone el dominio DONDE se encontró la política, no el subdominio auditado', async () => {
+        const asked = [];
+        global.fetch = fetchMock((name) => {
+            asked.push(name);
+            return name === 'example.com._report._dmarc.rua.vendor.net'
+                ? { Status: 0, Answer: [{ type: 16, data: '"v=DMARC1"' }] }
+                : { Status: 3 };
+        });
+        const r = await checkDMARCExternalAuth('example.com', ['mailto:x@rua.vendor.net'], { orgDomain: 'example.com' });
+        expect(r[0].authorized).toBe(true);
+        expect(asked).toContain('example.com._report._dmarc.rua.vendor.net');
+    });
+
+    it('un destino bajo el dominio organizativo no se verifica, aunque la marca sea corta', async () => {
+        const fetchSpy = vi.fn();
+        global.fetch = fetchSpy;
+        const r = await checkDMARCExternalAuth('abc.es', ['mailto:d@reports.abc.es'], { orgDomain: 'abc.es' });
+        expect(r).toEqual([]);
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('con psd=n, un destino en el dominio padre SÍ es externo', async () => {
+        global.fetch = fetchMock(() => ({ Status: 3 }));
+        const r = await checkDMARCExternalAuth('dept.example.com', ['mailto:d@example.com'], { orgDomain: 'dept.example.com' });
+        expect(r[0]).toMatchObject({ destDomain: 'example.com', authorized: false });
+    });
+
+    it('el registro de autorización exige v=DMARC1 al principio y respeta mayúsculas', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [{ type: 16, data: '"v=dmarc1"' }] }));
+        const r = await checkDMARCExternalAuth('example.com', ['mailto:x@ext.net'], { orgDomain: 'example.com' });
+        expect(r[0].authorized).toBe(false);
+    });
+
+    it('expone el rua con el que el receptor reescribe el destino', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [{ type: 16, data: '"v=DMARC1; rua=mailto:otro@ext.net"' }] }));
+        const r = await checkDMARCExternalAuth('example.com', ['mailto:x@ext.net'], { orgDomain: 'example.com' });
+        expect(r[0]).toMatchObject({ authorized: true, override: 'mailto:otro@ext.net' });
+    });
+});
+
+describe('DKIM: v= es opcional (RFC 6376 §3.6.1)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('isDkimKeyRecord', () => {
+        expect(isDkimKeyRecord('v=DKIM1; k=rsa; p=AAAA')).toBe(true);
+        expect(isDkimKeyRecord('k=rsa; p=AAAA')).toBe(true);
+        expect(isDkimKeyRecord('p=')).toBe(true);
+        expect(isDkimKeyRecord('v=DKIM2; p=AAAA')).toBe(false);
+        expect(isDkimKeyRecord('google-site-verification=abc')).toBe(false);
+    });
+
+    it('getDKIM encuentra una clave publicada sin v=DKIM1', async () => {
+        global.fetch = fetchMock((name) =>
+            name === 's1._domainkey.ex.com'
+                ? { Status: 0, Answer: [{ type: 16, data: '"k=rsa; p=AAAABBBB"' }] }
+                : { Status: 3 }
+        );
+        const r = await getDKIM('ex.com', 's1');
+        expect(r.records).toHaveLength(1);
+    });
+});
+
+describe('MTA-STS sin contactar con el dominio auditado', () => {
+    beforeEach(() => { clearDnsCache(); resetSettingsCache(); saveSettings({ ...DEFAULT_SETTINGS }); });
+    afterEach(() => { vi.restoreAllMocks(); saveSettings({ ...DEFAULT_SETTINGS }); resetSettingsCache(); });
+
+    const dohAndPolicy = (hostExists) => vi.fn(async (url) => {
+        const href = String(url);
+        if (href.includes('mta-sts.acme.com/.well-known')) {
+            return { ok: true, status: 200, type: 'basic', text: async () => 'version: STSv1\nmode: enforce\nmx: mx.acme.com\nmax_age: 604800\n' };
+        }
+        const u = new URL(href);
+        const name = u.searchParams.get('name');
+        const type = u.searchParams.get('type');
+        let body = { Status: 3 };
+        if (name === '_mta-sts.acme.com' && type === 'TXT') body = { Status: 0, Answer: [{ type: 16, data: '"v=STSv1; id=1"' }] };
+        if (hostExists && name === 'mta-sts.acme.com' && type === 'A') body = { Status: 0, Answer: [{ type: 1, data: '192.0.2.10' }] };
+        return { ok: true, status: 200, json: async () => body };
+    });
+
+    it('por defecto no descarga la política: ni una petición a mta-sts.<dominio>', async () => {
+        global.fetch = dohAndPolicy(true);
+        const r = await getMTASTS('acme.com');
+        expect(r.policy.validationReason).toBe('not_fetched');
+        expect(global.fetch.mock.calls.some(([u]) => String(u).includes('mta-sts.acme.com/.well-known'))).toBe(false);
+    });
+
+    it('si mta-sts.<dominio> no resuelve, la política está rota (solo DNS)', async () => {
+        global.fetch = dohAndPolicy(false);
+        const r = await getMTASTS('acme.com');
+        expect(r.policy).toMatchObject({ validationReason: 'host_missing', host: 'mta-sts.acme.com' });
+    });
+
+    it('con el ajuste activado, la descarga directa se hace y sin Referer', async () => {
+        saveSettings({ contactAuditedHosts: true });
+        global.fetch = dohAndPolicy(true);
+        const r = await getMTASTS('acme.com');
+        expect(r.policy.valid).toBe(true);
+        const call = global.fetch.mock.calls.find(([u]) => String(u).includes('mta-sts.acme.com/.well-known'));
+        expect(call[1].referrerPolicy).toBe('no-referrer');
+    });
+});
+
+describe('DNSSEC y DANE: validación', () => {
+    beforeEach(() => { clearDnsCache(); resetSettingsCache(); saveSettings({ ...DEFAULT_SETTINGS }); });
+    afterEach(() => { vi.restoreAllMocks(); saveSettings({ ...DEFAULT_SETTINGS }); resetSettingsCache(); });
+
+    it('getDNSSEC distingue DNSKEY sin validar y sabe si el resolver valida', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, AD: false, Answer: [{ type: 48, data: '257 3 13 abc' }] }));
+        const r = await getDNSSEC('island.example');
+        expect(r).toMatchObject({ signed: true, hasDnskey: true, ad: false, validationKnown: true });
+    });
+
+    it('getDANE anota si cada TLSA llegó validado, sin alterar la lista de hosts', async () => {
+        global.fetch = fetchMock((name) => name === '_25._tcp.mx.acme.com'
+            ? { Status: 0, AD: true, Answer: [{ type: 52, data: '3 1 1 abc' }] }
+            : { Status: 3 });
+        const r = await getDANE(['mx.acme.com']);
+        expect(Object.keys(r)).toEqual(['mx.acme.com']);
+        expect(r.validated['mx.acme.com']).toBe(true);
+    });
+});
+
+describe('getSPFLookupTree: redirect= se ignora si hay all (RFC 7208 §6.1)', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('no sigue ni cuenta el redirect cuando el registro ya tiene all', async () => {
+        global.fetch = txtZone({
+            'ex.com': ['v=spf1 ip4:192.0.2.1 redirect=_spf.otro.com -all'],
+            '_spf.otro.com': ['v=spf1 include:a.com include:b.com -all']
+        });
+        const tree = await getSPFLookupTree('ex.com');
+        expect(tree.lookups).toBe(0);
+        expect(tree.children.some(c => c.type === 'redirect')).toBe(false);
     });
 });

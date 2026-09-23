@@ -11,6 +11,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     flattenSpf,
+    spfFromTree,
     detectAwarenessVendors,
     AWARENESS_FINGERPRINTS,
     mergeFingerprints,
@@ -620,5 +621,37 @@ describe('estado del sondeo DNS', () => {
         expect(result.dnsIncomplete).toBe(true);
         expect(result.dnsFailedQueries).toBeGreaterThan(0);
         expect(result.detectedVendors).toHaveLength(0);
+    });
+});
+
+describe('spfFromTree — reutiliza el árbol SPF del análisis principal', () => {
+    it('recoge includes, redirects e IPs de todo el árbol', () => {
+        const tree = {
+            domain: 'acme.com', lookups: 3, record: 'v=spf1 ip4:192.0.2.1 include:_spf.psm.knowbe4.com redirect=_spf.acme.net',
+            children: [
+                { type: 'include', target: '_spf.psm.knowbe4.com', tree: { domain: '_spf.psm.knowbe4.com', lookups: 0, record: 'v=spf1 ip4:147.160.167.0/26 -all', children: [] } },
+                { type: 'redirect', target: '_spf.acme.net', tree: { domain: '_spf.acme.net', lookups: 1, record: 'v=spf1 include:nested.example -all', children: [
+                    { type: 'include', target: 'nested.example', tree: { domain: 'nested.example', lookups: 0, record: 'v=spf1 ip6:2001:db8::/32 -all', children: [] } }
+                ] } }
+            ]
+        };
+        const spf = spfFromTree(tree);
+        expect(spf.includes).toEqual(['_spf.psm.knowbe4.com', 'nested.example']);
+        expect(spf.redirects).toEqual(['_spf.acme.net']);
+        expect(spf.ips).toEqual(expect.arrayContaining(['192.0.2.1', '147.160.167.0/26', '2001:db8::/32']));
+        expect(spf.permError).toBe(false);
+    });
+
+    it('el PermError sale de la misma cuenta de lookups que el panel SPF', () => {
+        expect(spfFromTree({ domain: 'x.com', lookups: 11, children: [] }).permError).toBe(true);
+        expect(spfFromTree({ domain: 'x.com', lookups: 10, children: [] }).permError).toBe(false);
+    });
+});
+
+describe('mergeFingerprints — no contamina el prototipo', () => {
+    it('ignora __proto__, constructor y prototype', () => {
+        mergeFingerprints(JSON.parse('{"__proto__": {"polluted": true}, "constructor": {"x": 1}}'));
+        expect({}.polluted).toBeUndefined();
+        expect(Object.prototype.polluted).toBeUndefined();
     });
 });

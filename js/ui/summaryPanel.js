@@ -2,7 +2,7 @@
 // Cabecera del resultado (dominio + hora del escaneo) y las cuatro tarjetas resumen.
 import { translations } from '../i18n.js';
 import { getLanguage, getLocale } from '../lang.js';
-import { displayProvider, displayDmarcPolicy } from '../viewmodel.js';
+import { displayProvider, dmarcPolicySummary } from '../viewmodel.js';
 
 export function renderSummaryPanel(domain, result) {
     const lang = getLanguage();
@@ -31,7 +31,9 @@ export function renderSummaryPanel(domain, result) {
     }
 
     const dmarcVal = document.getElementById('summary-dmarc-value');
-    const dmarcPolicyText = displayDmarcPolicy(t, result.dmarcPolicy);
+    // La política EFECTIVA, con el matiz que la explica (modo prueba, herencia, valores no
+    // válidos): un "Reject" en el resumen no puede ser un reject en prueba.
+    const dmarcPolicyText = dmarcPolicySummary(result, t);
 
     dmarcVal.textContent = dmarcPolicyText;
     dmarcVal.className = 'summary-card__value';

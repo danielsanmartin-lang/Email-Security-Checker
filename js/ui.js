@@ -275,7 +275,7 @@ export function renderResults(domain, result) {
     renderProviderPanel(result);
     renderSecurityLayersPanel(domain, result);
     renderSpfPanel(result);
-    renderDmarcPanel(result);
+    renderDmarcPanel(result, domain);
     renderDkimBimiPanel(result);
     renderReputation(result.rblResults, lang, t);
     renderAdvancedDNS(result, lang, t);

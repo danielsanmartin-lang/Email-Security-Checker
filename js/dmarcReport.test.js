@@ -189,3 +189,45 @@ describe('extractReportXml', () => {
         await expect(extractReportXml(fileOf(roto, 'roto.zip'))).rejects.toThrow();
     });
 });
+
+// Muestra del Apéndice B de RFC 9990: espacio de nombres dmarc-2.0, <testing>,
+// <discovery_method> y la disposición nueva "pass". El formato nuevo NO debe romper el
+// visor: querySelector no distingue espacios de nombres.
+const RFC9990_SAMPLE = `<feedback xmlns="urn:ietf:params:xml:ns:dmarc-2.0">
+  <version>1.0</version>
+  <report_metadata>
+    <org_name>Sample Reporter</org_name>
+    <email>report_sender@example-reporter.com</email>
+    <report_id>3v98abbp8ya9n3va8yr8oa3ya</report_id>
+    <date_range><begin>302832000</begin><end>302918399</end></date_range>
+    <generator>Example DMARC Aggregate Reporter v1.2</generator>
+  </report_metadata>
+  <policy_published>
+    <domain>example.com</domain>
+    <p>quarantine</p><sp>none</sp><np>none</np>
+    <testing>n</testing>
+    <discovery_method>treewalk</discovery_method>
+  </policy_published>
+  <record>
+    <row>
+      <source_ip>192.0.2.123</source_ip>
+      <count>123</count>
+      <policy_evaluated><disposition>pass</disposition><dkim>pass</dkim><spf>fail</spf></policy_evaluated>
+    </row>
+    <identifiers><envelope_from>example.com</envelope_from><header_from>example.com</header_from></identifiers>
+    <auth_results>
+      <dkim><domain>example.com</domain><result>pass</result><selector>abc123</selector></dkim>
+      <spf><domain>example.com</domain><result>fail</result></spf>
+    </auth_results>
+  </record>
+</feedback>`;
+
+describe('informes en formato RFC 9990 (DMARCbis)', () => {
+    it('se parsean igual que los de RFC 7489', () => {
+        const report = parseAggregateReport(RFC9990_SAMPLE);
+        expect(report.org).toBe('Sample Reporter');
+        expect(report.policy).toMatchObject({ domain: 'example.com', p: 'quarantine', sp: 'none' });
+        expect(report.totals).toMatchObject({ messages: 123, dmarcPass: 123, dkimPass: 123, spfPass: 0, quarantined: 0, rejected: 0 });
+        expect(report.sources[0].dispositions).toEqual(['pass']);
+    });
+});

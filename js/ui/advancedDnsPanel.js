@@ -2,6 +2,7 @@
 // Panel de DNS avanzado: MTA-STS (incluida la cobertura de los MX), TLS-RPT, DNSSEC,
 // DANE, SRV, proveedor de DNS y tokens de verificación TXT.
 import { html, raw } from '../utils.js';
+import { mtaStsState, MTA_STS_STATE_VIEW, dnssecState } from '../viewmodel.js';
 
 export function renderAdvancedDNS(result, lang, t) {
     const body = document.getElementById('advanced-dns-body');
@@ -10,20 +11,15 @@ export function renderAdvancedDNS(result, lang, t) {
     let out = '<div class="advanced-dns-grid">';
 
     // === MTA-STS ===
-    const mtaPolicyValid = result.mtaSts?.policy?.valid;
-    // Que el navegador no pueda DESCARGAR la política (CORS/red) no la vuelve
-    // inválida: es un límite del análisis desde cliente. El badge debe decir
-    // "no evaluable", igual que hace el scoring, y no acusar al dominio.
-    const mtaUnreachable = result.mtaSts?.policy?.validationReason === 'fetch_failed';
-    const mtaPolicyPartial = result.mtaSts && !mtaPolicyValid && !mtaUnreachable;
-    const mtaBadgeClass = mtaPolicyValid
-        ? 'badge--success'
-        : (mtaPolicyPartial ? 'badge--danger' : 'badge--neutral');
-    const mtaBadgeText = mtaPolicyValid
-        ? t.adv_mta_sts_enforced
-        : (mtaUnreachable
-            ? t.adv_mta_sts_unreachable
-            : (result.mtaSts ? t.adv_mta_sts_policy_invalid : t.adv_mta_sts_not_configured));
+    // Que el navegador no pueda (o no deba) DESCARGAR la política no la vuelve inválida,
+    // y una política en testing es válida aunque no se aplique: el estado sale de
+    // mtaStsState(), el mismo que usa el informe, y no acusa al dominio de lo que no es.
+    const mtaState = mtaStsState(result);
+    const mtaView = MTA_STS_STATE_VIEW[mtaState];
+    const mtaPolicyValid = mtaState === 'enforced';
+    const mtaPolicyPartial = mtaState === 'invalid';
+    const mtaBadgeClass = `badge--${mtaView.tone}`;
+    const mtaBadgeText = t[mtaView.key];
 
     out += '<div class="advanced-dns-section">';
     out += html`<div class="advanced-dns-section__header">
@@ -68,7 +64,8 @@ export function renderAdvancedDNS(result, lang, t) {
             </div>`;
         }
         if (policy.body && mtaPolicyValid) {
-            out += html`<div class="panel__raw-record" style="margin-top:8px;font-size:12px;white-space:pre-wrap;">${policy.body.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`;
+            // html`` ya escapa: escapar además a mano mostraba "&lt;" literal en pantalla.
+            out += html`<div class="panel__raw-record" style="margin-top:8px;font-size:12px;white-space:pre-wrap;">${policy.body}</div>`;
         }
         out += html`</div>`;
     } else {
@@ -201,13 +198,18 @@ export function renderAdvancedDNS(result, lang, t) {
     out += '</div>';
 
     // === DNSSEC ===
-    const dnssecSigned = result.dnssec && result.dnssec.signed;
+    // Firmada pero sin validar (DNSKEY sin AD) no protege nada: se distingue de "firmada".
+    const dnssecStatus = dnssecState(result.dnssec);
+    const dnssecSigned = dnssecStatus !== 'unsigned';
+    const dnssecBadge = { validated: ['badge--success', t.adv_dnssec_signed], unvalidated: ['badge--warning', t.adv_dnssec_unvalidated], unsigned: ['badge--neutral', t.adv_dnssec_unsigned] }[dnssecStatus];
     out += '<div class="advanced-dns-section">';
     out += html`<div class="advanced-dns-section__header">
         <h4 class="advanced-dns-section__title">${t.adv_dnssec_title}</h4>
-        <span class="advanced-dns-section__badge ${dnssecSigned ? 'badge--success' : 'badge--neutral'}">${dnssecSigned ? t.adv_dnssec_signed : t.adv_dnssec_unsigned}</span>
+        <span class="advanced-dns-section__badge ${dnssecBadge[0]}">${dnssecBadge[1]}</span>
     </div>`;
-    if (dnssecSigned) {
+    if (dnssecStatus === 'unvalidated') {
+        out += html`<div class="advanced-dns-section__body"><p class="no-data" style="font-size:13px;">${t.adv_dnssec_unvalidated_desc}</p></div>`;
+    } else if (dnssecSigned) {
         out += html`<div class="advanced-dns-section__body">
             <div class="info-block">
                 <div class="info-block__detail">${t.adv_dnssec_signed_desc}</div>

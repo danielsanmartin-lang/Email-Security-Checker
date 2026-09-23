@@ -179,9 +179,29 @@ export function extractRootDomain(hostname) {
     if (COMPOUND_TLDS.has(possibleCompound)) {
         return parts.slice(-3).join('.');
     }
-    // Fallback heuristic for unknown compound TLDs: short SLD (≤3 chars) + 2-char TLD
-    if (tld.length === 2 && sld.length <= 3) {
+    // Respaldo para sufijos compuestos no listados (com.xx, gov.xx, co.xx…): solo cuando
+    // la segunda etiqueta es una de las genéricas que usan los ccTLD. Antes bastaba con
+    // que tuviera ≤3 letras, y eso convertía en "sufijo público" cualquier marca corta:
+    // mx.ine.es, mail.dhl.de o reports.abc.es salían como dominios registrables propios,
+    // con falsos "MX externo", falsos "destino DMARC no autorizado" y DMARC sin heredar.
+    if (tld.length === 2 && GENERIC_SECOND_LEVEL.has(sld)) {
         return parts.slice(-3).join('.');
     }
     return parts.slice(-2).join('.');
+}
+
+// Etiquetas de segundo nivel que los ccTLD usan como sufijo público (com.pe, gob.cl,
+// ac.th, co.ke…). Es una lista de palabras funcionales, no de marcas: por eso puede
+// servir de respaldo sin tragarse dominios reales de tres letras.
+const GENERIC_SECOND_LEVEL = new Set([
+    'com', 'net', 'org', 'edu', 'gov', 'gob', 'mil', 'ac', 'co', 'or', 'ne', 'go',
+    'nom', 'ltd', 'plc', 'sch', 'int', 'gv', 'nic', 'biz', 'info', 'web', 'firm', 'gen', 'ind', 'res'
+]);
+
+/** ¿`host` es `domain` o cuelga de él? Comparación por etiquetas, sin heurísticas. */
+export function isSameOrSubdomain(host, domain) {
+    const h = String(host || '').toLowerCase().replace(/\.$/, '');
+    const d = String(domain || '').toLowerCase().replace(/\.$/, '');
+    if (!h || !d) return false;
+    return h === d || h.endsWith(`.${d}`);
 }

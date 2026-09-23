@@ -3,13 +3,17 @@
 // (aparece en los informes) y detectar firmas obsoletas sin leer el diff.
 // Súbelos al añadir o corregir firmas. El test de esquema (knowledge.test.js)
 // valida la forma de cada entrada y la ausencia de duplicados.
-export const KB_VERSION = '3.1.0';
-export const KB_UPDATED_AT = '2026-09-17';
+export const KB_VERSION = '3.2.0';
+export const KB_UPDATED_AT = '2026-09-23';
 
 export const KB = {
     version: KB_VERSION,
     updatedAt: KB_UPDATED_AT,
     mx: [
+        // MX de Exchange Online con DNSSEC y DANE de entrada (<dominio>.<x>-v1.mx.microsoft).
+        // Es el formato de los dominios nuevos; mail.protection.outlook.com sigue vivo pero
+        // ya no recibe mejoras. Sufijo exacto: no debe casar con mx.microsoft.com.
+        { pattern: '.mx.microsoft', name: 'Microsoft 365', type: 'provider', matchType: 'suffix' },
         { pattern: 'protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
         { pattern: 'mail.protection.outlook.com', name: 'Microsoft 365', type: 'provider' },
         { pattern: 'google.com', name: 'Google Workspace', type: 'provider' },
@@ -417,7 +421,7 @@ export const KB = {
         autodiscover_own_ptr: 0.75,  // el PTR de la IP de autodiscover cae en el propio dominio
         mx_self_own_asn: 0.7,        // MX del propio dominio Y en un ASN que no es de nadie conocido
         autodiscover_cloud_asn: 0.5, // la IP de autodiscover está en un ASN de hiperescalar
-        dane: 0.5,                   // hay TLSA: MTA autogestionado (MS/Google no publican)
+        dane: 0.5,                   // TLSA en un MX propio: MTA autogestionado (M365 publica TLSA en *.mx.microsoft)
         mx_self: 0.45,               // la raíz del MX coincide con la del dominio auditado
         ptr_isp_static: 0.4,         // el PTR parece una línea de cliente de ISP
         ct_onprem_host: 0.35         // owa./webmail./zimbra. en Certificate Transparency

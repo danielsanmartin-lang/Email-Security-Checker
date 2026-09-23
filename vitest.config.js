@@ -31,6 +31,9 @@ export default defineConfig({
                 // fuera son valores por defecto defensivos (|| {}, || []) que solo se
                 // dispararían con una entrada malformada.
                 'js/mailHosting.js': { statements: 95, branches: 85 },
+                // Semántica RFC 9989 (Tree Walk, t/pct, enforcement): decide el veredicto
+                // DMARC, así que se protege al máximo.
+                'js/dmarc.js': { statements: 98, branches: 90 },
                 'js/app.js': { statements: 88 },
                 'js/ui/**': { statements: 85 }
             }

@@ -24,6 +24,9 @@
            <meta> (solo vale como cabecera HTTP). Para impedir el embebido hace falta
            configurarlo en el servidor que sirva la app. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https://dns.google https://cloudflare-dns.com https://dns.quad9.net:5053 https://crt.sh https://api.certspotter.com https://api.allorigins.win https:; base-uri 'none'; form-action 'none'">
+    <!-- Sin Referer en ninguna petición saliente: ni los resolvers, ni los CT logs ni los
+         servidores del dominio auditado necesitan saber desde qué página se consulta. -->
+    <meta name="referrer" content="no-referrer">
 
     <!-- Favicon: el mismo logotipo de la cabecera, en línea (sin peticiones extra) -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='8' fill='none' stroke='%236366f1' stroke-width='2.5'/%3E%3Cpath d='M10 16L14 20L22 12' fill='none' stroke='%2306b6d4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
@@ -480,7 +483,7 @@
                     </div>
                 </div>
                 <div class="score-card__details">
-                    <h3 class="score-card__title" data-i18n="score_title_panel">Puntuación de Seguridad</h3>
+                    <h3 class="score-card__title" data-i18n="score_title_panel">Protección contra suplantación</h3>
                     <p class="score-card__desc" data-i18n="score_desc_panel">Análisis automatizado de las políticas y configuración de seguridad.</p>
                     <div class="score-card__findings" id="score-findings">
                         <!-- Will be populated by JS -->
@@ -862,6 +865,20 @@
                         <input type="url" id="settings-custom-url" class="search-input-wrapper search-input"
                             placeholder="https://dns.midominio.com/resolve">
                         <p class="form-hint" data-i18n="settings_custom_url_hint">Debe añadirse también al connect-src del CSP en index.html, o el navegador bloqueará la consulta.</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-contact-hosts">
+                            <span data-i18n="settings_contact_hosts">Descargar la política MTA-STS directamente del dominio auditado</span>
+                        </label>
+                        <p class="form-hint" data-i18n="settings_contact_hosts_hint">Desactivado por defecto: la petición sale de tu navegador y lleva siempre el origen de esta app además de tu IP, y casi siempre la bloquea CORS. Sin ella, MTA-STS se comprueba por DNS y cuenta como publicada, sin verificar.</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-check">
+                            <input type="checkbox" id="settings-load-bimi">
+                            <span data-i18n="settings_load_bimi">Cargar automáticamente el logotipo BIMI</span>
+                        </label>
+                        <p class="form-hint" data-i18n="settings_load_bimi_hint">La imagen se pide sin Referer ni Origin: el servidor del logo (casi siempre una CDN) solo ve tu IP. Desactivado, el logotipo se carga con un clic.</p>
                     </div>
                     <div class="form-group">
                         <label class="form-check">
