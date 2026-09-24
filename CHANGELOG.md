@@ -3,6 +3,53 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [5.0.0] - 2026-09-24
+
+La nota del anillo deja de medir solo la suplantación y pasa a medir la **protección del
+ecosistema de correo** del dominio. Una capa extra de seguridad (Proofpoint, Mimecast,
+Hornetsecurity, un ICES…) por fin cuenta, y se dice en la tarjeta.
+
+### ⚠️ Cambio incompatible: la nota mide el ecosistema
+
+- **Tres ejes con peso:** suplantación **60** (sin cambios internos: DMARC 50 / SPF 20 /
+  DKIM 20 / informes 10), **filtrado entrante 25** (nuevo) y transporte **15** (sin cambios
+  internos). La suplantación sigue mandando: la lección de la v4 era que una suma plana
+  hundía a dominios bien autenticados por no tener DNSSEC ni MTA-STS.
+- **Filtrado entrante,** lo que se ve en el DNS:
+  - SEG en el MX o ICES detectado con confianza media o alta: **100**, "Reforzado".
+  - Un gateway con un MX de respaldo que entrega directo al proveedor: **75**, con aviso:
+    basta con enviar a ese MX para saltarse el filtro.
+  - Todos los MX directos a Microsoft 365, Google u otro proveedor: **50**, "Solo nativo".
+    No es cero: Defender for Office 365 y los ICES que trabajan por API no se ven desde
+    fuera.
+  - MX propio o desconocido: **sin evaluar**. Puede haber un gateway que el DNS no delata,
+    y no se resta por lo que no se ve.
+  - Sin MX o con Null MX: no aplica, igual que el transporte.
+- **Un eje que no cuenta reparte su peso** entre los demás: un dominio sin MX se puntúa
+  solo por la suplantación, como en la v4.
+- **Los topes pasan a la nota global,** con la misma semántica: sin DMARC en enforcement no
+  se pasa de 45 (D), por muy bueno que sea el gateway; sin la suplantación verificada del
+  todo, de 94. Con filtrado solo nativo, el máximo posible es 88 (A).
+- **Recalibración:** salesforce.com (Proofpoint, transporte F) pasa de 94 a 87 (A).
+  ncsc.gov.uk (autenticación perfecta, Microsoft 365 nativo, transporte D), de 100 (A+) a
+  80 (B). iberdrola.es (Trend Micro), de 94 a 85 (A). telefonica.com sigue en 45 (D).
+
+### Añadido
+
+- **Pastilla "Filtrado"** en la tarjeta, junto a Suplantación y Transporte: "Reforzado ·
+  Proofpoint" en verde, "Solo nativo · Microsoft 365" en ámbar, "Sin identificar" en gris.
+- **Hallazgo "Capa extra de seguridad detectada: Proofpoint (en el MX)"**, también en los
+  informes exportados, que suman una línea de filtrado entrante al resumen ejecutivo.
+- Aviso cuando un SEG aparece en el SPF, en un token TXT o en DKIM pero no en el MX: no
+  consta que filtre la entrada (suele usarse solo para el envío).
+- El desglose enseña el peso efectivo de cada eje ("60 % de la nota"), y el motivo de un
+  tope sube encima de la rejilla.
+
+### Corregido
+
+- Trend Micro Email Security en regiones fuera de `.com` (`*.tmes.trendmicro.eu`) no se
+  reconocía como gateway.
+
 ## [4.0.0] - 2026-09-23
 
 Dos cambios de fondo. El análisis DMARC se adapta a **RFC 9989, 9990 y 9991** (DMARCbis),

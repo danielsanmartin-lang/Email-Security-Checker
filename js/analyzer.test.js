@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyze, extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, identifyTXTVerifications, identifyMX, isSameBrand } from './analyzer.js';
+import { analyze, extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, classifyInboundFilter, identifyTXTVerifications, identifyMX, isSameBrand } from './analyzer.js';
 
 describe('collectSpfDomains', () => {
     it('aplana includes/redirects de todo el árbol SPF', () => {
@@ -651,22 +651,33 @@ describe('scoring por categorías ponderadas', () => {
         expect(card.grade).toBe('A+');
     });
 
-    it('hay dos ejes y cada uno suma 100', () => {
+    it('hay tres ejes con peso 60/25/15', () => {
         const card = calculateScoreAndFindings(strong());
-        expect(card.breakdown.map(c => c.id)).toEqual(['antispoof', 'transport']);
+        expect(card.breakdown.map(c => c.id)).toEqual(['antispoof', 'filtering', 'transport']);
+        expect(card.breakdown.map(c => c.weight)).toEqual([60, 25, 15]);
         expect(card.breakdown.find(c => c.id === 'antispoof').max).toBe(100);
         expect(card.breakdown.find(c => c.id === 'transport').max).toBe(100);
         expect(card.transport).toMatchObject({ applicable: true, score: 100, grade: 'A+' });
         expect(card.totalMax).toBe(100);
     });
 
-    it('el transporte no mueve la nota de suplantación: va aparte', () => {
+    it('un MX sin identificar deja el filtrado fuera de la media y reparte su peso', () => {
+        const card = calculateScoreAndFindings(strong());
+        const filtering = card.breakdown.find(c => c.id === 'filtering');
+        expect(card.filtering).toMatchObject({ applicable: true, state: 'unidentified', evaluable: false, score: null });
+        expect(filtering.counted).toBe(false);
+        expect(card.breakdown.map(c => c.share)).toEqual([80, 0, 20]);
+    });
+
+    it('el transporte cuenta en la nota, pero pesa poco', () => {
         const card = calculateScoreAndFindings({
             ...strong(), mtaSts: null, dnssec: { signed: false }, daneRecords: {}, bimiRecord: null, tlsRpt: null
         });
-        expect(card.breakdown.find(c => c.id === 'antispoof').earned).toBe(100);
-        expect(card.grade).toBe('A+');
+        expect(card.antispoof.score).toBe(100);
         expect(card.transport.grade).toBe('F');
+        // 60·100 / (60 + 15): el filtrado no cuenta (MX sin identificar).
+        expect(card.score).toBe(80);
+        expect(card.grade).toBe('B');
     });
 
     it('DMARC p=none no puede alcanzar A/A+ por muchos extras que tenga', () => {
@@ -894,8 +905,9 @@ describe('DANE no se penaliza dos veces cuando falta DNSSEC', () => {
     it('un dominio sin DNSSEC no sale peor que antes por esta vía', () => {
         const sinDnssec = calculateScoreAndFindings(base({ dnssec: { signed: false } }));
         const conDnssecSinDane = calculateScoreAndFindings(base({ dnssec: { signed: true } }));
-        // El transporte no toca la nota de suplantación.
-        expect(sinDnssec.score).toBe(conDnssecSinDane.score);
+        // Firmar la zona suma; no firmarla no resta además por DANE.
+        expect(sinDnssec.score).toBeLessThan(conDnssecSinDane.score);
+        expect(daneCheck(sinDnssec).earned).toBe(0);
         expect(sinDnssec.breakdown.find(c => c.id === 'transport').max).toBeLessThan(
             conDnssecSinDane.breakdown.find(c => c.id === 'transport').max);
     });
@@ -1170,11 +1182,12 @@ describe('DNSSEC y DANE: firmar no basta, tiene que validar', () => {
 });
 
 // ===========================================================================
-// v4.0.0: calibración contra dominios reales. Los registros son los publicados el
-// 2026-09-23 (consulta solo DNS); si alguno de estos casos cambia de letra, el modelo
-// ha dejado de decir lo que un receptor haría de verdad con el correo de ese dominio.
+// Calibración contra dominios reales (v4, recalibrada en v5 con el filtrado entrante).
+// Los registros son los publicados el 2026-09-23 y, salesforce.com, el 2026-09-24
+// (consulta solo DNS); si alguno de estos casos cambia de letra, el modelo ha dejado de
+// decir lo que un receptor haría de verdad con el correo de ese dominio.
 // ===========================================================================
-describe('v4: calibración con dominios medidos', () => {
+describe('v5: calibración con dominios medidos', () => {
     const RSA_1024 = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDHKI9Hv9UXFuaCMiUm4ByPZYWK4CySUGGnMLiUksN5v0eN7MlEbY1C3O8tU4yvGMGGrtJ279KC1EJi8twRn1bqVt5TsffmluZ6r5wZUndUHOLUmNubZdcaG8jW0uXy9w2pOJhr8sz+UAvXvthBnok0Ld8NL37wHC7lNePzrMYwGQIDAQAB';
     const RSA_2048 = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmBBYI7zVX1AV5i/TYH8ujMlXkMfD7YzBoRnf1b34d5hhBa0RG3k7GT5Z8irrBPeP/ZIxKEIn4okhyhpd2NY0OP1RQsEEzDSnVQL5MmtINeyxY0bBALRL/maj6EtXrKrpAQvkfPOlEo9U4mRDJaLb0D0G6nxmqbztSlHToGlgp6B9EvDV/NNgYYhBVCaqfzVoJqgRzes5elhnODddSCw4burNfq+375sHa5vSlf6nZ38hz6witOE1NZEhI1MYIwiQhsfVy3tav9mdbL/YcW0gBmXMjq/03QlAQS8pUL4ZwGPhPjnt/0Q3X6jYforhfLIraQIrVRPhp5a6ilstNaZ8TQIDAQAB';
     const NO_DNSSEC = { signed: false, hasDnskey: false, ad: false, validationKnown: true };
@@ -1196,6 +1209,7 @@ describe('v4: calibración con dominios medidos', () => {
             ] } });
         expect(c).toMatchObject({ score: 45, grade: 'D', level: 'spoofable', cap: { key: 'no_enforcement', value: 45 } });
         expect(c.transport).toMatchObject({ applicable: true, grade: 'F' });
+        expect(c.filtering).toMatchObject({ state: 'native', provider: 'Microsoft 365', score: 50 });
     });
 
     it('support.apple.com: sin MX ni SPF, cubierto por sp=reject de apple.com (A, transporte no aplica)', () => {
@@ -1205,21 +1219,23 @@ describe('v4: calibración con dominios medidos', () => {
         });
         expect(c).toMatchObject({ score: 94, grade: 'A', level: 'protected' });
         expect(c.transport).toMatchObject({ applicable: false, score: null });
+        expect(c.filtering).toMatchObject({ applicable: false, state: 'not_applicable' });
         const keys = c.findings.map(f => f.key);
         expect(keys).toContain('finding_spf_not_needed');
         expect(keys).toContain('finding_transport_not_applicable');
         expect(keys).not.toContain('finding_spf_err');
     });
 
-    it('iberdrola.es: reject y SPF por redirect; sin DKIM detectable no hay A+ (A)', () => {
+    it('iberdrola.es: reject, SPF por redirect y Trend Micro en el MX; transporte F (A)', () => {
         const c = card(mx('iberdrola.in.tmes.trendmicro.eu'), 'v=spf1 redirect=spf.iberdrola.com',
             'v=DMARC1; p=reject; rua=mailto:dmarc_rua@iberdrola.com; ruf=mailto:dmarc_ruf@iberdrola.com; fo=1; aspf=s; adkim=s;',
             { domain: 'iberdrola.es' },
             { spfLookups: 6, spfTree: { domain: 'iberdrola.es', lookups: 6, children: [
                 { type: 'redirect', target: 'spf.iberdrola.com', tree: { domain: 'spf.iberdrola.com', lookups: 5, record: 'v=spf1 ip4:192.0.2.0/24 -all', children: [] } }
             ] } });
-        expect(c).toMatchObject({ score: 94, grade: 'A', level: 'protected', cap: { key: 'unverified', value: 94 } });
-        expect(c.breakdown.find(b => b.id === 'antispoof').cap).toEqual(c.cap);
+        // 0,60·100 + 0,25·100 + 0,15·0 = 85. Sin DKIM detectable no habría A+ de todos modos.
+        expect(c).toMatchObject({ score: 85, grade: 'A', level: 'protected', cap: null });
+        expect(c.filtering).toMatchObject({ state: 'reinforced', vendors: ['Trend Micro Email Security'], score: 100 });
         expect(c.transport.grade).toBe('F');
     });
 
@@ -1232,11 +1248,13 @@ describe('v4: calibración con dominios medidos', () => {
                 mtaSts: { record: 'v=STSv1; id=1', policy: { valid: false, validationReason: 'not_fetched' } },
                 tlsRpt: { record: 'v=TLSRPTv1; rua=mailto:tlsrpt@posteo.de', rua: ['mailto:tlsrpt@posteo.de'] }
             }, { spfLookups: 0 });
-        expect(c).toMatchObject({ score: 26, grade: 'F', level: 'spoofable' });
+        // MX propio: el filtrado no cuenta. (0,60·26 + 0,15·85) / 0,75 = 38.
+        expect(c).toMatchObject({ score: 38, grade: 'F', level: 'spoofable' });
+        expect(c.filtering.state).toBe('unidentified');
         expect(c.transport).toMatchObject({ applicable: true, score: 85, grade: 'A' });
     });
 
-    it('ncsc.gov.uk: reject, SPF -all, DKIM 2048 e informes: todo verificado (A+)', () => {
+    it('ncsc.gov.uk: suplantación perfecta, pero filtrado solo nativo y transporte D (B)', () => {
         const c = card(mx('ncsc-gov-uk.mail.protection.outlook.com'), 'v=spf1 include:spf.protection.outlook.com -all',
             'v=DMARC1;p=reject;adkim=s;aspf=s;rua=mailto:dmarc-rua@dmarc.service.gov.uk;', {
                 domain: 'ncsc.gov.uk',
@@ -1246,8 +1264,43 @@ describe('v4: calibración con dominios medidos', () => {
                 { selector: 'selector1', record: `v=DKIM1; k=rsa; p=${RSA_2048}` },
                 { selector: 'selector2', record: `v=DKIM1; k=rsa; p=${RSA_2048}` }
             ] } });
-        expect(c).toMatchObject({ score: 100, grade: 'A+', level: 'protected', cap: null });
+        // 0,60·100 + 0,25·50 + 0,15·50 = 80.
+        expect(c.antispoof.score).toBe(100);
+        expect(c).toMatchObject({ score: 80, grade: 'B', level: 'protected', cap: null });
+        expect(c.filtering).toMatchObject({ state: 'native', provider: 'Microsoft 365' });
         expect(c.transport.grade).toBe('D');
+    });
+
+    it('salesforce.com: reject, Proofpoint en el MX y solo DNSSEC en transporte (A)', () => {
+        const c = card(mx('mxa-00177002.gslb.pphosted.com', 'mxb-00177002.gslb.pphosted.com'),
+            'v=spf1 include:_spf.google.com include:_spf.salesforce.com exists:%{i}._spf.corp.salesforce.com ~all',
+            'v=DMARC1;p=reject;fo=1:d:s;pct=100;rua=mailto:dmarc_agg@vali.email,mailto:0e5a5c34@inbox.ondmarc.com;ruf=mailto:0e5a5c34@inbox.ondmarc.com', {
+                domain: 'salesforce.com',
+                dnssec: { signed: true, hasDnskey: true, ad: true, validationKnown: true }
+            }, { spfLookups: 4, dkimRecords: { records: [
+                { selector: 's1', record: `v=DKIM1; k=rsa; p=${RSA_1024}` },
+                { selector: 's2', record: `v=DKIM1; k=rsa; p=${RSA_2048}` }
+            ] } });
+        // Suplantación 97 (DKIM de 1024), filtrado 100 y transporte 25 (solo DNSSEC):
+        // 0,60·97 + 0,25·100 + 0,15·25 = 86,95.
+        expect(c.antispoof.score).toBe(97);
+        expect(c.filtering).toMatchObject({ state: 'reinforced', vendors: ['Proofpoint'], score: 100, bypass: false });
+        expect(c).toMatchObject({ score: 87, grade: 'A', level: 'protected' });
+        const seg = c.findings.find(f => f.key === 'finding_filter_seg');
+        expect(seg).toMatchObject({ status: 'success', replacements: { '{vendors}': 'Proofpoint' } });
+    });
+
+    it('el mismo dominio con MX directo a Microsoft 365 baja por el filtrado nativo', () => {
+        const auth = ['v=spf1 include:spf.protection.outlook.com -all', 'v=DMARC1; p=reject; rua=mailto:d@example.com'];
+        const dkim = { dkimRecords: { records: [{ selector: 'selector1', record: `v=DKIM1; k=rsa; p=${RSA_2048}` }] } };
+        const pp = card(mx('mxa-001.gslb.pphosted.com'), ...auth, { domain: 'example.com' }, dkim);
+        const m365 = card(mx('example-com.mail.protection.outlook.com'), ...auth, { domain: 'example.com' }, dkim);
+        expect(pp.antispoof.score).toBe(m365.antispoof.score);
+        expect(pp.score).toBe(85);
+        expect(m365.score).toBe(73);
+        expect(m365.grade).toBe('B');
+        const native = m365.findings.find(f => f.key === 'finding_filter_native');
+        expect(native).toMatchObject({ status: 'info', replacements: { '{provider}': 'Microsoft 365' } });
     });
 
     describe('reglas del modelo', () => {
@@ -1308,5 +1361,162 @@ describe('v4: calibración con dominios medidos', () => {
             expect(f.replacements).toEqual({ '{org}': 'example.com' });
             expect(conBimi.score).toBe(base.score);
         });
+    });
+});
+
+// ===========================================================================
+// v5: filtrado entrante, el tercer eje de la nota. Solo se afirma lo que el DNS deja
+// ver: un MX propio o desconocido no se evalúa, y "solo nativo" no es cero.
+// ===========================================================================
+describe('classifyInboundFilter', () => {
+    const mx = (...hosts) => hosts.map((host, i) => ({ priority: 10 + i, host }));
+    const classify = (mxRecords, extra = {}) => {
+        const signals = { domain: 'acme.com', mxRecords, ...extra };
+        const { segList, icesList } = detectSecurityLayers(signals);
+        return classifyInboundFilter({ mxRecords, segList, icesList, domain: 'acme.com', ...extra });
+    };
+
+    it('SEG en el MX: reforzado, con el vendor', () => {
+        const f = classify(mx('mxa-001.gslb.pphosted.com', 'mxb-001.gslb.pphosted.com'));
+        expect(f).toMatchObject({ state: 'reinforced', vendors: ['Proofpoint'], segVendors: ['Proofpoint'], bypassMx: [] });
+    });
+
+    it('SEG en el MX y un MX de respaldo directo a Microsoft 365: bypass', () => {
+        const f = classify(mx('mx.mimecast.com', 'acme-com.mail.protection.outlook.com'));
+        expect(f.state).toBe('reinforced');
+        expect(f.bypassMx).toEqual(['acme-com.mail.protection.outlook.com']);
+        expect(f.provider).toBe('Microsoft 365');
+    });
+
+    it('SEG solo en el SPF: no filtra la entrada, se dice aparte', () => {
+        const f = classify(mx('acme-com.mail.protection.outlook.com'), {
+            spfEntries: [{ type: 'include', value: 'spf.pphosted.com' }]
+        });
+        expect(f.state).toBe('native');
+        expect(f.outOfPathVendors).toEqual(['Proofpoint']);
+    });
+
+    it('el mismo vendor con otro nombre en el SPF no se da por ausente del MX', () => {
+        // MX ppe-hosted.com → "Proofpoint"; SPF ppe-hosted.com → "Proofpoint Essentials".
+        const f = classify(mx('mx1-eu1.ppe-hosted.com'), {
+            spfEntries: [{ type: 'include', value: 'spf.ppe-hosted.com' }]
+        });
+        expect(f.state).toBe('reinforced');
+        expect(f.outOfPathVendors).toEqual([]);
+    });
+
+    it('ICES con confianza media sobre Microsoft 365: reforzado sin tocar el MX', () => {
+        const f = classify(mx('acme-com.mail.protection.outlook.com'), {
+            txtVerifications: [{ name: 'Abnormal Security', category: 'ices', record: 'abnormal-verification=x' }]
+        });
+        expect(f).toMatchObject({ state: 'reinforced', vendors: ['Abnormal Security'], icesVendors: ['Abnormal Security'], bypassMx: [] });
+    });
+
+    it('un ICES de confianza baja no basta', () => {
+        const f = classifyInboundFilter({
+            mxRecords: mx('acme-com.mail.protection.outlook.com'),
+            icesList: [{ name: 'X', category: 'ices', level: 'baja', score: 0.5 }]
+        });
+        expect(f.state).toBe('native');
+    });
+
+    it('MX directo a Google Workspace: solo nativo', () => {
+        const f = classify(mx('aspmx.l.google.com', 'alt1.aspmx.l.google.com'));
+        expect(f).toMatchObject({ state: 'native', provider: 'Google Workspace' });
+    });
+
+    it('MX propio o desconocido: sin identificar, no se afirma nada', () => {
+        expect(classify(mx('mx1.acme.com')).state).toBe('unidentified');
+        expect(classify(mx('mx.hosting-desconocido.net')).state).toBe('unidentified');
+        // Mezcla de proveedor y MX propio: el propio puede ser un gateway on-premise.
+        const mixto = classify(mx('acme-com.mail.protection.outlook.com', 'mx2.acme.com'));
+        expect(mixto.state).toBe('unidentified');
+        expect(mixto.unknownMx).toEqual(['mx2.acme.com']);
+    });
+
+    it('sin MX o con Null MX: no aplica', () => {
+        expect(classifyInboundFilter({ mxRecords: [] }).state).toBe('not_applicable');
+        expect(classifyInboundFilter({ mxRecords: mx('.'), nullMx: true }).state).toBe('not_applicable');
+    });
+
+    it('analyze() deja el veredicto en el result', () => {
+        const r = analyze(mx('mx.mimecast.com'), 'v=spf1 -all', 'v=DMARC1; p=reject', { domain: 'acme.com' });
+        expect(r.inboundFilter).toMatchObject({ state: 'reinforced', vendors: ['Mimecast'] });
+    });
+});
+
+describe('v5: la nota del ecosistema', () => {
+    const RSA_2048 = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmBBYI7zVX1AV5i/TYH8ujMlXkMfD7YzBoRnf1b34d5hhBa0RG3k7GT5Z8irrBPeP/ZIxKEIn4okhyhpd2NY0OP1RQsEEzDSnVQL5MmtINeyxY0bBALRL/maj6EtXrKrpAQvkfPOlEo9U4mRDJaLb0D0G6nxmqbztSlHToGlgp6B9EvDV/NNgYYhBVCaqfzVoJqgRzes5elhnODddSCw4burNfq+375sHa5vSlf6nZ38hz6witOE1NZEhI1MYIwiQhsfVy3tav9mdbL/YcW0gBmXMjq/03QlAQS8pUL4ZwGPhPjnt/0Q3X6jYforhfLIraQIrVRPhp5a6ilstNaZ8TQIDAQAB';
+    // Transporte completo para un MX dado: MTA-STS que lo cubre, TLS-RPT, DNSSEC y DANE.
+    const fullTransport = (host) => ({
+        dnssec: { signed: true, hasDnskey: true, ad: true, validationKnown: true },
+        mtaSts: { record: 'v=STSv1; id=1', policy: { valid: true, maxAge: 604800, parsed: { mx: [host] } } },
+        tlsRpt: { record: 'v=TLSRPTv1', rua: ['mailto:t@acme.com'] },
+        daneRecords: { [host]: ['3 1 1 abc'] }
+    });
+    const PP = 'mxa-1.gslb.pphosted.com';
+    const M365 = 'acme-com.mail.protection.outlook.com';
+    const card = (mxHosts, dmarc, opts = {}, extra = {}) => {
+        const mxRecords = mxHosts.map((host, i) => ({ priority: 10 + i, host }));
+        const r = analyze(mxRecords, 'v=spf1 -all', dmarc, { domain: 'acme.com', srvRecords: {}, ...opts });
+        Object.assign(r, {
+            spfLookups: 1,
+            dkimRecords: { records: [{ selector: 's1', record: `v=DKIM1; k=rsa; p=${RSA_2048}` }] },
+            ...extra
+        });
+        return calculateScoreAndFindings(r);
+    };
+    const REJECT = 'v=DMARC1; p=reject; rua=mailto:d@acme.com';
+
+    it('con todo verificado, gateway y transporte completo se llega a A+', () => {
+        const c = card([PP], REJECT, fullTransport(PP));
+        expect(c.transport.score).toBe(100);
+        expect(c).toMatchObject({ score: 100, grade: 'A+', cap: null });
+    });
+
+    it('con filtrado solo nativo no se llega a A+ aunque todo lo demás sea perfecto', () => {
+        const c = card([M365], REJECT, fullTransport(M365));
+        // 0,60·100 + 0,25·50 + 0,15·100 = 87,5
+        expect(c.score).toBe(88);
+        expect(c.grade).toBe('A');
+    });
+
+    it('sin enforcement, ni un gateway ni un transporte ejemplar pasan del 45', () => {
+        const c = card([PP], 'v=DMARC1; p=none; rua=mailto:d@acme.com', fullTransport(PP));
+        expect(c.filtering.state).toBe('reinforced');
+        expect(c).toMatchObject({ score: 45, grade: 'D', cap: { key: 'no_enforcement', value: 45 } });
+    });
+
+    it('la suplantación sin verificar del todo limita la nota global a 94', () => {
+        const c = card([PP], REJECT, fullTransport(PP), { dkimRecords: { records: [] } });
+        expect(c).toMatchObject({ score: 94, grade: 'A', cap: { key: 'unverified', value: 94 } });
+    });
+
+    it('un MX de respaldo que salta el gateway cuesta puntos y se avisa', () => {
+        const limpio = card([PP], REJECT);
+        const bypass = card([PP, M365], REJECT);
+        expect(bypass.filtering).toMatchObject({ state: 'reinforced', bypass: true, score: 75 });
+        expect(bypass.score).toBeLessThan(limpio.score);
+        const f = bypass.findings.find(x => x.key === 'finding_filter_bypass');
+        expect(f).toMatchObject({
+            status: 'warning',
+            replacements: { '{hosts}': 'acme-com.mail.protection.outlook.com', '{provider}': 'Microsoft 365', '{vendors}': 'Proofpoint' }
+        });
+    });
+
+    it('un dominio sin MX solo se puntúa por la suplantación', () => {
+        const c = card([], REJECT);
+        expect(c.filtering.applicable).toBe(false);
+        expect(c.transport.applicable).toBe(false);
+        expect(c.breakdown.map(b => b.share)).toEqual([100, 0, 0]);
+        expect(c.score).toBe(c.antispoof.score);
+        expect(c.breakdown.find(b => b.id === 'filtering').checks[0]).toMatchObject({ notApplicable: true });
+    });
+
+    it('un MX sin identificar no resta: la nota es la misma que sin el eje', () => {
+        const c = card(['mx1.acme.com'], REJECT);
+        expect(c.filtering.state).toBe('unidentified');
+        expect(c.findings.some(f => f.key === 'finding_filter_unidentified' && f.status === 'info')).toBe(true);
+        expect(c.breakdown.find(b => b.id === 'filtering').counted).toBe(false);
     });
 });

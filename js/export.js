@@ -26,7 +26,8 @@ import {
     rblListedCount,
     spfQualifierResult,
     rblCheckStatus,
-    postureText
+    postureText,
+    filteringText
 } from './viewmodel.js';
 
 // Árbol de lookups SPF en tema claro (para el informe exportado, no la UI oscura).
@@ -307,6 +308,12 @@ export function generateReportHTML() {
         }).join('');
     }
 
+    // Filtrado entrante: la capa (con el vendor), o "no aplica" si no recibe correo.
+    const filtering = currentResult.scoreCard && currentResult.scoreCard.filtering;
+    const filteringLine = filtering
+        ? escapeHtml(filteringText(t, filtering)) + (filtering.score != null ? ` (${filtering.score}/100)` : '')
+        : '—';
+
     // Transporte: nota propia, o "no aplica" si el dominio no recibe correo.
     const transport = currentResult.scoreCard && currentResult.scoreCard.transport;
     const transportLine = !transport
@@ -565,7 +572,8 @@ export function generateReportHTML() {
             <!-- Executive Summary -->
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">📋 ${execSummaryLabel}</h2>
             <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13.5px; color: #334155; line-height: 1.6; text-align: left;">
-                <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100) — ${escapeHtml(postureText(t, currentResult.scoreCard && currentResult.scoreCard.posture))}</li>
+                <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100) — ${t.posture_label}: ${escapeHtml(postureText(t, currentResult.scoreCard && currentResult.scoreCard.posture))}</li>
+                <li><strong>${t.score_cat_filtering}:</strong> ${filteringLine}</li>
                 <li><strong>${t.transport_chip_label}:</strong> ${transportLine}</li>
                 <li><strong>${t.summary_provider}:</strong> ${escapeHtml(providerDisplay)} <br><small style="color: #64748b;">(${escapeHtml(formatProviderSource(currentResult.providerSource, t))})</small></li>
                 ${mh ? `<li><strong>${t.summary_mail_hosting}:</strong> ${escapeHtml(displayMailHosting(mh, t))}</li>` : ''}
