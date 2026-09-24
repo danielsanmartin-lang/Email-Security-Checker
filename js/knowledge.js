@@ -32,6 +32,8 @@ export const KB = {
         { pattern: 'ironport', name: 'Cisco Email Security (IronPort)', type: 'seg', matchType: 'hostname_prefix' },
         { pattern: 'trendmicro.com', name: 'Trend Micro Email Security', type: 'seg' },
         { pattern: 'in.trendmicro.com', name: 'Trend Micro Email Security', type: 'seg' },
+        // Regiones de TMES fuera de .com (iberdrola.es → *.in.tmes.trendmicro.eu)
+        { pattern: 'tmes.trendmicro.', name: 'Trend Micro Email Security', type: 'seg' },
         { pattern: 'sophos.com', name: 'Sophos Email', type: 'seg' },
         { pattern: 'fireeye.com', name: 'FireEye Email Security', type: 'seg' },
         { pattern: 'messagelabs.com', name: 'Symantec Email Security', type: 'seg' },

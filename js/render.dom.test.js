@@ -288,7 +288,17 @@ describe('desglose: el tope de la nota se explica', () => {
     beforeEach(buildDom);
 
     it('una nota topada en 94 dice por qué junto a la suma sin topes', () => {
-        const result = unconfirmedSegResult();
+        // Sin MX solo cuenta la suplantación: quarantine suma 95 y el A+ exige reject.
+        const result = analyze([], 'v=spf1 -all', 'v=DMARC1; p=quarantine; rua=mailto:a@b.com', {
+            domain: 'acme.com', mtaSts: null, tlsRpt: null, srvRecords: {}, daneRecords: {}
+        });
+        Object.assign(result, {
+            spfLookups: 1,
+            spfTree: { domain: 'acme.com', lookups: 1, error: null, children: [] },
+            dkimRecords: { records: [], errors: [] },
+            bimiRecord: null, rblResults: [], awarenessResult: null
+        });
+        result.scoreCard = calculateScoreAndFindings(result);
         expect(result.scoreCard.cap).toEqual({ key: 'unverified', value: 94 });
         document.body.insertAdjacentHTML('beforeend', '<span id="score-number"></span><div id="score-breakdown-body"></div>');
         renderResults('acme.com', result);
@@ -297,6 +307,59 @@ describe('desglose: el tope de la nota se explica', () => {
         expect(note.textContent).toContain('94');
         expect(note.textContent).not.toContain('{cap}');
         expect(document.getElementById('score-number').textContent).toBe('94');
+    });
+});
+
+describe('v5: pastilla y hallazgo de filtrado entrante', () => {
+    beforeEach(buildDom);
+
+    const withMx = (...hosts) => {
+        const result = analyze(hosts.map((host, i) => ({ priority: 10 + i, host })), 'v=spf1 -all', 'v=DMARC1; p=reject; rua=mailto:a@acme.com', {
+            domain: 'acme.com', mtaSts: null, tlsRpt: null, srvRecords: {}, daneRecords: {}
+        });
+        Object.assign(result, {
+            spfLookups: 1,
+            spfTree: { domain: 'acme.com', lookups: 1, error: null, children: [] },
+            dkimRecords: { records: [], errors: [] },
+            bimiRecord: null, rblResults: [], awarenessResult: null
+        });
+        result.scoreCard = calculateScoreAndFindings(result);
+        return result;
+    };
+    const chips = () => [...document.querySelectorAll('.score-card__title .score-card__chip')];
+
+    it('con Proofpoint en el MX: pastilla verde con el vendor y hallazgo en la tarjeta', () => {
+        renderResults('acme.com', withMx('mxa-1.gslb.pphosted.com'));
+        expect(chips()).toHaveLength(3);
+        const chip = chips()[1];
+        expect(chip.textContent).toBe('Filtrado: Reforzado · Proofpoint');
+        expect(chip.classList.contains('tag--safe')).toBe(true);
+        expect(document.getElementById('score-findings').textContent)
+            .toContain('Capa extra de seguridad detectada: Proofpoint');
+    });
+
+    it('con el MX directo a Microsoft 365: pastilla ámbar "Solo nativo"', () => {
+        renderResults('acme.com', withMx('acme-com.mail.protection.outlook.com'));
+        const chip = chips()[1];
+        expect(chip.textContent).toBe('Filtrado: Solo nativo · Microsoft 365');
+        expect(chip.classList.contains('tag--warning')).toBe(true);
+    });
+
+    it('el informe exportado lleva la línea de filtrado entrante', () => {
+        state.currentResult = withMx('mxa-1.gslb.pphosted.com');
+        state.currentDomain = 'acme.com';
+        const container = document.createElement('div');
+        container.innerHTML = generateReportHTML().toString();
+        const text = container.textContent;
+        expect(text).toContain('Filtrado entrante: Reforzado · Proofpoint (100/100)');
+        expect(text).toContain('Capa extra de seguridad detectada: Proofpoint');
+    });
+
+    it('el desglose enseña el peso de cada eje', () => {
+        document.body.insertAdjacentHTML('beforeend', '<div id="score-breakdown-body"></div>');
+        renderResults('acme.com', withMx('mxa-1.gslb.pphosted.com'));
+        const shares = [...document.querySelectorAll('#score-breakdown-body .score-cat__share')].map(e => e.textContent);
+        expect(shares).toEqual(['60 % de la nota', '25 % de la nota', '15 % de la nota']);
     });
 });
 

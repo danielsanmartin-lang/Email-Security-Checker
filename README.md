@@ -31,7 +31,7 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 * **Multilingüe y accesible:** Interfaz completa en Español, Inglés y Alemán con persistencia por `localStorage`, `<html lang>` y `aria-label` sincronizados, regiones `aria-live`, etiquetas de formulario para lector de pantalla, **tooltips accesibles por teclado** (foco, Escape, `aria-describedby`), modales con trampa de foco y contraste WCAG AA.
 * **Render progresivo:** Los resultados principales se muestran de inmediato; el panel de Awareness (lo más lento, por los CT logs) se rellena solo al terminar, sin bloquear la vista.
 
-* **Puntuación en dos ejes (v4):** la nota principal contesta a *¿se puede suplantar este dominio?*: DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10. Sin DMARC en enforcement no pasa de 45 (D), y A+ exige tenerlo todo verificado. El **transporte** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20) va aparte y solo se evalúa si el dominio tiene MX: un transporte ejemplar no compensa un dominio suplantable, ni al revés. `~all` vale lo mismo que `-all` con enforcement (RFC 9989 §7.1), una clave DKIM revocada no resta y BIMI no puntúa. Los controles que no se pueden medir desde fuera (DKIM no detectado) **salen del denominador**, con **desglose visible** de cada control.
+* **Puntuación del ecosistema de correo (v5):** el anillo mide la protección de todo el correo del dominio en tres ejes con peso: **suplantación 60** (DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10), **filtrado entrante 25** (SEG en el MX o ICES detectado: 100; MX directo a Microsoft 365 o Google, solo nativo: 50; MX propio o desconocido: sin evaluar) y **transporte 15** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20). Cada eje tiene su pastilla en la tarjeta ("Filtrado: Reforzado · Proofpoint"). Un eje que no aplica o no se puede evaluar sale de la media y los demás se reparten su peso. Sin DMARC en enforcement la nota no pasa de 45 (D), y A+ exige la suplantación verificada del todo y, en la práctica, gateway y buen transporte. `~all` vale lo mismo que `-all` con enforcement (RFC 9989 §7.1), una clave DKIM revocada no resta y BIMI no puntúa. Lo que no se puede medir desde fuera **no resta**, con **desglose visible** de cada control y del peso de cada eje.
 * **Visor de informes agregados DMARC (RUA):** arrastra un `.xml`, `.xml.gz` o `.zip` y obtén quién envía en nombre del dominio, con qué volumen y qué porcentaje autentica. Descompresión y parseo **en el navegador**, sin subir el fichero a ningún sitio.
 * **Ajustes de privacidad:** resolver DoH elegible (Google / Cloudflare / Quad9 / propio), proxy CORS público **opt-in** y botón de refresco forzado que salta la caché de 5 minutos.
 * **Instalable (PWA) y sin terceros para renderizar:** service worker del *app shell*, tipografías autoalojadas y CSP declarada.
@@ -210,7 +210,17 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 > El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
 
-### v4.0.0 — DMARCbis, puntuación en dos ejes y privacidad del auditor (Actual)
+### v5.0.0 — La nota mide el ecosistema de correo, con el filtrado entrante como eje (Actual)
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el anillo deja de medir
+solo la suplantación y pasa a medir la protección del ecosistema de correo, con suplantación
+(60), filtrado entrante (25) y transporte (15). Una capa extra de seguridad en el MX
+(Proofpoint, Mimecast…) o un ICES cuenta entera, el filtrado nativo de Microsoft 365 o
+Google la mitad, y un MX sin identificar no se evalúa. salesforce.com (Proofpoint) queda en
+87 (A); un dominio con la autenticación perfecta y el MX directo a Microsoft 365, en 73 (B).
+**Las notas de v5 no son comparables con las de v4.**
+
+### v4.0.0 — DMARCbis, puntuación en dos ejes y privacidad del auditor
 
 Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la nota deja de sumar
 transporte y marca a la autenticación y pasa a contestar si el dominio se puede suplantar,

@@ -235,6 +235,28 @@ export function postureText(t, posture) {
     return t[`posture_${posture.key}`] || posture.grade || '';
 }
 
+/**
+ * Estado del eje de filtrado entrante con lo que lo explica: "Reforzado · Proofpoint",
+ * "Solo nativo · Microsoft 365", "Sin identificar" o "No aplica". Compartido por la
+ * pastilla de la tarjeta y el informe exportado.
+ */
+export function filteringText(t, filtering) {
+    if (!filtering || !filtering.applicable) return t.transport_not_applicable;
+    if (filtering.state === 'reinforced') return `${t.filtering_reinforced} · ${filtering.vendors.join(', ')}`;
+    if (filtering.state === 'native') {
+        return filtering.provider ? `${t.filtering_native} · ${filtering.provider}` : t.filtering_native;
+    }
+    return t.filtering_unidentified;
+}
+
+/** Tono de la pastilla de filtrado: verde reforzado, ámbar solo nativo, gris el resto. */
+export function filteringTone(filtering) {
+    if (!filtering || !filtering.applicable) return 'unknown';
+    if (filtering.state === 'reinforced') return filtering.bypass ? 'warning' : 'safe';
+    if (filtering.state === 'native') return 'warning';
+    return 'unknown';
+}
+
 // Mapeo qualifier SPF → resultado de evaluación. Compartido por ui.js (clase CSS
 // spf-prefix--<kind>) y export.js (color). Antes estaba duplicado en ambos.
 const SPF_QUALIFIER_RESULT = {

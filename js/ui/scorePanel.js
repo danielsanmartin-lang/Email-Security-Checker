@@ -3,14 +3,14 @@
 import { html, raw } from '../utils.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
-import { resolveFindingText, postureText } from '../viewmodel.js';
+import { resolveFindingText, postureText, filteringText, filteringTone } from '../viewmodel.js';
 
 export function renderScorePanel(result) {
     const lang = getLanguage();
     const t = translations[lang];
 
     // Retrieve Security Score from result.scoreCard
-    const { score, grade, cardClass, findings, posture, transport } = result.scoreCard || { score: 0, grade: 'F', cardClass: 'danger', findings: [], posture: { key: 'unknown', class: 'warning' }, transport: null };
+    const { score, grade, cardClass, findings, posture, filtering, transport } = result.scoreCard || { score: 0, grade: 'F', cardClass: 'danger', findings: [], posture: { key: 'unknown', class: 'warning' }, filtering: null, transport: null };
 
     // Render Score UI
     const scoreCard = document.getElementById('score-card');
@@ -21,14 +21,18 @@ export function renderScorePanel(result) {
         if (titleEl) {
             const postureLabel = t.posture_label;
             const postureGrade = postureText(t, posture);
-            // La nota del anillo es la de SUPLANTACIÓN; el transporte se enseña aparte, con
-            // su propia letra o "no aplica" si el dominio no recibe correo.
+            // El anillo es la nota del ecosistema; cada eje tiene además su pastilla: el nivel
+            // de suplantación, la capa de filtrado (con el vendor) y la letra del transporte,
+            // o "no aplica" si el dominio no recibe correo.
+            const filteringChip = filtering
+                ? html` <span class="tag tag--${raw(filteringTone(filtering))} score-card__chip" title="${t.filtering_chip_hint}">${t.filtering_chip_label}: ${filteringText(t, filtering)}</span>`
+                : raw('');
             const transportText = !transport
                 ? ''
                 : transport.applicable ? `${t.transport_chip_label}: ${transport.grade}` : `${t.transport_chip_label}: ${t.transport_not_applicable}`;
             const transportTone = !transport || !transport.applicable ? 'unknown'
                 : (transport.grade === 'F' ? 'danger' : (transport.grade === 'D' || transport.grade === 'C') ? 'warning' : 'provider');
-            titleEl.innerHTML = html`${raw(t.score_title_panel)} <span class="tag tag--${raw(posture.class === 'safe' ? 'provider' : posture.class)} score-card__chip">${postureLabel}: ${postureGrade}</span>${transport ? html` <span class="tag tag--${raw(transportTone)} score-card__chip" title="${t.transport_chip_hint}">${transportText}</span>` : raw('')}`;
+            titleEl.innerHTML = html`${raw(t.score_title_panel)} <span class="tag tag--${raw(posture.class === 'safe' ? 'provider' : posture.class)} score-card__chip">${postureLabel}: ${postureGrade}</span>${filteringChip}${transport ? html` <span class="tag tag--${raw(transportTone)} score-card__chip" title="${t.transport_chip_hint}">${transportText}</span>` : raw('')}`;
         }
 
         const scoreNumberEl = document.getElementById('score-number');
@@ -102,12 +106,20 @@ export function renderScoreBreakdown(result) {
         return;
     }
 
+    // Peso efectivo del eje en la nota: los ejes que no cuentan reparten el suyo.
+    const shareOf = (cat) => (typeof cat.share !== 'number'
+        ? raw('')
+        : html`<span class="score-cat__share">${cat.share > 0 ? t.score_share.split('{share}').join(String(cat.share)) : t.score_share_excluded}</span>`);
+    const capLine = result.scoreCard.cap
+        ? html`<p class="score-cat__cap score-breakdown__cap">${(t[`score_cap_${result.scoreCard.cap.key}`] || '').split('{cap}').join(String(result.scoreCard.cap.value))}</p>`
+        : raw('');
+
     const categories = breakdown.map(cat => {
-        // Transporte en un dominio que no recibe correo: no es un 0, es que no aplica.
+        // Filtrado o transporte en un dominio que no recibe correo: no es un 0, es que no aplica.
         if (cat.applicable === false) {
             return html`<div class="score-cat score-cat--na">
                 <div class="score-cat__head">
-                    <span class="score-cat__name">${t[cat.labelKey] || cat.id}</span>
+                    <span class="score-cat__name">${t[cat.labelKey] || cat.id}${shareOf(cat)}</span>
                     <span class="score-cat__value">${t.transport_not_applicable}</span>
                 </div>
                 <p class="score-cat__desc">${t.finding_transport_not_applicable}</p>
@@ -132,15 +144,16 @@ export function renderScoreBreakdown(result) {
         });
         return html`<div class="score-cat">
             <div class="score-cat__head">
-                <span class="score-cat__name">${t[cat.labelKey] || cat.id}</span>
-                <span class="score-cat__value">${cat.earned}/${cat.max}</span>
+                <span class="score-cat__name">${t[cat.labelKey] || cat.id}${shareOf(cat)}</span>
+                <span class="score-cat__value">${cat.max > 0 ? `${cat.earned}/${cat.max}` : t.score_unevaluable}</span>
             </div>
             <div class="score-cat__bar"><span class="score-cat__fill score-cat__fill--${raw(tone)}" style="width:${pct}%"></span></div>
             <p class="score-cat__desc">${t[`${cat.labelKey}_desc`] || ''}</p>
-            ${cat.cap ? html`<p class="score-cat__cap">${(t[`score_cap_${cat.cap.key}`] || '').split('{cap}').join(String(cat.cap.value))}</p>` : raw('')}
             <ul class="score-checks">${checks}</ul>
         </div>`;
     });
 
-    body.innerHTML = html`<div class="score-breakdown__grid">${categories}</div>`;
+    // El desglose muestra las sumas sin topes; el motivo del tope va encima para que
+    // "97/100" junto a un anillo de 94 no parezca un error.
+    body.innerHTML = html`${capLine}<div class="score-breakdown__grid">${categories}</div>`;
 }
