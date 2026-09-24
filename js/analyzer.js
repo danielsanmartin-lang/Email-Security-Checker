@@ -381,11 +381,15 @@ export function detectSecurityLayers(signals = {}) {
  *                    detectado con confianza media o alta
  *   native         — todos los MX van directos a un proveedor (Microsoft 365, Google…)
  *   unidentified   — MX propio o desconocido: puede haber un gateway on-premise o uno que
- *                    el diccionario no conoce, así que no se evalúa (y no resta)
+ *                    el diccionario no conoce, así que se valora como neutro
  *   not_applicable — el dominio no recibe correo
  *
  * "native" no significa "sin protección extra": Defender for Office 365 o los ICES que
- * solo trabajan por API no dejan rastro en el DNS. Por eso pesa la mitad y no cero.
+ * solo trabajan por API no dejan rastro en el DNS, y el filtrado nativo de hoy compite
+ * con muchos gateways. Por eso vale 65 y no cero.
+ *
+ * `icesTokenOnly`: la capa reforzada es solo un ICES cuya única evidencia es un token TXT.
+ * El token prueba que hubo una cuenta, no que el producto esté filtrando hoy.
  *
  * De un SEG que aparece en el SPF, en un token TXT o en un selector DKIM pero no en el MX
  * no consta que filtre el correo entrante (suele usarse solo para el envío): se devuelve
@@ -394,10 +398,10 @@ export function detectSecurityLayers(signals = {}) {
  * ES PURA, como detectSecurityLayers.
  * @returns {{ state, vendors: string[], segVendors: string[], icesVendors: string[],
  *             provider: string|null, bypassMx: string[], outOfPathVendors: string[],
- *             unknownMx: string[] }}
+ *             unknownMx: string[], icesTokenOnly: boolean }}
  */
 export function classifyInboundFilter({ mxRecords = [], segList = [], icesList = [], nullMx = false, domain = '', orgDomain = null } = {}) {
-    const empty = { vendors: [], segVendors: [], icesVendors: [], provider: null, bypassMx: [], outOfPathVendors: [], unknownMx: [] };
+    const empty = { vendors: [], segVendors: [], icesVendors: [], provider: null, bypassMx: [], outOfPathVendors: [], unknownMx: [], icesTokenOnly: false };
     if (!mxRecords.length || nullMx) return { state: 'not_applicable', ...empty };
 
     const ids = mxRecords.map(mx => ({ host: mx.host, ...identifyMX(mx.host, domain, orgDomain) }));
@@ -409,10 +413,8 @@ export function classifyInboundFilter({ mxRecords = [], segList = [], icesList =
     const icesInMx = ids.filter(id => id.type === 'ices').map(id => id.name);
     // Los ICES trabajan por API sobre el buzón: no necesitan el MX. Cuentan si la
     // detección llega a confianza media.
-    const icesVendors = uniq([
-        ...icesInMx,
-        ...icesList.filter(s => !s.unconfirmed && s.level !== 'baja').map(s => s.name)
-    ]);
+    const icesDetected = icesList.filter(s => !s.unconfirmed && s.level !== 'baja');
+    const icesVendors = uniq([...icesInMx, ...icesDetected.map(s => s.name)]);
     const inPathCanon = new Set([...segVendors, ...icesVendors].map(canonVendor));
     const outOfPathVendors = uniq(segList
         .filter(s => !(s.evidence || []).some(e => e.signal === 'mx') && !inPathCanon.has(canonVendor(s.name)))
@@ -427,7 +429,9 @@ export function classifyInboundFilter({ mxRecords = [], segList = [], icesList =
         // Un MX que entrega directo al proveedor, al lado del gateway, es una puerta
         // trasera: basta con mandar el correo a ese MX para saltarse el filtro.
         const bypassMx = segVendors.length ? providerIds.map(id => id.host) : [];
-        return { ...base, state: 'reinforced', vendors: uniq([...segVendors, ...icesVendors]), bypassMx };
+        const tokenOnly = (s) => (s.evidence || []).length > 0 && s.evidence.every(e => e.signal === 'txt');
+        const icesTokenOnly = !segVendors.length && !icesInMx.length && icesDetected.every(tokenOnly);
+        return { ...base, state: 'reinforced', vendors: uniq([...segVendors, ...icesVendors]), bypassMx, icesTokenOnly };
     }
     if (providerIds.length === ids.length) return { ...base, state: 'native' };
     return { ...base, state: 'unidentified' };
@@ -588,9 +592,10 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
 // ninguna gran empresa despliega. Por eso la suplantación manda y el transporte pesa poco.
 //
 // Cada eje se normaliza sobre lo que se ha podido EVALUAR (ver `unevaluable`), y un eje
-// que no se puede evaluar o no aplica (un dominio sin MX no tiene ni filtrado ni
-// transporte) sale de la media: los demás se reparten su peso. BIMI no puntúa: es marca,
-// no seguridad.
+// que no aplica (un dominio sin MX no tiene ni filtrado ni transporte) sale de la media:
+// los demás se reparten su peso. El filtrado de un MX sin identificar NO sale: se valora
+// como neutro, porque si saliera, ser opaco puntuaría mejor que ser transparente. BIMI no
+// puntúa: es marca, no seguridad.
 export const SCORE_CATEGORIES = {
     antispoof: { max: 100, weight: 60, labelKey: 'score_cat_antispoof' },
     filtering: { max: 100, weight: 25, labelKey: 'score_cat_filtering' },
@@ -646,9 +651,11 @@ export const SCORE_WEIGHTS = {
     dmarcExternalUnauthorized: -4,
     dmarcRuaTooMany: -1,
     // --- Filtrado entrante (100) ---
-    filterReinforced: 100,      // SEG en el MX, o ICES detectado
+    filterReinforced: 100,      // SEG en el MX, o ICES con evidencia más allá de un token
+    filterIcesToken: 85,        // ICES cuya única evidencia es un token TXT de verificación
     filterBypass: 75,           // gateway, pero con un MX que entrega directo al proveedor
-    filterNative: 50,           // solo el filtrado del proveedor: no es cero, pero es la base
+    filterNative: 65,           // solo el filtrado del proveedor: real, pero sin segunda capa
+    filterUnidentified: 65,     // MX propio o desconocido: neutro, igual que el nativo
     // --- Transporte (100) ---
     mtaStsEnforce: 36,
     mtaStsMaxAgeOk: 4,
@@ -661,21 +668,46 @@ export const SCORE_WEIGHTS = {
     dane: 20
 };
 
+// Cortes de las letras, de mejor a peor: una nota es de la primera banda cuyo `min`
+// alcanza.
+//
+// Calibrados el 2026-09-24 con 61 dominios de grandes empresas españolas y europeas
+// (scripts/calibrate.mjs). Reparto: A+ 0, A 12 (20 %), B 37 (61 %), C 1, D 10, F 1.
+// Los cortes caen en los huecos naturales de la distribución:
+//   A ≥ 85 — suplantación resuelta y una capa extra de filtrado (o transporte fuerte)
+//   B 70–84 — lo habitual: suplantación resuelta con filtrado nativo o sin transporte
+//             (el grupo más denso está en 72–76, y nada cae entre 61 y 71)
+//   D 40–54 — casi siempre el techo de 45 por no tener DMARC en enforcement
+// Cortar por percentiles (A = el 25 % mejor, B hasta el 60 %) partía esos grupos por
+// diferencias triviales —74 frente a 76 es una clave DKIM de 1024 bits—, así que no se
+// hizo. A+ queda como banda excepcional: ningún dominio de la muestra la alcanza.
+export const GRADE_BANDS = [
+    { grade: 'A+', min: 95 },
+    { grade: 'A', min: 85 },
+    { grade: 'B', min: 70 },
+    { grade: 'C', min: 55 },
+    { grade: 'D', min: 40 },
+    { grade: 'F', min: 0 }
+];
+const bandMin = (grade) => GRADE_BANDS.find(b => b.grade === grade).min;
+// La muestra con la que se calibraron los cortes, para poder explicar qué significa cada
+// letra (reparto en % de la muestra, redondeado).
+export const GRADE_CALIBRATION = {
+    date: '2026-09-24',
+    sample: 61,
+    shares: { 'A+': 0, A: 20, B: 61, C: 2, D: 16, F: 2 }
+};
+
 // Techo de la nota sin DMARC en enforcement: sin él, cualquiera puede poner el dominio en
 // el From visible y los receptores no lo bloquean por DMARC. Un gateway o un transporte
-// ejemplares no lo compensan.
-const NO_ENFORCEMENT_CAP = 45;
+// ejemplares no lo compensan. Tiene que caer dentro de la banda D.
+export const NO_ENFORCEMENT_CAP = 45;
 // Techo cuando la suplantación no se ha podido VERIFICAR del todo: A+ exige evidencia
-// completa.
-const UNVERIFIED_CAP = 94;
+// completa. Se deriva del corte de A+ para que no se descuadre si los cortes cambian.
+export const UNVERIFIED_CAP = bandMin('A+') - 1;
 
 export function letterGrade(score) {
-    if (score >= 95) return 'A+';
-    if (score >= 85) return 'A';
-    if (score >= 70) return 'B';
-    if (score >= 55) return 'C';
-    if (score >= 40) return 'D';
-    return 'F';
+    return (GRADE_BANDS.find(b => score >= b.min) || GRADE_BANDS[GRADE_BANDS.length - 1]).grade;
 }
 
 /** ¿El dominio recibe correo? Sin MX (o con Null MX), nada de transporte le aplica. */
@@ -894,6 +926,20 @@ const SCORE_CHECKS = [
         // ningún receptor pueda evaluar el SPF: vale lo mismo que no tenerlo.
         if (permError) points = 0;
         return { points: Math.max(0, points), findings };
+    },
+
+    // Superficie de envío: cuántos servicios de terceros puede usar cualquiera con acceso a
+    // ellos para enviar como el dominio y pasar el SPF. No puntúa (tenerlos no es un fallo),
+    // pero cada uno es una cuenta más que proteger.
+    function senderSurface(result) {
+        const names = [...new Set((result.spfServices || []).map(s => s.name).filter(Boolean))];
+        if (!names.length) return { points: 0, findings: [] };
+        const MAX_LISTED = 8;
+        const listed = names.length > MAX_LISTED ? `${names.slice(0, MAX_LISTED).join(', ')}…` : names.join(', ');
+        return {
+            points: 0,
+            findings: [{ status: 'info', key: 'finding_sender_surface', replacements: { '{count}': String(names.length), '{services}': listed } }]
+        };
     },
 
     function dmarc(result) {
@@ -1206,16 +1252,20 @@ const SCORE_CHECKS = [
                 });
                 return { points: SCORE_WEIGHTS.filterBypass, findings };
             }
+            if (f.icesTokenOnly) {
+                findings.push({ status: 'info', key: 'finding_filter_ices_token' });
+                return { points: SCORE_WEIGHTS.filterIcesToken, findings };
+            }
             return { points: SCORE_WEIGHTS.filterReinforced, findings };
         }
         if (f.state === 'native') {
             findings.push({ status: 'info', key: 'finding_filter_native', replacements: { '{provider}': f.provider || '' } });
             return { points: SCORE_WEIGHTS.filterNative, findings };
         }
-        // MX propio o desconocido: puede haber un gateway que el DNS no delata. Ni suma ni
-        // resta: queda fuera de la media.
+        // MX propio o desconocido: puede haber un gateway que el DNS no delata. Se valora
+        // como neutro, igual que el nativo: ni premia ni castiga no dejarse ver.
         findings.push({ status: 'info', key: 'finding_filter_unidentified', replacements: { '{hosts}': list(f.unknownMx) } });
-        return { points: 0, unevaluable: true, findings };
+        return { points: SCORE_WEIGHTS.filterUnidentified, findings };
     },
 
     function bimi(result) {
@@ -1545,6 +1595,9 @@ export function calculateScoreAndFindings(result) {
         ? counted.reduce((sum, c) => sum + (c.earned / c.max) * 100 * c.weight, 0) / totalWeight
         : 0;
     let score = Math.round(weighted);
+    // La media sin redondear ni topes, con dos decimales: es lo que enseña la fórmula del
+    // apartado "¿Cómo se calcula la nota?".
+    const weightedRaw = Math.round(weighted * 100) / 100;
 
     const enforced = isEnforcedOf(ev);
     // Sin enforcement, cualquiera suplanta el From visible, y ni un gateway ni un
@@ -1594,6 +1647,7 @@ export function calculateScoreAndFindings(result) {
         score,
         grade,
         cap,
+        weighted: weightedRaw,
         cardClass: cardClassOf(grade),
         findings,
         posture,

@@ -2030,3 +2030,54 @@ span.tooltip-trigger.spf-tree-error { cursor: help; text-decoration: underline d
     font-family: 'JetBrains Mono', monospace;
     word-break: break-word;
 }
+
+/* ===== v5.1: dominios parecidos ===== */
+.panel__badge--warning { background: rgba(245,158,11,0.15); color: var(--accent-amber); }
+.lookalike-intro { margin: 0 0 12px; font-size: 0.82rem; line-height: 1.5; color: var(--text-secondary); }
+.lookalike-note { margin: 10px 0 0; font-size: 0.75rem; color: var(--text-muted); }
+.lookalike-table-wrap { overflow-x: auto; }
+.lookalike-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.lookalike-table th {
+    text-align: left; padding: 8px 10px; font-size: 0.68rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-muted); font-weight: 700;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.lookalike-table td { padding: 8px 10px; border-bottom: 1px solid rgba(99,102,241,0.06); vertical-align: middle; }
+.lookalike-table tr:last-child td { border-bottom: none; }
+.lookalike-domain, .lookalike-mx { font-family: var(--font-mono); font-size: 0.78rem; word-break: break-all; }
+.lookalike-kind { padding: 2px 8px; border-radius: 100px; font-size: 0.68rem; font-weight: 600; white-space: nowrap; }
+
+/* ===== v5.1: cómo se calcula la nota ===== */
+.score-breakdown__actions { display: flex; align-items: center; gap: 12px; padding-right: 12px; }
+.score-breakdown__actions .score-breakdown__toggle { flex: 1; width: auto; }
+.score-method-btn {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 12px; font: inherit; font-size: 0.8rem; font-weight: 600;
+    color: var(--accent-indigo); cursor: pointer;
+}
+.score-method-btn:hover { background: rgba(99,102,241,0.08); }
+.score-method-btn:focus-visible { outline: 2px solid var(--accent-indigo); outline-offset: 2px; }
+.score-method { max-height: 75vh; overflow-y: auto; }
+.score-method h4 { margin: 20px 0 8px; font-size: 15px; color: var(--text-primary); }
+.score-method h4:first-child { margin-top: 0; }
+.score-method p { margin: 0 0 10px; font-size: 0.85rem; line-height: 1.55; color: var(--text-secondary); }
+.score-method__formula {
+    margin: 0 0 10px; padding: 12px 14px; border-radius: 8px;
+    background: rgba(99,102,241,0.08); font-family: var(--font-mono); font-size: 0.8rem;
+    line-height: 1.6; color: var(--text-primary); overflow-wrap: anywhere;
+}
+.score-method__axis { margin: 14px 0 4px; font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
+.score-method__table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-bottom: 6px; }
+.score-method__table th {
+    text-align: left; padding: 6px 8px; font-size: 0.66rem; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.score-method__table td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid rgba(99,102,241,0.06); color: var(--text-secondary); line-height: 1.45; }
+.score-method__table td:first-child { color: var(--text-primary); }
+.score-method__points { font-family: var(--font-mono); white-space: nowrap; text-align: right; }
+.score-method ul { margin: 0 0 10px; padding-left: 18px; font-size: 0.85rem; line-height: 1.55; color: var(--text-secondary); }
+.score-method li { margin-bottom: 4px; }
+.score-method__grade { font-weight: 700; color: var(--text-primary); }
+

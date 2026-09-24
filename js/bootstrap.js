@@ -135,6 +135,27 @@ export function init() {
         }
     }, opts);
 
+    // "¿Cómo se calcula la nota?": el contenido ya lo pinta renderResults (y lo traduce al
+    // cambiar de idioma); aquí solo se abre y se cierra. Escape y la trampa de foco son los
+    // genéricos de arriba.
+    const methodBtn = document.getElementById('score-method-btn');
+    const methodModal = document.getElementById('score-method-modal');
+    if (methodBtn && methodModal) {
+        const closeMethod = () => {
+            methodModal.classList.add('hidden');
+            methodBtn.focus();
+        };
+        methodBtn.addEventListener('click', () => {
+            methodModal.classList.remove('hidden');
+            const close = document.getElementById('score-method-close');
+            if (close) close.focus();
+        }, opts);
+        const methodClose = document.getElementById('score-method-close');
+        const methodOverlay = document.getElementById('score-method-overlay');
+        if (methodClose) methodClose.addEventListener('click', closeMethod, opts);
+        if (methodOverlay) methodOverlay.addEventListener('click', closeMethod, opts);
+    }
+
     // DKIM UI Logic
     const dkimToggleBtn = document.getElementById('dkim-toggle-btn');
     const dkimCollapsible = document.getElementById('dkim-collapsible');

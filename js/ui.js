@@ -7,7 +7,9 @@ import { getLanguage } from './lang.js';
 import { renderReputation } from './ui/reputationPanel.js';
 import { renderAdvancedDNS } from './ui/advancedDnsPanel.js';
 import { renderAwarenessVendors, analyzeHeaders } from './ui/awarenessPanel.js';
-export { renderReputation, renderAdvancedDNS, renderAwarenessVendors, analyzeHeaders };
+import { renderLookalikes } from './ui/lookalikePanel.js';
+import { renderScoreMethod } from './ui/scoreMethod.js';
+export { renderReputation, renderAdvancedDNS, renderAwarenessVendors, analyzeHeaders, renderLookalikes, renderScoreMethod };
 import { renderScorePanel, renderScoreBreakdown } from './ui/scorePanel.js';
 import { renderSummaryPanel } from './ui/summaryPanel.js';
 import { renderMxPanel, renderProviderPanel, renderSecurityLayersPanel } from './ui/mxPanel.js';
@@ -280,4 +282,7 @@ export function renderResults(domain, result) {
     renderReputation(result.rblResults, lang, t);
     renderAdvancedDNS(result, lang, t);
     renderAwarenessVendors(result.awarenessResult || null, lang, t);
+    // undefined = la búsqueda sigue en marcha; null = falló (ver lookalikePanel.js).
+    renderLookalikes(result.lookalikeResult);
+    renderScoreMethod(result);
 }

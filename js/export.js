@@ -27,7 +27,9 @@ import {
     spfQualifierResult,
     rblCheckStatus,
     postureText,
-    filteringText
+    filteringText,
+    scoreFormula,
+    gradeMeaning
 } from './viewmodel.js';
 
 // Árbol de lookups SPF en tema claro (para el informe exportado, no la UI oscura).
@@ -259,6 +261,45 @@ export function generateReportHTML() {
             ? `${count} ${count === 1 ? t.report_detected_one : t.detected_plural} (${escapeHtml(ar.detectedVendors.map(v => v.displayName).join(', '))})`
             : t.report_none_detected_dns;
         awarenessSummaryLine = `<li><strong>${t.report_awareness_platforms}:</strong> ${valText}</li>`;
+    }
+
+    // Cómo se ha calculado la nota de este dominio: la misma cuenta que el apartado de la
+    // interfaz, para que quien lea el informe pueda comprobarla.
+    let methodHtml = '';
+    const formula = scoreFormula(t, currentResult.scoreCard, getLocale(lang));
+    if (formula) {
+        methodHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🧮 ${t.method_report_title}</h2>`
+            + `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(t.method_what_body)}</p>`
+            + (formula.formula ? `<p style="font-family: monospace; font-size: 12.5px; background-color: #eef2ff; color: #1e293b; padding: 10px 12px; border-radius: 6px;">${escapeHtml(formula.formula)}</p>` : '')
+            + (formula.cap ? `<p style="font-family: sans-serif; font-size: 13px; color: #b45309;">${escapeHtml(t.method_this_cap)} ${escapeHtml(formula.cap)}</p>` : '')
+            + `<p style="font-family: sans-serif; font-size: 13px; color: #334155;"><strong>${escapeHtml(formula.final)}</strong> — ${escapeHtml(gradeMeaning(t, currentResult.scoreCard.grade))}</p>`;
+    }
+
+    // Dominios parecidos: solo si la búsqueda terminó. Se listan los ajenos con MX, que
+    // son los que pueden usarse para el fraude; del resto basta el recuento.
+    let lookalikeHtml = '';
+    let lookalikeSummaryLine = '';
+    const lk = currentResult.lookalikeResult;
+    if (lk && Array.isArray(lk.found)) {
+        const withMx = lk.found.filter(f => f.kind === 'mx');
+        lookalikeSummaryLine = `<li><strong>${t.report_lookalike_label}:</strong> ${withMx.length}</li>`;
+        const rows = lk.found.map(f => `<tr>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.domain)}</td>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHtml(t[`lookalike_technique_${f.technique}`] || f.technique)}</td>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.mx[0] || '—')}</td>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${f.kind === 'mx' ? '#b45309' : '#64748b'};">${escapeHtml(t[`lookalike_kind_${f.kind}`] || f.kind)}</td>
+            </tr>`).join('');
+        lookalikeHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🔎 ${t.panel_lookalike_title}</h2>`
+            + `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(t.lookalike_intro.split('{checked}').join(String(lk.checked)))}</p>`
+            + (lk.found.length
+                ? `<table border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 12.5px; text-align: left;">
+                    <tr style="background-color: #312e81; color: #ffffff;">
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_domain}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_technique}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_mx}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_status}</th>
+                    </tr>${rows}</table>`
+                : `<p style="font-family: sans-serif; font-size: 13px; color: #64748b;">${escapeHtml(t.lookalike_none)}</p>`);
     }
 
     const providerDisplay = displayProvider(currentResult, t);
@@ -580,13 +621,17 @@ export function generateReportHTML() {
                 <li><strong>${t.summary_dmarc}:</strong> ${dmarcPolicyText}</li>
                 <li><strong>${authorizedServicesLabel}:</strong> ${currentResult.spfServices.length} ${currentResult.spfServices.length === 1 ? (t.detected_singular || t.detected_plural) : t.detected_plural}</li>
                 ${awarenessSummaryLine}
+                ${lookalikeSummaryLine}
                 <li><strong>${rblSummaryLabel}:</strong> ${rblStatusVal}</li>
             </ul>
+
+            ${methodHtml}
 
             ${mailHostingHtml}
             ${segHtml}
             ${servicesHtml}
             ${awarenessHtml}
+            ${lookalikeHtml}
 
             <!-- MX Records Section -->
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">✉️ 1. ${t.panel_mx_title}</h2>

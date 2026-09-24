@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyze, extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, classifyInboundFilter, identifyTXTVerifications, identifyMX, isSameBrand } from './analyzer.js';
+import { analyze, extractRootDomain, calculateScoreAndFindings, collectSpfDomains, collectSpfTreeIssues, detectSecurityLayers, classifyInboundFilter, identifyTXTVerifications, identifyMX, isSameBrand, letterGrade, GRADE_BANDS, NO_ENFORCEMENT_CAP, UNVERIFIED_CAP } from './analyzer.js';
 
 describe('collectSpfDomains', () => {
     it('aplana includes/redirects de todo el árbol SPF', () => {
@@ -642,7 +642,12 @@ describe('scoring por categorías ponderadas', () => {
         daneRecords: { 'mx.d.com': ['x'] },
         dnssec: { signed: true },
         srvRecords: {},
-        segList: [], icesList: []
+        segList: [], icesList: [],
+        // Con una capa extra en el MX: sin ella el filtrado no llega al máximo.
+        inboundFilter: {
+            state: 'reinforced', vendors: ['Mimecast'], segVendors: ['Mimecast'], icesVendors: [],
+            provider: null, bypassMx: [], outOfPathVendors: [], unknownMx: [], icesTokenOnly: false
+        }
     });
 
     it('un dominio completo llega a 100 / A+', () => {
@@ -661,12 +666,16 @@ describe('scoring por categorías ponderadas', () => {
         expect(card.totalMax).toBe(100);
     });
 
-    it('un MX sin identificar deja el filtrado fuera de la media y reparte su peso', () => {
-        const card = calculateScoreAndFindings(strong());
+    it('un MX sin identificar se valora como neutro (65) y sigue contando en la media', () => {
+        const sinCapa = strong();
+        delete sinCapa.inboundFilter;
+        const card = calculateScoreAndFindings(sinCapa);
         const filtering = card.breakdown.find(c => c.id === 'filtering');
-        expect(card.filtering).toMatchObject({ applicable: true, state: 'unidentified', evaluable: false, score: null });
-        expect(filtering.counted).toBe(false);
-        expect(card.breakdown.map(c => c.share)).toEqual([80, 0, 20]);
+        expect(card.filtering).toMatchObject({ applicable: true, state: 'unidentified', evaluable: true, score: 65 });
+        expect(filtering.counted).toBe(true);
+        expect(card.breakdown.map(c => c.share)).toEqual([60, 25, 15]);
+        // 0,60·100 + 0,25·65 + 0,15·100 = 91,25
+        expect(card.score).toBe(91);
     });
 
     it('el transporte cuenta en la nota, pero pesa poco', () => {
@@ -675,9 +684,9 @@ describe('scoring por categorías ponderadas', () => {
         });
         expect(card.antispoof.score).toBe(100);
         expect(card.transport.grade).toBe('F');
-        // 60·100 / (60 + 15): el filtrado no cuenta (MX sin identificar).
-        expect(card.score).toBe(80);
-        expect(card.grade).toBe('B');
+        // 0,60·100 + 0,25·100 + 0,15·0 = 85: el transporte a cero cuesta una letra como mucho.
+        expect(card.score).toBe(85);
+        expect(card.grade).toBe('A');
     });
 
     it('DMARC p=none no puede alcanzar A/A+ por muchos extras que tenga', () => {
@@ -1209,7 +1218,7 @@ describe('v5: calibración con dominios medidos', () => {
             ] } });
         expect(c).toMatchObject({ score: 45, grade: 'D', level: 'spoofable', cap: { key: 'no_enforcement', value: 45 } });
         expect(c.transport).toMatchObject({ applicable: true, grade: 'F' });
-        expect(c.filtering).toMatchObject({ state: 'native', provider: 'Microsoft 365', score: 50 });
+        expect(c.filtering).toMatchObject({ state: 'native', provider: 'Microsoft 365', score: 65 });
     });
 
     it('support.apple.com: sin MX ni SPF, cubierto por sp=reject de apple.com (A, transporte no aplica)', () => {
@@ -1239,7 +1248,7 @@ describe('v5: calibración con dominios medidos', () => {
         expect(c.transport.grade).toBe('F');
     });
 
-    it('posteo.de: transporte ejemplar no compensa un DMARC en none (F / transporte A)', () => {
+    it('posteo.de: transporte ejemplar no compensa un DMARC en none (D / transporte A)', () => {
         const daneRecords = { 'mx01.posteo.de': ['3 1 1 abc'] };
         const c = card(mx('mx03.posteo.de', 'mx01.posteo.de'), 'v=spf1 ip4:185.67.36.0/23 ip6:2a05:bc0:1000::/47 ~all',
             'v=DMARC1; p=none; sp=quarantine; adkim=s; aspf=s', {
@@ -1248,8 +1257,9 @@ describe('v5: calibración con dominios medidos', () => {
                 mtaSts: { record: 'v=STSv1; id=1', policy: { valid: false, validationReason: 'not_fetched' } },
                 tlsRpt: { record: 'v=TLSRPTv1; rua=mailto:tlsrpt@posteo.de', rua: ['mailto:tlsrpt@posteo.de'] }
             }, { spfLookups: 0 });
-        // MX propio: el filtrado no cuenta. (0,60·26 + 0,15·85) / 0,75 = 38.
-        expect(c).toMatchObject({ score: 38, grade: 'F', level: 'spoofable' });
+        // MX propio, filtrado neutro: 0,60·26 + 0,25·65 + 0,15·85 = 44,6. Con p=none no
+        // podría pasar de 45 de todos modos.
+        expect(c).toMatchObject({ score: 45, grade: 'D', level: 'spoofable' });
         expect(c.filtering.state).toBe('unidentified');
         expect(c.transport).toMatchObject({ applicable: true, score: 85, grade: 'A' });
     });
@@ -1264,9 +1274,9 @@ describe('v5: calibración con dominios medidos', () => {
                 { selector: 'selector1', record: `v=DKIM1; k=rsa; p=${RSA_2048}` },
                 { selector: 'selector2', record: `v=DKIM1; k=rsa; p=${RSA_2048}` }
             ] } });
-        // 0,60·100 + 0,25·50 + 0,15·50 = 80.
+        // 0,60·100 + 0,25·65 + 0,15·50 = 83,75.
         expect(c.antispoof.score).toBe(100);
-        expect(c).toMatchObject({ score: 80, grade: 'B', level: 'protected', cap: null });
+        expect(c).toMatchObject({ score: 84, grade: 'B', level: 'protected', cap: null });
         expect(c.filtering).toMatchObject({ state: 'native', provider: 'Microsoft 365' });
         expect(c.transport.grade).toBe('D');
     });
@@ -1297,7 +1307,7 @@ describe('v5: calibración con dominios medidos', () => {
         const m365 = card(mx('example-com.mail.protection.outlook.com'), ...auth, { domain: 'example.com' }, dkim);
         expect(pp.antispoof.score).toBe(m365.antispoof.score);
         expect(pp.score).toBe(85);
-        expect(m365.score).toBe(73);
+        expect(m365.score).toBe(76); // 0,60·100 + 0,25·65
         expect(m365.grade).toBe('B');
         const native = m365.findings.find(f => f.key === 'finding_filter_native');
         expect(native).toMatchObject({ status: 'info', replacements: { '{provider}': 'Microsoft 365' } });
@@ -1476,8 +1486,8 @@ describe('v5: la nota del ecosistema', () => {
 
     it('con filtrado solo nativo no se llega a A+ aunque todo lo demás sea perfecto', () => {
         const c = card([M365], REJECT, fullTransport(M365));
-        // 0,60·100 + 0,25·50 + 0,15·100 = 87,5
-        expect(c.score).toBe(88);
+        // 0,60·100 + 0,25·65 + 0,15·100 = 91,25
+        expect(c.score).toBe(91);
         expect(c.grade).toBe('A');
     });
 
@@ -1513,10 +1523,62 @@ describe('v5: la nota del ecosistema', () => {
         expect(c.breakdown.find(b => b.id === 'filtering').checks[0]).toMatchObject({ notApplicable: true });
     });
 
-    it('un MX sin identificar no resta: la nota es la misma que sin el eje', () => {
-        const c = card(['mx1.acme.com'], REJECT);
-        expect(c.filtering.state).toBe('unidentified');
-        expect(c.findings.some(f => f.key === 'finding_filter_unidentified' && f.status === 'info')).toBe(true);
-        expect(c.breakdown.find(b => b.id === 'filtering').counted).toBe(false);
+    it('un MX sin identificar puntúa igual que uno directo a Microsoft 365: ser opaco no premia', () => {
+        const opaco = card(['mx1.acme.com'], REJECT);
+        const nativo = card([M365], REJECT);
+        expect(opaco.filtering.state).toBe('unidentified');
+        expect(opaco.findings.some(f => f.key === 'finding_filter_unidentified' && f.status === 'info')).toBe(true);
+        expect(opaco.breakdown.find(b => b.id === 'filtering').counted).toBe(true);
+        expect(opaco.score).toBe(nativo.score);
+    });
+
+    it('un ICES cuya única evidencia es un token TXT vale 85, no 100', () => {
+        const txtVerifications = [{ name: 'Abnormal Security', category: 'ices', record: 'abnormal-verification=x' }];
+        const soloToken = card([M365], REJECT, { txtVerifications });
+        expect(soloToken.filtering).toMatchObject({ state: 'reinforced', score: 85 });
+        expect(soloToken.findings.some(f => f.key === 'finding_filter_ices_token')).toBe(true);
+        // Con una segunda señal (selector DKIM del vendor) ya no es solo un token: 100.
+        const avanan = 'Avanan (Check Point Harmony Email)';
+        const conDkim = card([M365], REJECT, {
+            txtVerifications: [{ name: avanan, category: 'ices', record: 'avanan-verification=x' }],
+            dkimSelectors: ['avanan']
+        });
+        expect(conDkim.filtering).toMatchObject({ state: 'reinforced', vendors: [avanan], score: 100 });
+    });
+
+    it('la superficie de envío se informa sin puntuar', () => {
+        const pocos = card([M365], REJECT);
+        const muchos = calculateScoreAndFindings({
+            ...analyze([{ priority: 10, host: M365 }],
+                'v=spf1 include:spf.protection.outlook.com include:_spf.salesforce.com include:mail.zendesk.com include:servers.mcsv.net -all',
+                REJECT, { domain: 'acme.com', srvRecords: {} }),
+            spfLookups: 4,
+            dkimRecords: { records: [{ selector: 's1', record: `v=DKIM1; k=rsa; p=${RSA_2048}` }] }
+        });
+        const f = muchos.findings.find(x => x.key === 'finding_sender_surface');
+        expect(f.status).toBe('info');
+        expect(Number(f.replacements['{count}'])).toBeGreaterThanOrEqual(3);
+        expect(f.replacements['{services}']).toContain('Salesforce');
+        expect(muchos.antispoof.score).toBe(pocos.antispoof.score);
+    });
+});
+
+describe('v5.1: las letras y sus topes', () => {
+    it('GRADE_BANDS va de mejor a peor y cubre de 0 a 100', () => {
+        const mins = GRADE_BANDS.map(b => b.min);
+        expect(mins).toEqual([...mins].sort((a, b) => b - a));
+        expect(mins[mins.length - 1]).toBe(0);
+        expect(GRADE_BANDS.map(b => b.grade)).toEqual(['A+', 'A', 'B', 'C', 'D', 'F']);
+    });
+
+    it('letterGrade usa los cortes de GRADE_BANDS', () => {
+        for (const { grade, min } of GRADE_BANDS) expect(letterGrade(min)).toBe(grade);
+        expect(letterGrade(100)).toBe('A+');
+    });
+
+    it('el tope sin enforcement cae en D y el de verificación justo por debajo de A+', () => {
+        expect(letterGrade(NO_ENFORCEMENT_CAP)).toBe('D');
+        expect(letterGrade(UNVERIFIED_CAP)).toBe('A');
+        expect(letterGrade(UNVERIFIED_CAP + 1)).toBe('A+');
     });
 });
