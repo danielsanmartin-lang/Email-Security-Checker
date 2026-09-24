@@ -169,7 +169,7 @@ npm run lint       # ESLint sobre js/ (recommended, --max-warnings=0)
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**512 tests**, cobertura ~91 %) cubre el módulo de Awareness (fixtures DNS
+La suite (**531 tests**, cobertura ~91 %) cubre el módulo de Awareness (fixtures DNS
 mockeados), el análisis por cabeceras (`headerAnalyzer`), los parsers y validadores
 (`parseSPF` con índices, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`,
 `analyzeDKIMRecord` con RSA y Ed25519, `validateTlsRptRua`, `checkMtaStsMxCoverage`),
@@ -190,7 +190,9 @@ Además hay dos niveles de pruebas con **jsdom**:
   completitud del informe.
 * `integration.dom.test.js` — monta `index.html` de verdad con la capa DoH simulada y
   recorre el flujo completo (submit → análisis → render), el cambio de idioma, NXDOMAIN,
-  la validación de entrada y el descarte de análisis obsoletos.
+  la validación de entrada y el descarte de análisis obsoletos. Cada caso cablea la página
+  con `init()` de `bootstrap.js` y la desmonta con el `dispose()` que devuelve, en vez de
+  despachar `DOMContentLoaded`: así no hereda listeners ni URL de los casos anteriores.
 
 Cada push/PR ejecuta en CI mediante GitHub Actions:
 * **`ci.yml`** — lint (**bloqueante**) + tests con cobertura (**umbrales bloqueantes**) +

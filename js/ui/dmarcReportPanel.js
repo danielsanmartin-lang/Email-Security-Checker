@@ -81,8 +81,12 @@ export async function handleReportFile(file) {
     }
 }
 
-/** Cablea la zona de arrastre y el input de fichero. Se llama una sola vez. */
-export function initDmarcReportPanel() {
+/**
+ * Cablea la zona de arrastre y el input de fichero. Se llama una sola vez.
+ * @param {AddEventListenerOptions} [opts]  se pasan a cada addEventListener; con un
+ *   `signal`, abortarlo retira los listeners (es el dispose de bootstrap.js).
+ */
+export function initDmarcReportPanel(opts = {}) {
     const drop = document.getElementById('rua-dropzone');
     const input = document.getElementById('rua-file');
     if (!drop || !input) return;
@@ -95,18 +99,18 @@ export function initDmarcReportPanel() {
 
     const pick = (files) => { if (files && files[0]) handleReportFile(files[0]); };
 
-    drop.addEventListener('click', () => input.click());
+    drop.addEventListener('click', () => input.click(), opts);
     drop.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
-    });
-    input.addEventListener('change', () => pick(input.files));
+    }, opts);
+    input.addEventListener('change', () => pick(input.files), opts);
     ['dragenter', 'dragover'].forEach(evt => drop.addEventListener(evt, (e) => {
         e.preventDefault();
         drop.classList.add('rua-dropzone--active');
-    }));
+    }, opts));
     ['dragleave', 'drop'].forEach(evt => drop.addEventListener(evt, (e) => {
         e.preventDefault();
         drop.classList.remove('rua-dropzone--active');
-    }));
-    drop.addEventListener('drop', (e) => pick(e.dataTransfer?.files));
+    }, opts));
+    drop.addEventListener('drop', (e) => pick(e.dataTransfer?.files), opts);
 }

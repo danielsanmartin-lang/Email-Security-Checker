@@ -50,6 +50,17 @@ Hornetsecurity, un ICES…) por fin cuenta, y se dice en la tarjeta.
 - Trend Micro Email Security en regiones fuera de `.com` (`*.tmes.trendmicro.eu`) no se
   reconocía como gateway.
 
+### Calidad
+
+- **El test de integración deja de mezclar casos.** `document` y la URL sobreviven entre
+  tests, y despachar `DOMContentLoaded` reactivaba las instancias de `bootstrap.js` de los
+  tests anteriores: cada submit lo atendían todas, cada una con su copia de los ajustes, y
+  pintaba la que terminara la última. De ahí un fallo intermitente bajo `--coverage`. Ahora
+  `bootstrap.js` exporta `init()`, que devuelve un `dispose()`, y el test la llama a mano con
+  la URL limpia; en el navegador se sigue invocando en `DOMContentLoaded`. El test del ajuste
+  MTA-STS vuelve a comprobar el panel pintado, dos casos nuevos vigilan el aislamiento y
+  `bootstrap.dom.test.js` cubre el arranque real en `DOMContentLoaded`. Tests: 528 → **531**.
+
 ## [4.0.0] - 2026-09-23
 
 Dos cambios de fondo. El análisis DMARC se adapta a **RFC 9989, 9990 y 9991** (DMARCbis),
