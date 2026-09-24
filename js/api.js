@@ -2,6 +2,7 @@ import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, parseDMARC } 
 import { getSettings, resolverChain } from './settings.js';
 import { isValidDomain, extractRootDomain, isSameOrSubdomain } from './utils.js';
 import { treeWalkTargets, selectOrgDomain } from './dmarc.js';
+import { classifyLookalike, ownershipLinks, isDeliverableMx } from './lookalike.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -228,7 +229,12 @@ export async function checkDomainExists(domain) {
 }
 
 export async function getMX(domain) {
-    const data = await queryDNS(domain, 'MX');
+    return _parseMxAnswer(await queryDNS(domain, 'MX'));
+}
+
+// Respuesta DoH de un MX → hosts ordenados por prioridad (con .nullMx si es Null MX).
+// Compartido por getMX y checkLookalikes.
+function _parseMxAnswer(data) {
     const empty = [];
     if (!data.Answer) return empty;
     const raw = data.Answer
@@ -1250,4 +1256,51 @@ export async function getDkimSelectorChain(domain, selectors = ['selector1', 'se
         return out;
     }));
     return results;
+}
+
+/**
+ * Resuelve los dominios parecidos generados por lookalike.js: cuáles están registrados,
+ * cuáles pueden recibir correo (MX) y cuáles son, probablemente, del propio dominio.
+ *
+ * Usa queryDNS, así que respeta la piscina de consultas y la caché, y lo que se envía al
+ * resolver es lo mismo que en el resto del análisis: nombres de dominio. NXDOMAIN es
+ * "libre"; un SERVFAIL o un fallo de red no se da por registrado, se cuenta aparte.
+ *
+ * @param {Array<{domain, technique}>} candidates
+ * @param {{ domain: string, mx: string[], ns: string[] }} baseline el dominio auditado
+ * @returns {Promise<{ checked: number, found: Array, unresolved: number }>}
+ */
+export async function checkLookalikes(candidates, baseline) {
+    let unresolved = 0;
+    const found = [];
+    await Promise.all(candidates.map(async (candidate, index) => {
+        let data;
+        try {
+            data = await queryDNS(candidate.domain, 'MX');
+        } catch {
+            unresolved++;
+            return;
+        }
+        if (data && data.Status === 3) return; // NXDOMAIN: libre
+        const mx = _parseMxAnswer(data).map(r => r.host).filter(isDeliverableMx);
+        // Sin MX que entregue no puede recibir correo: basta con saber que está registrada,
+        // y no se gastan tres consultas más (con marcas muy imitadas son decenas).
+        if (!mx.length) {
+            found.push({ ...candidate, index, mx, ns: [], kind: 'registered' });
+            return;
+        }
+        // Para reconocer los registros defensivos: sus NS, y adónde apuntan su SPF y su
+        // DMARC. Un fallo en cualquiera de las tres solo deja la heurística con menos datos.
+        const txtOf = (name) => queryDNS(name, 'TXT')
+            .then(d => (d.Answer || []).filter(a => a.type === 16).map(a => extractTxtValue(a.data)))
+            .catch(() => []);
+        const [ns, txt, dmarc] = await Promise.all([getNS(candidate.domain), txtOf(candidate.domain), txtOf(`_dmarc.${candidate.domain}`)]);
+        const links = ownershipLinks(txt, dmarc);
+        found.push({ ...candidate, index, mx, ns, kind: classifyLookalike({ mx, ns, links }, baseline) });
+    }));
+    // Primero lo que puede recibir correo y no es del auditado; dentro de cada grupo, el
+    // orden de prioridad del generador.
+    const RANK = { mx: 0, registered: 1, own: 2 };
+    found.sort((a, b) => (RANK[a.kind] - RANK[b.kind]) || (a.index - b.index));
+    return { checked: candidates.length, found: found.map(({ index: _i, ...rest }) => rest), unresolved };
 }

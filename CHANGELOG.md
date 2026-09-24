@@ -3,6 +3,55 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [5.1.0] - 2026-09-24
+
+La nota se revisa para que sea más justa con lo que no se ve desde fuera, se calibra contra
+dominios reales y, sobre todo, se explica.
+
+### Cambiado: la nota
+
+- **Filtrado solo nativo: de 50 a 65.** Microsoft 365 o Google filtran de verdad, y hoy
+  compiten con muchos gateways. Defender for Office 365 y los ICES que trabajan por API no
+  dejan rastro en el DNS: la diferencia con un gateway en el MX se mantiene, pero ya no es un
+  castigo de letra.
+- **Un MX sin identificar ya no sale de la media: vale 65,** igual que el nativo. Al sacarlo,
+  su peso se repartía entre los otros ejes, y un dominio opaco podía puntuar más que uno que
+  va directo a Microsoft 365.
+- **Un ICES visto solo por un token TXT vale 85, no 100.** El token prueba que hubo una
+  cuenta, no que el producto filtre hoy. Con otra señal (MX o selector DKIM), 100.
+- **La tarjeta se llama "Postura de seguridad del correo"** y dice lo que no mide: la
+  eficacia real del filtrado y el factor humano no se ven en el DNS.
+- **Letras calibradas.** Se midieron 61 dominios de grandes empresas españolas y europeas
+  (`scripts/calibrate.mjs`, la lista no forma parte del repo). Reparto: A+ 0 %, A 20 %,
+  B 61 %, C 2 %, D 16 %, F 2 %. Los cortes (95 / 85 / 70 / 55 / 40) ya caían en los huecos
+  naturales de la distribución y se mantienen: cortar por percentiles partía grupos con la
+  misma postura por diferencias triviales (74 frente a 76 es una clave DKIM de 1024 bits).
+  El tope de A+ se deriva ahora de su corte.
+- **Recalibración:** microsoft.com de 78 a 82 (B); ncsc.gov.uk de 80 a 84 (B); un dominio
+  con autenticación perfecta y MX directo a Microsoft 365, de 73 a 76 (B). Los que tienen un
+  gateway no cambian (salesforce.com sigue en 87).
+
+### Añadido
+
+- **"¿Cómo se calcula la nota?"**: un botón junto al desglose abre un apartado con la cuenta
+  del dominio analizado ("Suplantación 97 × 60 % + Filtrado entrante 100 × 25 % + Transporte
+  25 × 15 % = 86,95"), los puntos de cada regla y por qué, los topes, qué significa cada letra
+  y lo que se informa sin puntuar. Los números salen de las constantes del motor, así que no
+  se desfasan. En español, inglés y alemán, y se traduce al cambiar de idioma aunque esté
+  abierto. Los informes exportados llevan la misma cuenta.
+- **Dominios parecidos (typosquatting)**, en segundo plano como el panel de awareness: hasta
+  80 variantes (otro TLD, país en el nombre, homoglifos, letras omitidas, cambiadas o
+  repetidas, guion). Para cada una se ve si está registrada y si **recibe correo**. Se marcan
+  como probablemente propias las que comparten MX o NS con el auditado, o le delegan el SPF
+  (`redirect=`) o los informes DMARC. A las demás no se las llama "ajenas": solo no tienen
+  un vínculo visible. No puntúa, y sale también en los informes.
+- **Superficie de envío**: un hallazgo con los servicios autorizados en el SPF. No puntúa.
+
+### Interno
+
+- `performAnalysis` pasa a `js/analysis.js`, sin dependencias de interfaz, para poder
+  ejecutarse en Node. `app.js` lo re-exporta.
+
 ## [5.0.0] - 2026-09-24
 
 La nota del anillo deja de medir solo la suplantación y pasa a medir la **protección del

@@ -249,6 +249,35 @@ export function filteringText(t, filtering) {
     return t.filtering_unidentified;
 }
 
+/**
+ * La cuenta que da la nota, con los números de este dominio: "Suplantación 97 × 60 % +
+ * Filtrado entrante 100 × 25 % + Transporte 25 × 15 % = 86,95". Compartida por el apartado
+ * "¿Cómo se calcula la nota?" y el informe exportado, para que digan lo mismo.
+ * @returns {{ formula: string, cap: string|null, final: string }|null}
+ */
+export function scoreFormula(t, scoreCard, locale = 'es-ES') {
+    if (!scoreCard || !scoreCard.breakdown) return null;
+    const num = (n) => Number(n).toLocaleString(locale, { maximumFractionDigits: 2 });
+    const pct = (n) => (t.pct_fmt || '{n} %').split('{n}').join(String(n));
+    const parts = scoreCard.breakdown
+        .filter(c => c.counted)
+        .map(c => `${t[c.labelKey] || c.id} ${c.score} × ${pct(c.share)}`);
+    const weighted = typeof scoreCard.weighted === 'number' ? scoreCard.weighted : scoreCard.score;
+    const formula = parts.length ? `${parts.join(' + ')} = ${num(weighted)}` : '';
+    const cap = scoreCard.cap
+        ? (t[`score_cap_${scoreCard.cap.key}`] || '').split('{cap}').join(String(scoreCard.cap.value))
+        : null;
+    const final = (t.method_final || '{score} ({grade})')
+        .split('{score}').join(String(scoreCard.score))
+        .split('{grade}').join(scoreCard.grade);
+    return { formula, cap, final };
+}
+
+/** Qué significa una letra, en una frase. */
+export function gradeMeaning(t, grade) {
+    return t[`method_grade_${grade === 'A+' ? 'Aplus' : grade}`] || '';
+}
+
 /** Tono de la pastilla de filtrado: verde reforzado, ámbar solo nativo, gris el resto. */
 export function filteringTone(filtering) {
     if (!filtering || !filtering.applicable) return 'unknown';

@@ -31,7 +31,9 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 * **Multilingüe y accesible:** Interfaz completa en Español, Inglés y Alemán con persistencia por `localStorage`, `<html lang>` y `aria-label` sincronizados, regiones `aria-live`, etiquetas de formulario para lector de pantalla, **tooltips accesibles por teclado** (foco, Escape, `aria-describedby`), modales con trampa de foco y contraste WCAG AA.
 * **Render progresivo:** Los resultados principales se muestran de inmediato; el panel de Awareness (lo más lento, por los CT logs) se rellena solo al terminar, sin bloquear la vista.
 
-* **Puntuación del ecosistema de correo (v5):** el anillo mide la protección de todo el correo del dominio en tres ejes con peso: **suplantación 60** (DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10), **filtrado entrante 25** (SEG en el MX o ICES detectado: 100; MX directo a Microsoft 365 o Google, solo nativo: 50; MX propio o desconocido: sin evaluar) y **transporte 15** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20). Cada eje tiene su pastilla en la tarjeta ("Filtrado: Reforzado · Proofpoint"). Un eje que no aplica o no se puede evaluar sale de la media y los demás se reparten su peso. Sin DMARC en enforcement la nota no pasa de 45 (D), y A+ exige la suplantación verificada del todo y, en la práctica, gateway y buen transporte. `~all` vale lo mismo que `-all` con enforcement (RFC 9989 §7.1), una clave DKIM revocada no resta y BIMI no puntúa. Lo que no se puede medir desde fuera **no resta**, con **desglose visible** de cada control y del peso de cada eje.
+* **Postura de seguridad del correo (v5):** el anillo mide lo que se ve del correo del dominio desde fuera, en tres ejes con peso: **suplantación 60** (DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10), **filtrado entrante 25** (SEG en el MX o ICES: 100; ICES solo por token TXT: 85; gateway con un MX que lo salta: 75; solo nativo o MX sin identificar: 65) y **transporte 15** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20). Cada eje tiene su pastilla en la tarjeta ("Filtrado: Reforzado · Proofpoint"). Un eje que no aplica (sin MX) sale de la media y los demás se reparten su peso. Sin DMARC en enforcement la nota no pasa de 45 (D), y A+ exige la suplantación verificada del todo. Las letras están **calibradas con 61 dominios de grandes empresas** (`scripts/calibrate.mjs`). El botón **"¿Cómo se calcula la nota?"** enseña la cuenta del dominio analizado, los puntos de cada regla y por qué, los topes, qué significa cada letra y lo que se informa sin puntuar, en los tres idiomas. No mide la eficacia real del filtrado ni el factor humano, y así lo dice.
+* **Dominios parecidos (typosquatting):** en segundo plano se generan hasta 80 variantes del dominio (otro TLD, país en el nombre, homoglifos, letras omitidas, cambiadas o repetidas, guion) y se comprueba cuáles están registradas y cuáles **reciben correo**, el vector habitual del fraude de pago. Las que comparten MX o NS con el auditado, o le delegan el SPF o los informes DMARC, se marcan como probablemente propias. No puntúa.
+* **Superficie de envío:** cuántos servicios autorizados en el SPF pueden enviar como el dominio. Se informa, no puntúa.
 * **Visor de informes agregados DMARC (RUA):** arrastra un `.xml`, `.xml.gz` o `.zip` y obtén quién envía en nombre del dominio, con qué volumen y qué porcentaje autentica. Descompresión y parseo **en el navegador**, sin subir el fichero a ningún sitio.
 * **Ajustes de privacidad:** resolver DoH elegible (Google / Cloudflare / Quad9 / propio), proxy CORS público **opt-in** y botón de refresco forzado que salta la caché de 5 minutos.
 * **Instalable (PWA) y sin terceros para renderizar:** service worker del *app shell*, tipografías autoalojadas y CSP declarada.
@@ -48,7 +50,9 @@ Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless
 ```
 js/
 ├── bootstrap.js         # Punto de entrada: cablea el DOM (formulario, idioma, modales, PWA)
-├── app.js               # Orquestación: performAnalysis() (pura, testeable) + runAnalysis()
+├── app.js               # runAnalysis(): lanza el análisis y pinta el resultado
+├── analysis.js          # performAnalysis(): el análisis completo, sin interfaz (también en Node)
+├── lookalike.js         # Dominios parecidos: generador de variantes y clasificación (puro)
 ├── state.js             # Estado global compartido (rompe el ciclo app ↔ export)
 ├── settings.js          # Preferencias: resolver DoH, proxy CORS opt-in, firmas externas
 ├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…) con caché y dedup
@@ -65,6 +69,8 @@ js/
 │   ├── reputationPanel.js   # Reputación RBL
 │   ├── advancedDnsPanel.js  # MTA-STS, TLS-RPT, DNSSEC, DANE, SRV, NS
 │   ├── awarenessPanel.js    # Detector de awareness + analizador de cabeceras
+│   ├── lookalikePanel.js    # Dominios parecidos (typosquatting)
+│   ├── scoreMethod.js       # "¿Cómo se calcula la nota?", generado de las constantes del motor
 │   └── dmarcReportPanel.js  # Visor de informes agregados (RUA)
 ├── dmarc.js             # Semántica RFC 9989: Tree Walk, t/pct, enforcement (módulo puro)
 ├── dmarcReport.js       # Descompresión (.gz/.zip) y agregación de informes RUA — 100% local
@@ -77,6 +83,7 @@ js/
 ├── parsers.js           # Parsers y validadores de registros DNS
 └── utils.js             # Helpers, incluido el tagged template html`` (XSS-safe)
 
+scripts/calibrate.mjs    # Calibración de las letras contra una lista de dominios (Node 22)
 sw.js                    # Service worker: cachea el app shell, nunca el tráfico externo
 manifest.webmanifest     # PWA instalable
 css/fonts/               # Tipografías autoalojadas (sin Google Fonts)
@@ -210,7 +217,16 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 > El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
 
-### v5.0.0 — La nota mide el ecosistema de correo, con el filtrado entrante como eje (Actual)
+### v5.1.0 — Nota más justa y explicada (Actual)
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el filtrado nativo de
+Microsoft 365 o Google pasa de 50 a 65, un MX sin identificar deja de salir de la media
+(ser opaco puntuaba mejor que ser transparente) y un ICES visto solo por un token TXT vale 85.
+Las letras se calibran con 61 dominios de grandes empresas, la tarjeta pasa a llamarse
+"Postura de seguridad del correo", y se añaden el apartado "¿Cómo se calcula la nota?", la
+búsqueda de dominios parecidos y la superficie de envío.
+
+### v5.0.0 — La nota mide el ecosistema de correo, con el filtrado entrante como eje
 
 Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el anillo deja de medir
 solo la suplantación y pasa a medir la protección del ecosistema de correo, con suplantación

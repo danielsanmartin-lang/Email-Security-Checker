@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache, reverseIpForDns, getAutodiscover, getIpIntel, getDkimSelectorChain, discoverDmarcPolicy, isDmarcRecord, isDkimKeyRecord, getMTASTS, getDANE } from './api.js';
+import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache, reverseIpForDns, getAutodiscover, getIpIntel, getDkimSelectorChain, discoverDmarcPolicy, isDmarcRecord, isDkimKeyRecord, getMTASTS, getDANE, checkLookalikes } from './api.js';
 import { saveSettings, resetSettingsCache, DEFAULT_SETTINGS } from './settings.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
@@ -992,3 +992,50 @@ describe('getSPFLookupTree: redirect= se ignora si hay all (RFC 7208 §6.1)', ()
         expect(tree.children.some(c => c.type === 'redirect')).toBe(false);
     });
 });
+
+describe('checkLookalikes', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    const baseline = { domain: 'acme.es', mx: ['mx1.acme.es'], ns: ['ns1.acme.es', 'ns2.acme.es'] };
+    const candidates = [
+        { domain: 'acme.com', technique: 'tld' },
+        { domain: 'acme-es.com', technique: 'combo' },
+        { domain: 'acrne.es', technique: 'homoglyph' },
+        { domain: 'acm.es', technique: 'omission' },
+        { domain: 'amce.es', technique: 'transposition' }
+    ];
+
+    it('separa libres, ajenos con MX, registrados sin MX, propios y sin resolver', async () => {
+        global.fetch = fetchMock((name, type) => {
+            if (name === 'acme.com' && type === 'MX') return { Status: 0, Answer: [{ type: 15, data: '10 mx1.acme.es.' }] };
+            if (name === 'acme-es.com' && type === 'MX') return { Status: 0, Answer: [{ type: 15, data: '10 mail.evil.example.' }] };
+            if (name === 'acrne.es' && type === 'MX') return { Status: 0 };
+            if (name === 'acm.es' && type === 'MX') return { Status: 3 };
+            if (name === 'amce.es' && type === 'MX') return { Status: 2 };
+            if (type === 'NS') return { Status: 0, Answer: [{ type: 2, data: 'ns1.parking.example.' }] };
+            return { Status: 0 };
+        });
+        const r = await checkLookalikes(candidates, baseline);
+        expect(r.checked).toBe(5);
+        expect(r.unresolved).toBe(1);
+        // Orden: primero los ajenos con MX, luego los registrados, y los propios al final.
+        expect(r.found.map(f => [f.domain, f.kind])).toEqual([
+            ['acme-es.com', 'mx'],
+            ['acrne.es', 'registered'],
+            ['acme.com', 'own']
+        ]);
+        expect(r.found[0]).toMatchObject({ technique: 'combo', mx: ['mail.evil.example'], ns: ['ns1.parking.example'] });
+        expect(r.found[0]).not.toHaveProperty('index');
+    });
+
+    it('un Null MX cuenta como registrado sin MX', async () => {
+        global.fetch = fetchMock((name, type) => {
+            if (type === 'MX') return { Status: 0, Answer: [{ type: 15, data: '0 .' }] };
+            return { Status: 0 };
+        });
+        const r = await checkLookalikes([{ domain: 'acme.net', technique: 'tld' }], baseline);
+        expect(r.found).toEqual([expect.objectContaining({ domain: 'acme.net', kind: 'registered', mx: [] })]);
+    });
+});
+
