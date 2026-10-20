@@ -438,6 +438,28 @@ export function lookalikeRiskView(f, t, locale = 'es-ES') {
 }
 
 /**
+ * Avisos para los parecidos de riesgo alto, agrupados por lo que los hace altos:
+ * [{ kind: 'new' | 'homoglyph', domains, title, text }], o [] si no hay ninguno. Explican
+ * por qué importa (un parecido recién registrado que ya recibe correo es la preparación
+ * habitual de un fraude de pago o de phishing) sin afirmar que haya un ataque. Uno que es
+ * nuevo y además homoglifo va con los nuevos, que es el motivo más fuerte.
+ */
+export function lookalikeAlerts(found, t, locale = 'es-ES') {
+    const high = (found || []).map(f => [f, assessLookalikeRisk(f)]).filter(([, r]) => r.level === 'high');
+    const isNew = ([, r]) => r.reasons.some(x => x.key === 'new');
+    const list = (items) => {
+        try { return new Intl.ListFormat(locale, { type: 'conjunction' }).format(items); } catch { return items.join(', '); }
+    };
+    return [['new', high.filter(isNew)], ['homoglyph', high.filter(h => !isNew(h))]]
+        .filter(([, group]) => group.length)
+        .map(([kind, group]) => {
+            const domains = group.map(([f]) => f.domain);
+            const title = t[`lookalike_alert_${kind}_title${domains.length === 1 ? '_one' : ''}`];
+            return { kind, domains, title: fillVars(title, { domains: list(domains) }), text: t[`lookalike_alert_${kind}_text`] };
+        });
+}
+
+/**
  * Certificado de un dominio parecido, en pocas palabras: { text, tone, title }. Un
  * certificado de hace menos de 30 días solo es alarma en un dominio nuevo: en uno antiguo
  * es casi siempre una renovación (Let's Encrypt renueva cada 60 días), y si no se sabe la

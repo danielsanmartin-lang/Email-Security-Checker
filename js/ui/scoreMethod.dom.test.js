@@ -258,6 +258,46 @@ describe('panel de dominios parecidos', () => {
             expect(badge.className).toContain('panel__badge--warning');
         });
 
+        it('con un parecido de riesgo alto, explica encima de la tabla por qué importa', () => {
+            renderLookalikes(zepo());
+            const alerts = [...document.querySelectorAll('#lookalike-body .lookalike-alert')];
+            expect(alerts).toHaveLength(1);
+            expect(alerts[0].querySelector('strong').textContent).toBe('⚠ zepo.online tiene el perfil de un dominio preparado para un ataque.');
+            expect(alerts[0].textContent).toContain('fraudes de pago (BEC) o en phishing');
+            expect(alerts[0].textContent).toContain('No prueba que haya un ataque en marcha');
+            // Va antes de la tabla.
+            expect(alerts[0].nextElementSibling.classList.contains('lookalike-table-wrap')).toBe(true);
+        });
+
+        it('sin riesgo alto no hay aviso', () => {
+            const sinAlto = zepo();
+            sinAlto.found.splice(1, 1);
+            renderLookalikes(sinAlto);
+            expect(document.querySelector('#lookalike-body .lookalike-alert')).toBeNull();
+        });
+
+        it('varios nuevos van juntos, en plural; un homoglifo antiguo que envía, aparte', () => {
+            const nuevo = (domain) => ({ domain, technique: 'tld', mx: ['eforward1.registrar-servers.com'], spf: null, ns: [], kind: 'mx', age: { status: 'new', registered: '2026-10-01T00:00:00Z', days: 19 } });
+            renderLookalikes({
+                checked: 30, unresolved: 0,
+                found: [
+                    nuevo('acme.online'), nuevo('acme.shop'),
+                    { domain: 'acrne.com', technique: 'homoglyph', mx: ['acrne-com.mail.protection.outlook.com'], ns: [], kind: 'mx', age: { status: 'old', registered: '2015-01-01T00:00:00Z', days: 4000 } }
+                ]
+            });
+            const titles = [...document.querySelectorAll('#lookalike-body .lookalike-alert strong')].map(e => e.textContent);
+            expect(titles).toEqual([
+                '⚠ acme.online y acme.shop tienen el perfil de dominios preparados para un ataque.',
+                '⚠ acrne.com es casi idéntico a la vista y puede enviar correo autenticado.'
+            ]);
+        });
+
+        it('el aviso escapa el nombre del dominio', () => {
+            renderLookalikes({ checked: 1, unresolved: 0, found: [{ domain: '<img src=x onerror=alert(1)>.com', technique: 'tld', mx: ['m.x'], spf: null, ns: [], kind: 'mx', age: { status: 'new', registered: '2026-10-01T00:00:00Z', days: 19 } }] });
+            expect(document.querySelector('#lookalike-body .lookalike-alert img')).toBeNull();
+            expect(document.querySelector('#lookalike-body .lookalike-alert').textContent).toContain('<img src=x');
+        });
+
         it('mientras llega la fecha de registro, "evaluando" y la insignia espera', () => {
             renderLookalikes({ checked: 5, unresolved: 0, found: [{ domain: 'a.com', technique: 'tld', mx: ['mail.a.com'], spf: null, ns: [], kind: 'mx', age: { status: 'checking' } }] });
             expect(rows()[0].querySelector('.lookalike-risk .tag').textContent).toBe('evaluando…');
@@ -342,5 +382,9 @@ describe('informe exportado', () => {
         expect(risk[0].querySelector('strong').style.color).toBe('rgb(220, 38, 38)');
         expect(risk[1].querySelector('strong').textContent).toBe('Bajo');
         expect(div.textContent.replace(/\s+/g, ' ')).toContain('Dominios parecidos de riesgo alto / medio: 1 / 0');
+        // El aviso del de riesgo alto, en el resumen ejecutivo y en la sección.
+        const text = div.textContent.replace(/\s+/g, ' ');
+        expect(text.split('acme.online tiene el perfil de un dominio preparado para un ataque.').length - 1).toBe(2);
+        expect(text).toContain('fraudes de pago (BEC) o en phishing');
     });
 });

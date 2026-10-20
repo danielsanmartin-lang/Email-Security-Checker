@@ -863,6 +863,12 @@ export default {
     risk_reason_age_unknown: "Antigüedad desconocida",
     lookalike_badge_high: "{n} de riesgo alto",
     lookalike_risk_note: "El riesgo sale de reglas fijas sobre señales públicas: alto si recibe correo y se registró hace menos de {days} días, o si es un homoglifo que puede enviar correo autenticado; medio si puede enviarlo (buzones en un proveedor o un SPF que lo autoriza); bajo si no recibe correo o solo lo reenvía o lo aparca. No prueba intención: un parecido puede ser de una empresa legítima con un nombre cercano.",
+    lookalike_alert_new_title_one: "{domains} tiene el perfil de un dominio preparado para un ataque.",
+    lookalike_alert_new_title: "{domains} tienen el perfil de dominios preparados para un ataque.",
+    lookalike_alert_new_text: "Los dominios que imitan a otro suelen registrarse y prepararse para recibir correo pocas semanas antes de usarse en fraudes de pago (BEC) o en phishing: quien ataca escribe a clientes, proveedores o empleados haciéndose pasar por la empresa y recibe las respuestas en el buzón del dominio falso. No prueba que haya un ataque en marcha, pero es una señal temprana que conviene vigilar.",
+    lookalike_alert_homoglyph_title_one: "{domains} es casi idéntico a la vista y puede enviar correo autenticado.",
+    lookalike_alert_homoglyph_title: "{domains} son casi idénticos a la vista y pueden enviar correo autenticado.",
+    lookalike_alert_homoglyph_text: "Dominios así se usan para suplantar a una empresa en fraudes de pago (BEC) y en phishing: en una bandeja de entrada, la diferencia apenas se nota. No prueba que haya un ataque en marcha, pero es una señal que conviene vigilar.",
     report_lookalike_risk: "Dominios parecidos de riesgo alto / medio",
     // ===== v5.2: comparación con la muestra de calibración =====
     benchmark_line: "Mejor que el {below} de una muestra de {sample} grandes empresas; el {same} tiene también una {grade}.",

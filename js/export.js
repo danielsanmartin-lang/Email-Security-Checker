@@ -34,6 +34,7 @@ import {
     lookalikeCertView,
     lookalikeAgeView,
     lookalikeRiskView,
+    lookalikeAlerts,
     benchmarkText
 } from './viewmodel.js';
 import { buildRemediation } from './remediation.js';
@@ -300,7 +301,11 @@ export function generateReportHTML() {
         const locale = getLocale(lang);
         const risk = new Map(lk.found.map(f => [f, lookalikeRiskView(f, t, locale)]));
         const count = (level) => lk.found.filter(f => risk.get(f).level === level).length;
-        lookalikeSummaryLine = `<li><strong>${t.report_lookalike_risk}:</strong> ${count('high')} / ${count('medium')}</li>`;
+        const alerts = lookalikeAlerts(lk.found, t, locale);
+        lookalikeSummaryLine = `<li><strong>${t.report_lookalike_risk}:</strong> ${count('high')} / ${count('medium')}`
+            + alerts.map(a => `<br><small style="color: #dc2626;">⚠ ${escapeHtml(a.title)}</small>`).join('')
+            + `</li>`;
+        const alertsHtml = alerts.map(a => `<p style="font-family: sans-serif; font-size: 13px; color: #334155; line-height: 1.5; background-color: #fef2f2; border-left: 3px solid #dc2626; padding: 10px 12px; border-radius: 6px;"><strong style="color: #dc2626;">⚠ ${escapeHtml(a.title)}</strong> ${escapeHtml(a.text)}</p>`).join('');
         const RISK_COLOR = { high: '#dc2626', medium: '#b45309' };
         const sorted = lk.found.map((f, i) => [f, i])
             .sort(([a, i], [b, j]) => (RISK_RANK[risk.get(a).level] - RISK_RANK[risk.get(b).level]) || (i - j))
@@ -315,6 +320,7 @@ export function generateReportHTML() {
             </tr>`).join('');
         lookalikeHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🔎 ${t.panel_lookalike_title}</h2>`
             + `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(t.lookalike_intro.split('{checked}').join(String(lk.checked)))}</p>`
+            + alertsHtml
             + (lk.found.length
                 ? `<table border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 12.5px; text-align: left;">
                     <tr style="background-color: #312e81; color: #ffffff;">
