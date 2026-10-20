@@ -2066,6 +2066,12 @@ span.tooltip-trigger.spf-tree-error { cursor: help; text-decoration: underline d
 .lookalike-domain--short { white-space: nowrap; }
 .lookalike-risk { min-width: 220px; }
 .lookalike-reasons { display: block; margin-top: 4px; font-size: 0.72rem; line-height: 1.4; color: var(--text-muted); }
+.lookalike-alert {
+    margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--accent-rose);
+    border-radius: 6px; background: rgba(239,68,68,0.08); font-size: 0.8rem; line-height: 1.5;
+    color: var(--text-secondary);
+}
+.lookalike-alert strong { color: var(--accent-rose); }
 .lookalike-more { margin-top: 12px; }
 .lookalike-more > summary { cursor: pointer; font-size: 0.78rem; color: var(--text-secondary); padding: 4px 0; }
 .lookalike-more[open] > summary { margin-bottom: 6px; }

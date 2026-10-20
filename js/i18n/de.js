@@ -863,6 +863,12 @@ export default {
     risk_reason_age_unknown: "Alter unbekannt",
     lookalike_badge_high: "{n} mit hohem Risiko",
     lookalike_risk_note: "Das Risiko ergibt sich aus festen Regeln über öffentliche Signale: hoch, wenn die Domain E-Mails empfängt und vor weniger als {days} Tagen registriert wurde oder ein Homoglyph ist, der authentifizierte E-Mails senden kann; mittel, wenn sie senden kann (Postfächer bei einem Anbieter oder ein SPF, das es erlaubt); niedrig, wenn sie keine E-Mails empfängt oder sie nur weiterleitet oder parkt. Eine Absicht beweist das nicht: Eine ähnliche Domain kann einem legitimen Unternehmen mit ähnlichem Namen gehören.",
+    lookalike_alert_new_title_one: "{domains} hat das Profil einer Domain, die für einen Angriff vorbereitet wird.",
+    lookalike_alert_new_title: "{domains} haben das Profil von Domains, die für einen Angriff vorbereitet werden.",
+    lookalike_alert_new_text: "Domains, die eine andere imitieren, werden oft wenige Wochen vor ihrem Einsatz für Zahlungsbetrug (BEC) oder Phishing registriert und für den E-Mail-Empfang eingerichtet: Der Angreifer schreibt Kunden, Lieferanten oder Mitarbeitenden im Namen des Unternehmens und erhält die Antworten im Postfach der falschen Domain. Das beweist keinen laufenden Angriff, ist aber ein frühes Warnsignal, das man im Blick behalten sollte.",
+    lookalike_alert_homoglyph_title_one: "{domains} ist auf den ersten Blick fast identisch und kann authentifizierte E-Mails senden.",
+    lookalike_alert_homoglyph_title: "{domains} sind auf den ersten Blick fast identisch und können authentifizierte E-Mails senden.",
+    lookalike_alert_homoglyph_text: "Solche Domains werden genutzt, um ein Unternehmen bei Zahlungsbetrug (BEC) und Phishing zu imitieren: Im Posteingang fällt der Unterschied kaum auf. Das beweist keinen laufenden Angriff, ist aber ein Warnsignal, das man im Blick behalten sollte.",
     report_lookalike_risk: "Ähnliche Domains mit hohem / mittlerem Risiko",
     // ===== v5.2: comparación con la muestra de calibración =====
     benchmark_line: "Besser als {below} einer Stichprobe von {sample} Großunternehmen; {same} erreichen ebenfalls {grade}.",

@@ -7,6 +7,12 @@ y [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- **Aviso cuando un parecido es de riesgo alto**, encima de la tabla y en el informe
+  (sección y resumen ejecutivo), para cualquier dominio analizado. Explica por qué
+  importa: un parecido recién registrado que ya recibe correo suele prepararse pocas
+  semanas antes de usarse en fraudes de pago (BEC) o phishing, y un homoglifo que puede
+  enviar es casi indistinguible en una bandeja de entrada. Siempre aclara que no prueba
+  que haya un ataque en marcha.
 - **Veredicto de riesgo de cada dominio parecido**, con reglas fijas y sus motivos a la
   vista:
   - **Alto:** recibe correo y se registró hace menos de 90 días, o es un homoglifo que

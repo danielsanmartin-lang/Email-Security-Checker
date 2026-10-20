@@ -19,7 +19,7 @@ import { getLanguage, getLocale } from '../lang.js';
 import { LOOKALIKE_CERT_MAX } from '../ct.js';
 import { NEW_DOMAIN_DAYS } from '../rdap.js';
 import { RISK_RANK } from '../lookalike.js';
-import { lookalikeAgeView, lookalikeCertView, lookalikeRiskView, countText } from '../viewmodel.js';
+import { lookalikeAgeView, lookalikeCertView, lookalikeRiskView, lookalikeAlerts, countText } from '../viewmodel.js';
 
 export function renderLookalikes(lookalike) {
     const body = document.getElementById('lookalike-body');
@@ -87,6 +87,8 @@ export function renderLookalikes(lookalike) {
     const ageNote = lookalike.found.some(f => f.age)
         ? html`<p class="lookalike-note">${t.lookalike_age_note.split('{days}').join(String(NEW_DOMAIN_DAYS))}</p>`
         : raw('');
+    // Por qué importa un parecido de riesgo alto, encima de la tabla para que no se pierda.
+    const alertsHtml = html`${lookalikeAlerts(lookalike.found, t, locale).map(a => html`<div class="lookalike-alert" role="note"><strong>⚠ ${a.title}</strong> ${a.text}</div>`)}`;
     const riskNote = html`<p class="lookalike-note">${t.lookalike_risk_note.split('{days}').join(String(NEW_DOMAIN_DAYS))}</p>`;
 
     // Los registrados sin MX hoy no reciben correo, y suelen ser la mayoría: en una tabla
@@ -119,6 +121,7 @@ export function renderLookalikes(lookalike) {
         : raw('');
 
     body.innerHTML = html`${intro}
+        ${alertsHtml}
         <div class="lookalike-table-wrap">
             <table class="lookalike-table">
                 <thead><tr>

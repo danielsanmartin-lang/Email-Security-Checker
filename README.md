@@ -40,7 +40,7 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
     * **Bajo:** no recibe correo, o solo lo reenvía (Namecheap, Porkbun, Cloudflare Email Routing, ImprovMX, Forward Email) o lo aparca.
     * **Propio:** vinculado al auditado.
 
-    El panel y el informe ordenan por riesgo, y la insignia cuenta los de riesgo alto o, si no hay, los de medio. Ninguna señal prueba intención: un parecido puede ser de una empresa legítima con un nombre cercano.
+    El panel y el informe ordenan por riesgo, y la insignia cuenta los de riesgo alto o, si no hay, los de medio. Si hay alguno de riesgo alto, un aviso encima de la tabla (y en el informe) explica que ese perfil suele preceder a un fraude de pago (BEC) o a una campaña de phishing, sin afirmar que haya un ataque en marcha. Ninguna señal prueba intención: un parecido puede ser de una empresa legítima con un nombre cercano.
 * **Subdominios con correo:** de los nombres vistos en certificados públicos se consultan los que parecen enviar correo (news., marketing., mail.…): su SPF, sus MX y la política DMARC que les aplica, la suya o la heredada con `sp`. Un `p=reject` con `sp=none` deja suplantable justo el subdominio de los boletines. No puntúa.
 * **Superficie de envío:** cuántos servicios autorizados en el SPF pueden enviar como el dominio. Se informa, no puntúa.
 * **Visor de informes agregados DMARC (RUA):** arrastra un `.xml`, `.xml.gz` o `.zip` y obtén quién envía en nombre del dominio, con qué volumen y qué porcentaje autentica. Descompresión y parseo **en el navegador**, sin subir el fichero a ningún sitio.
