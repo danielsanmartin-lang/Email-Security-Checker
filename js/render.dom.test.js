@@ -495,3 +495,91 @@ describe('v5.2 en la interfaz', () => {
         expect(document.getElementById('provider-body').textContent).toContain('Tenant de Microsoft Entra: abc-tenant · región XX');
     });
 });
+
+// ===========================================================================
+// Filtro de entrada con un gateway en el MX y el proveedor deducido del SPF (caso
+// salesforce.com: MX en Proofpoint, `include:_spf.google.com`). El SPF dice quién envía;
+// quién filtra la entrada lo dice el MX.
+// ===========================================================================
+describe('filtro de entrada: el gateway del MX manda sobre el proveedor del SPF', () => {
+    beforeEach(buildDom);
+
+    const mxSpfResult = (hosts, spfRaw, domain = 'salesforce.com') => {
+        const result = analyze(hosts.map((host, i) => ({ priority: 10 + i, host })), spfRaw, `v=DMARC1; p=reject; rua=mailto:a@${domain}`, {
+            domain, mtaSts: null, tlsRpt: null, srvRecords: {}, daneRecords: {}
+        });
+        Object.assign(result, {
+            spfLookups: 1,
+            spfTree: { domain, lookups: 1, error: null, children: [] },
+            dkimRecords: { records: [], errors: [] },
+            bimiRecord: null, rblResults: [], awarenessResult: null
+        });
+        result.scoreCard = calculateScoreAndFindings(result);
+        return result;
+    };
+    const salesforce = () => mxSpfResult(
+        ['mxa-00177002.gslb.pphosted.com', 'mxb-00177002.gslb.pphosted.com'],
+        'v=spf1 include:_spf.google.com -all'
+    );
+    const chipText = () => document.querySelectorAll('.score-card__title .score-card__chip')[1].textContent;
+    // El primer bloque del panel es el del filtro de entrada.
+    const inboundBlock = () => {
+        const block = document.querySelector('#provider-body .info-block');
+        return {
+            label: block.querySelector('.info-block__label').textContent,
+            value: block.querySelector('.info-block__value').textContent,
+            detail: block.querySelector('.info-block__detail').textContent
+        };
+    };
+
+    it('el panel dice Proofpoint y que lo dice el MX', () => {
+        renderResults('salesforce.com', salesforce());
+        expect(inboundBlock()).toEqual({
+            label: 'Filtro de entrada (MX)',
+            value: 'Proofpoint',
+            detail: 'MX apunta a mxa-00177002.gslb.pphosted.com'
+        });
+        expect(document.getElementById('provider-body').textContent).not.toContain('_spf.google.com');
+    });
+
+    it('el informe dice Proofpoint en el bloque de hospedaje', () => {
+        state.currentResult = salesforce();
+        state.currentDomain = 'salesforce.com';
+        const container = document.createElement('div');
+        container.innerHTML = generateReportHTML().toString();
+        const text = container.textContent;
+        expect(text).toContain('Filtro de entrada (MX): Proofpoint');
+        expect(text).not.toContain('Filtro de entrada (MX): Google Workspace');
+        // El resumen ejecutivo ya separaba los dos ejes: el filtrado sale de la nota y el
+        // proveedor lleva su fuente, así que no afirma que Google filtre la entrada.
+        expect(text).toContain('Filtrado entrante: Reforzado · Proofpoint');
+        expect(text).toMatch(/Proveedor de Correo: Google Workspace\s*\(SPF include: _spf\.google\.com\)/);
+    });
+
+    it('el resumen sigue nombrando al proveedor y pone Proofpoint como capa de seguridad', () => {
+        renderResults('salesforce.com', salesforce());
+        // La tarjeta pregunta por el proveedor, no por quién filtra la entrada.
+        expect(document.getElementById('summary-provider-value').textContent).toBe('Google Workspace');
+        expect(document.getElementById('summary-security-value').textContent).toBe('Proofpoint');
+        // Y la nota no cambia.
+        expect(chipText()).toBe('Filtrado: Reforzado · Proofpoint');
+    });
+
+    it('con el gateway al lado de un MX directo al proveedor, el filtro sigue siendo el gateway', () => {
+        renderResults('acme.com', mxSpfResult(['mxa-1.gslb.pphosted.com', 'acme-com.mail.protection.outlook.com'], 'v=spf1 -all', 'acme.com'));
+        expect(inboundBlock().value).toBe('Proofpoint');
+        expect(inboundBlock().detail).toBe('MX apunta a mxa-1.gslb.pphosted.com');
+    });
+
+    it('un ICES en modo inline en el MX también es el filtro de entrada', () => {
+        renderResults('acme.com', mxSpfResult(['acme-com.mailprotection.checkpoint.com'], 'v=spf1 include:spf.protection.outlook.com -all', 'acme.com'));
+        expect(inboundBlock().value).toBe('Avanan (Check Point Harmony Email)');
+        expect(inboundBlock().detail).toBe('MX apunta a acme-com.mailprotection.checkpoint.com');
+    });
+
+    it('sin gateway en el MX, el filtro de entrada es el proveedor del MX', () => {
+        renderResults('acme.com', mxSpfResult(['acme-com.mail.protection.outlook.com'], 'v=spf1 include:_spf.google.com -all', 'acme.com'));
+        expect(inboundBlock().value).toBe('Microsoft 365');
+        expect(inboundBlock().detail).toBe('MX apunta a acme-com.mail.protection.outlook.com');
+    });
+});

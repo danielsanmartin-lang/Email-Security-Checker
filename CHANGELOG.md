@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Corregido
+
+- **"Filtro de entrada (MX)" nombraba al proveedor deducido del SPF aunque el MX
+  apuntara a un gateway.** En salesforce.com, con el MX en Proofpoint y un
+  `include:_spf.google.com`, el panel y el informe decían "Google Workspace · SPF
+  include: _spf.google.com". El SPF dice quién envía, no quién recibe: si el MX entrega a
+  un SEG o a un ICES en modo inline, ese es el filtro de entrada y la fuente es el MX. La
+  nota no cambia (ya lo valoraba así), y la tarjeta "Proveedor de correo" del resumen
+  sigue nombrando al proveedor.
+
 ## [5.2.1] - 2026-10-20
 
 ### Corregido
