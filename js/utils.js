@@ -44,6 +44,15 @@ export function html(strings, ...values) {
     return new SafeHtml(out);
 }
 
+/**
+ * Nombre de host con un punto de corte (<wbr>) tras cada punto, para que una columna
+ * estrecha lo parta por etiquetas ("mxa-00177002." / "gslb.pphosted.com") y no letra a
+ * letra. Cada trozo se escapa como en html``.
+ */
+export function breakableHost(host) {
+    const parts = String(host ?? '').split('.');
+    return html`${parts.map((part, i) => html`${part}${raw(i < parts.length - 1 ? '.<wbr>' : '')}`)}`;
+}
 
 /**
  * Normaliza la entrada del usuario a un nombre de dominio limpio.

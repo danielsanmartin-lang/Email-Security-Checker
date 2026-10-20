@@ -125,12 +125,28 @@ describe('panel de dominios parecidos', () => {
         const body = document.getElementById('lookalike-body');
         expect(body.textContent).toContain('Se han comprobado 42 variantes');
         expect(body.textContent).toContain('2 variantes no se pudieron resolver');
-        const rows = [...body.querySelectorAll('tbody tr')].map(tr => tr.textContent.replace(/\s+/g, ' ').trim());
+        const text = (tr) => tr.textContent.replace(/\s+/g, ' ').trim();
+        const rows = [...body.querySelectorAll(':scope > .lookalike-table-wrap tbody tr')].map(text);
         // Sin `cert`, la columna de certificado queda en "—".
         expect(rows[0]).toBe('acme-es.com País en el nombre mail.evil.example (+1) Recibe correo, sin vínculo visible —');
-        expect(rows[1]).toContain('Registrado, sin MX');
-        expect(rows[2]).toContain('Probablemente propio');
+        expect(rows[1]).toContain('Probablemente propio');
+        // Los registrados sin MX van plegados aparte, solo con dominio y técnica.
+        const folded = body.querySelector('details.lookalike-more');
+        expect(folded.open).toBe(false);
+        expect(folded.querySelector('summary').textContent).toBe('Una variante más está registrada pero sin MX: hoy no recibe correo.');
+        expect([...folded.querySelectorAll('tbody tr')].map(text)).toEqual(['acrne.es Homoglifo']);
         expect(document.getElementById('lookalike-badge').textContent).toBe('1 a vigilar');
+    });
+
+    it('si solo hay registrados sin MX, no los pliega', () => {
+        renderLookalikes({
+            checked: 10, unresolved: 0,
+            found: [{ domain: 'acrne.es', technique: 'homoglyph', mx: [], ns: [], kind: 'registered' }]
+        });
+        const body = document.getElementById('lookalike-body');
+        expect(body.querySelector('details')).toBeNull();
+        expect(body.querySelector('tbody tr').textContent).toContain('Registrado, sin MX');
+        expect(document.getElementById('lookalike-badge').textContent).toBe('Nada que vigilar');
     });
 
     it('muestra el certificado de los que se miran en CT, con su tono y la nota', () => {
@@ -148,6 +164,17 @@ describe('panel de dominios parecidos', () => {
         expect(cells[0].className).toContain('tag--danger');
         expect(cells[0].getAttribute('title')).toBe("Let's Encrypt");
         expect(document.getElementById('lookalike-body').textContent).toContain('Los 3 primeros que reciben correo');
+    });
+
+    it('parte los nombres por los puntos, no letra a letra', () => {
+        renderLookalikes({
+            checked: 1, unresolved: 0,
+            found: [{ domain: 'salesforce.net', technique: 'tld', mx: ['salesforce-net.mail.protection.outlook.com', 'mx2.example'], ns: [], kind: 'mx' }]
+        });
+        const mx = document.querySelector('#lookalike-body .lookalike-mx');
+        expect(mx.textContent).toBe('salesforce-net.mail.protection.outlook.com (+1)');
+        expect(mx.querySelectorAll('wbr')).toHaveLength(4);
+        expect(document.querySelector('#lookalike-body .lookalike-domain').querySelectorAll('wbr')).toHaveLength(1);
     });
 
     it('escapa lo que viene del DNS de terceros', () => {

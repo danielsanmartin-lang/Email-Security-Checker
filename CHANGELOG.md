@@ -14,6 +14,17 @@ y [Versionado Semántico](https://semver.org/lang/es/).
   un SEG o a un ICES en modo inline, ese es el filtro de entrada y la fuente es el MX. La
   nota no cambia (ya lo valoraba así), y la tarjeta "Proveedor de correo" del resumen
   sigue nombrando al proveedor.
+- **Lo mismo con un MX propio o desconocido.** Un Exchange híbrido con el MX en casa y
+  Microsoft 365 en el SPF salía como "Microsoft 365". Ahora el bloque responde solo con
+  el MX: "Servidor propio" si cuelga del dominio, "No identificado" si es de un tercero
+  que no se reconoce (con el MX de menor prioridad como fuente) y "No aplica" sin MX.
+- **La tabla de dominios parecidos partía los nombres letra a letra.** Compartía fila con
+  "Subdominios con correo" a media anchura, y la columna MX encogía hasta un carácter.
+  Las dos tablas ocupan ahora todo el ancho, los nombres se parten por los puntos y el
+  panel de subdominios ya no se estira hasta la altura del de al lado cuando está vacío.
+- **Las variantes registradas sin MX se pliegan.** Suelen ser la mayoría (34 de 40 en
+  salesforce.com) y alargaban el panel hasta esconder las que reciben correo. Ahora van
+  en un desplegable, con su dominio y su técnica.
 
 ## [5.2.1] - 2026-10-20
 

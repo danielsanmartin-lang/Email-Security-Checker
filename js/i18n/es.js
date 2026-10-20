@@ -748,6 +748,7 @@ export default {
     // ===== Hospedaje del correo: ¿nube o servidor propio? =====
     panel_mail_hosting_label: "Hospedaje del correo",
     inbound_filter_label: "Filtro de entrada (MX)",
+    inbound_filter_own: "Servidor propio",
     mailbox_platform_label: "Plataforma de buzón",
     mh_tenant_label: "Tenant",
     mail_hosting_cloud: "En la nube",
@@ -827,6 +828,8 @@ export default {
     lookalike_cert_none: "Sin certificados vigentes",
     lookalike_cert_unchecked: "No comprobado",
     lookalike_cert_note: "Los {n} primeros que reciben correo se buscan en los registros públicos de certificados: un certificado recién emitido suele preceder a una campaña.",
+    lookalike_registered_more: "{n} variantes más están registradas pero sin MX: hoy no reciben correo.",
+    lookalike_registered_more_one: "Una variante más está registrada pero sin MX: hoy no recibe correo.",
     // ===== v5.2: comparación con la muestra de calibración =====
     benchmark_line: "Mejor que el {below} de una muestra de {sample} grandes empresas; el {same} tiene también una {grade}.",
     benchmark_line_unique: "Ninguna de las {sample} grandes empresas de la muestra llega a {grade}.",

@@ -398,10 +398,10 @@ export function detectSecurityLayers(signals = {}) {
  * ES PURA, como detectSecurityLayers.
  * @returns {{ state, vendors: string[], segVendors: string[], icesVendors: string[],
  *             provider: string|null, bypassMx: string[], outOfPathVendors: string[],
- *             unknownMx: string[], icesTokenOnly: boolean }}
+ *             unknownMx: string[], ownMx: string[], icesTokenOnly: boolean }}
  */
 export function classifyInboundFilter({ mxRecords = [], segList = [], icesList = [], nullMx = false, domain = '', orgDomain = null } = {}) {
-    const empty = { vendors: [], segVendors: [], icesVendors: [], provider: null, bypassMx: [], outOfPathVendors: [], unknownMx: [], icesTokenOnly: false };
+    const empty = { vendors: [], segVendors: [], icesVendors: [], provider: null, bypassMx: [], outOfPathVendors: [], unknownMx: [], ownMx: [], icesTokenOnly: false };
     if (!mxRecords.length || nullMx) return { state: 'not_applicable', ...empty };
 
     const ids = mxRecords.map(mx => ({ host: mx.host, ...identifyMX(mx.host, domain, orgDomain) }));
@@ -423,7 +423,9 @@ export function classifyInboundFilter({ mxRecords = [], segList = [], icesList =
     const providerIds = ids.filter(id => id.type === 'provider');
     const provider = providerIds.length ? providerIds[0].name : null;
     const unknownMx = ids.filter(id => id.type === 'self' || id.type === 'unknown').map(id => id.host);
-    const base = { ...empty, segVendors, icesVendors, provider, outOfPathVendors, unknownMx };
+    // Los de unknownMx que cuelgan del propio dominio: la interfaz los nombra aparte.
+    const ownMx = ids.filter(id => id.type === 'self').map(id => id.host);
+    const base = { ...empty, segVendors, icesVendors, provider, outOfPathVendors, unknownMx, ownMx };
 
     if (segVendors.length || icesVendors.length) {
         // Un MX que entrega directo al proveedor, al lado del gateway, es una puerta
