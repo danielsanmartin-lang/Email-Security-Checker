@@ -1507,10 +1507,13 @@ export async function checkLookalikes(candidates, baseline, opts = {}) {
         // DMARC. Un fallo en cualquiera de las tres solo deja la heurística con menos datos.
         const txtOf = (name) => queryDNS(name, 'TXT', opts)
             .then(d => (d.Answer || []).filter(a => a.type === 16).map(a => extractTxtValue(a.data)))
-            .catch(() => []);
+            .catch(() => null);
         const [ns, txt, dmarc] = await Promise.all([getNS(candidate.domain, opts), txtOf(candidate.domain), txtOf(`_dmarc.${candidate.domain}`)]);
-        const links = ownershipLinks(txt, dmarc);
-        found.push({ ...candidate, index, mx, ns, kind: classifyLookalike({ mx, ns, links }, baseline) });
+        const links = ownershipLinks(txt || [], dmarc || []);
+        // El SPF dice si puede enviar correo en su nombre (lo usa assessLookalikeRisk): null
+        // si no publica, undefined si no se pudo consultar.
+        const spf = txt ? (txt.find(v => /^v=spf1\b/i.test(v.trim())) || null) : undefined;
+        found.push({ ...candidate, index, mx, ns, spf, kind: classifyLookalike({ mx, ns, links }, baseline) });
     }));
     // Primero lo que puede recibir correo y no es del auditado; dentro de cada grupo, el
     // orden de prioridad del generador.

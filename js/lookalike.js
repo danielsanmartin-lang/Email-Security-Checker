@@ -17,6 +17,9 @@
  * hace api.js (checkLookalikes).
  */
 import { extractRootDomain, isSameOrSubdomain } from './utils.js';
+import { identifyMX, identifySPFService } from './analyzer.js';
+import { parseSPF } from './parsers.js';
+import { RECENT_CERT_DAYS } from './ct.js';
 
 // TLD a los que se prueba a cambiar el dominio. Genéricos y de uso común en fraude, más
 // .es y .eu por el mercado de la herramienta.
@@ -143,3 +146,121 @@ export function classifyLookalike({ mx = [], ns = [], links = [] } = {}, baselin
     if (sameMx || sameNs || linked) return 'own';
     return mxHosts.length ? 'mx' : 'registered';
 }
+
+// ===== Riesgo de cada parecido =====
+// Un veredicto con reglas fijas, sin puntuaciones opacas: cada nivel dice por qué. Las
+// señales son públicas (DNS, RDAP, Certificate Transparency) y ninguna prueba intención:
+// un parecido puede ser de una empresa legítima con un nombre cercano.
+//
+//   high    — recibe correo y se registró hace menos de NEW_DOMAIN_DAYS días (rdap.js), o
+//             es un homoglifo, casi idéntico a la vista, que puede enviar correo
+//             autenticado
+//   medium  — recibe correo y puede enviarlo autenticado (buzones reales en un proveedor,
+//             o un SPF que autoriza servidores o servicios de envío); o, sin fecha de
+//             registro, su primer certificado es de hace menos de RECENT_CERT_DAYS días;
+//             o está aparcado pero se registró hace poco
+//   low     — no recibe correo, o solo lo reenvía o lo aparca: se queda con lo que llegue
+//             mal dirigido, pero no puede escribir en nombre de nadie
+//   own     — vinculado al dominio auditado (registro defensivo, ver classifyLookalike)
+//   pending — falta la fecha de registro, que puede subirlo a alto
+
+// MX que solo reenvían el correo a otro buzón (servicios de reenvío y los de los
+// registradores) o que lo aparcan. Sin ellos, un MX desconocido cuenta como servidor.
+const MX_FORWARDING = [
+    /^eforward\d*\.registrar-servers\.com$/, // Namecheap
+    /^fwd\d*\.porkbun\.com$/,
+    /^route\d*\.mx\.cloudflare\.net$/, // Cloudflare Email Routing
+    /^mx\d*\.improvmx\.com$/,
+    /^mx\d*\.forwardemail\.net$/
+];
+const MX_PARKING = [/^park-mx\.above\.com$/];
+// Sus `include` autorizan a los reenviadores, no un envío propio.
+const SPF_FORWARDING = [
+    /(^|\.)efwd\.registrar-servers\.com$/,
+    /^_spf\.porkbun\.com$/,
+    /^_spf\.mx\.cloudflare\.net$/,
+    /^spf\.improvmx\.com$/,
+    /^spf\.forwardemail\.net$/
+];
+
+/** Qué hace el MX de un parecido: buzones en un proveedor, reenvío, aparcamiento o servidor. */
+export function lookalikeMxProfile(mx = [], domain = '') {
+    const hosts = mx.map(norm).filter(isDeliverableMx);
+    const provider = hosts.map(h => identifyMX(h, domain)).find(id => id.type === 'provider');
+    if (provider) return { kind: 'mailbox', provider: provider.name };
+    const all = (patterns) => hosts.length > 0 && hosts.every(h => patterns.some(re => re.test(h)));
+    if (all(MX_PARKING)) return { kind: 'parking' };
+    if (all(MX_FORWARDING)) return { kind: 'forwarding' };
+    return { kind: 'server' };
+}
+
+/**
+ * A quién autoriza a enviar el SPF de un parecido (solo los mecanismos `+`). Un `include`
+ * de un reenviador no cuenta, ni `mx` cuando el MX solo reenvía o aparca.
+ * @returns {string[]} nombres de servicio, o 'servers' para IP, `a`, `mx` y `exists`
+ */
+export function lookalikeSpfSenders(spf, mxKind) {
+    const senders = [];
+    for (const e of parseSPF(spf || '')) {
+        if (e.qualifier !== '+') continue;
+        if (e.type === 'ip4' || e.type === 'ip6' || e.type === 'a' || e.type === 'exists') senders.push('servers');
+        else if (e.type === 'mx' && mxKind !== 'forwarding' && mxKind !== 'parking') senders.push('servers');
+        else if (e.type === 'include' || e.type === 'redirect') {
+            const target = norm(e.value);
+            if (SPF_FORWARDING.some(re => re.test(target))) continue;
+            const svc = identifySPFService(target);
+            senders.push(svc && !svc.is_unknown ? svc.name : target);
+        }
+    }
+    return [...new Set(senders)];
+}
+
+/**
+ * Veredicto de riesgo de un parecido ya resuelto (checkLookalikes), con su fecha de
+ * registro (`age`, rdap.js) y su certificado (`cert`, ct.js) si los tiene.
+ * @returns {{ level: 'high'|'medium'|'low'|'own'|'pending', reasons: Array<{ key: string }> }}
+ *          `reasons` en orden de peso, neutros de idioma (los traduce el viewmodel)
+ */
+export function assessLookalikeRisk(f) {
+    if (f.kind === 'own') return { level: 'own', reasons: [{ key: 'own' }] };
+    if (f.kind !== 'mx') return { level: 'low', reasons: [{ key: 'no_mx' }] };
+
+    const reasons = [];
+    const age = f.age || null;
+    const cert = f.cert || null;
+    const isNew = !!age && age.status === 'new';
+    // Sin fecha de registro, un primer certificado muy reciente es compatible con un
+    // dominio nuevo (o con uno antiguo que estrena web): sube a medio, no a alto.
+    const firstCertRecent = !!age && age.status === 'unknown' && !!cert
+        && typeof cert.firstSeenDays === 'number' && cert.firstSeenDays <= RECENT_CERT_DAYS;
+
+    if (isNew) reasons.push({ key: 'new', days: age.days });
+    if (isNew && cert && cert.status === 'recent') reasons.push({ key: 'cert_new', days: cert.days });
+    if (firstCertRecent) reasons.push({ key: 'first_cert', days: cert.firstSeenDays });
+
+    const mx = lookalikeMxProfile(f.mx || [], f.domain);
+    const senders = lookalikeSpfSenders(f.spf, mx.kind);
+    const canSend = mx.kind === 'mailbox' || senders.length > 0;
+    if (mx.kind === 'mailbox') reasons.push({ key: 'mailbox', provider: mx.provider });
+    else {
+        reasons.push({ key: mx.kind === 'server' ? 'receives' : mx.kind });
+        // `spf` undefined: la consulta falló, y no se puede decir que no tenga.
+        reasons.push(senders.length ? { key: 'sends', what: senders[0] }
+            : { key: f.spf === undefined ? 'spf_unknown' : f.spf ? 'no_send' : 'no_spf' });
+    }
+    const homoglyph = f.technique === 'homoglyph' && canSend;
+    if (homoglyph) reasons.push({ key: 'homoglyph' });
+    if (age && age.status === 'old') reasons.push({ key: 'old', registered: age.registered });
+    else if (age && age.status === 'unknown') reasons.push({ key: 'age_unknown' });
+
+    let level;
+    if (mx.kind === 'parking') level = isNew ? 'medium' : 'low';
+    else if (isNew || homoglyph) level = 'high';
+    else if (canSend || firstCertRecent) level = 'medium';
+    else level = 'low';
+    if (age && age.status === 'checking' && level !== 'high') level = 'pending';
+    return { level, reasons };
+}
+
+/** Orden del panel y del informe: lo más peligroso primero. */
+export const RISK_RANK = { high: 0, medium: 1, pending: 2, low: 3, own: 4 };
