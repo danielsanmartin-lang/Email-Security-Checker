@@ -7,6 +7,7 @@ import { translations } from './i18n.js';
 import { isDnssecValidated } from './parsers.js';
 import { GRADE_CALIBRATION } from './analyzer.js';
 import { NEW_DOMAIN_DAYS } from './rdap.js';
+import { assessLookalikeRisk } from './lookalike.js';
 
 // Sustituye los {marcadores} de una cadena traducida (las claves van sin llaves).
 const fillVars = (text, values) => Object.entries(values)
@@ -411,6 +412,29 @@ export function lookalikeAgeView(f, t, locale = 'es-ES') {
     if (oldByCt(f)) return { text: fillVars(t.lookalike_age_ct, { date: date(f.cert.firstSeen) }), tone: null };
     if (!age) return null;
     return { text: '—', tone: null, title: t.lookalike_age_unknown_hint };
+}
+
+const RISK_TONE = { high: 'danger', medium: 'warning', low: 'unknown', own: 'provider', pending: 'unknown' };
+
+/**
+ * Riesgo de un dominio parecido (assessLookalikeRisk), traducido: { level, text, tone,
+ * reasons }. `reasons` son frases cortas, en orden de peso, para pintar bajo la etiqueta.
+ */
+export function lookalikeRiskView(f, t, locale = 'es-ES') {
+    const { level, reasons } = assessLookalikeRisk(f);
+    const reasonText = (r) => {
+        switch (r.key) {
+            case 'own': return t.lookalike_own_hint;
+            case 'new': return fillVars(t.risk_reason_new, { ago: daysAgoText(t, r.days) });
+            case 'cert_new': return fillVars(t.risk_reason_cert_new, { ago: daysAgoText(t, r.days) });
+            case 'first_cert': return fillVars(t.risk_reason_first_cert, { ago: daysAgoText(t, r.days) });
+            case 'mailbox': return fillVars(t.risk_reason_mailbox, { provider: r.provider });
+            case 'sends': return fillVars(t.risk_reason_sends, { what: r.what === 'servers' ? t.risk_what_servers : r.what });
+            case 'old': return fillVars(t.risk_reason_old, { date: new Date(r.registered).toLocaleDateString(locale) });
+            default: return t[`risk_reason_${r.key}`] || r.key;
+        }
+    };
+    return { level, text: t[`risk_${level}`], tone: RISK_TONE[level], reasons: reasons.map(reasonText) };
 }
 
 /**

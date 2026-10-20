@@ -4,6 +4,8 @@ import { getLanguage, getLocale } from './lang.js';
 import { translations } from './i18n.js';
 import { escapeHtml } from './parsers.js';
 import { copyReportToDocs } from './docsExport.js';
+import { RISK_RANK } from './lookalike.js';
+import { NEW_DOMAIN_DAYS } from './rdap.js';
 
 import {
     getCategoryLabel,
@@ -31,6 +33,7 @@ import {
     entraTenantText,
     lookalikeCertView,
     lookalikeAgeView,
+    lookalikeRiskView,
     benchmarkText
 } from './viewmodel.js';
 import { buildRemediation } from './remediation.js';
@@ -293,15 +296,22 @@ export function generateReportHTML() {
     let lookalikeSummaryLine = '';
     const lk = currentResult.lookalikeResult;
     if (lk && Array.isArray(lk.found)) {
-        const withMx = lk.found.filter(f => f.kind === 'mx');
-        lookalikeSummaryLine = `<li><strong>${t.report_lookalike_label}:</strong> ${withMx.length}</li>`;
-        const rows = lk.found.map(f => `<tr>
+        // El mismo veredicto y el mismo orden que el panel: lo más peligroso primero.
+        const locale = getLocale(lang);
+        const risk = new Map(lk.found.map(f => [f, lookalikeRiskView(f, t, locale)]));
+        const count = (level) => lk.found.filter(f => risk.get(f).level === level).length;
+        lookalikeSummaryLine = `<li><strong>${t.report_lookalike_risk}:</strong> ${count('high')} / ${count('medium')}</li>`;
+        const RISK_COLOR = { high: '#dc2626', medium: '#b45309' };
+        const sorted = lk.found.map((f, i) => [f, i])
+            .sort(([a, i], [b, j]) => (RISK_RANK[risk.get(a).level] - RISK_RANK[risk.get(b).level]) || (i - j))
+            .map(([f]) => f);
+        const rows = sorted.map(f => `<tr>
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.domain)}</td>
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHtml(t[`lookalike_technique_${f.technique}`] || f.technique)}</td>
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.mx[0] || '—')}</td>
-                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${f.kind === 'mx' ? '#b45309' : '#64748b'};">${escapeHtml(t[`lookalike_kind_${f.kind}`] || f.kind)}</td>
-                ${reportViewCell(lookalikeAgeView(f, t, getLocale(lang)))}
-                ${reportViewCell(lookalikeCertView(f, t, getLocale(lang)), f.cert && f.cert.issuer)}
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0;"><strong style="color: ${RISK_COLOR[risk.get(f).level] || '#64748b'};">${escapeHtml(risk.get(f).text)}</strong>${risk.get(f).reasons.length ? `<br><small style="color: #64748b;">${escapeHtml(risk.get(f).reasons.join(' · '))}</small>` : ''}</td>
+                ${reportViewCell(lookalikeAgeView(f, t, locale))}
+                ${reportViewCell(lookalikeCertView(f, t, locale), f.cert && f.cert.issuer)}
             </tr>`).join('');
         lookalikeHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🔎 ${t.panel_lookalike_title}</h2>`
             + `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(t.lookalike_intro.split('{checked}').join(String(lk.checked)))}</p>`
@@ -311,10 +321,11 @@ export function generateReportHTML() {
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_domain}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_technique}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_mx}</th>
-                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_status}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_risk}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_age}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_cert}</th>
                     </tr>${rows}</table>`
+                    + `<p style="font-family: sans-serif; font-size: 12px; color: #64748b; line-height: 1.5;">${escapeHtml(t.lookalike_risk_note.split('{days}').join(String(NEW_DOMAIN_DAYS)))}</p>`
                 : `<p style="font-family: sans-serif; font-size: 13px; color: #64748b;">${escapeHtml(t.lookalike_none)}</p>`);
     }
 

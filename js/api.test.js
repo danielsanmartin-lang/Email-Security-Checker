@@ -1251,6 +1251,21 @@ describe('checkLookalikes', () => {
         expect(r.found[0]).not.toHaveProperty('index');
     });
 
+    it('guarda el SPF de los que reciben correo: null si no publica, undefined si falló', async () => {
+        global.fetch = fetchMock((name, type) => {
+            if (type === 'MX') return { Status: 0, Answer: [{ type: 15, data: '10 mail.evil.example.' }] };
+            if (name === 'acme.net' && type === 'TXT') return { Status: 0, Answer: [{ type: 16, data: '"google-site-verification=x"' }, { type: 16, data: '"v=spf1 include:_spf.google.com ~all"' }] };
+            if (name === 'acme.org' && type === 'TXT') return { Status: 2 };
+            return { Status: 0 };
+        });
+        const r = await checkLookalikes(['acme.net', 'acme.info', 'acme.org'].map(domain => ({ domain, technique: 'tld' })), baseline);
+        const spf = Object.fromEntries(r.found.map(f => [f.domain, f.spf]));
+        expect(spf['acme.net']).toBe('v=spf1 include:_spf.google.com ~all');
+        expect(spf['acme.info']).toBeNull();
+        expect(spf['acme.org']).toBeUndefined();
+        expect(r.found.find(f => f.domain === 'acme.org')).toHaveProperty('spf', undefined);
+    });
+
     it('un Null MX cuenta como registrado sin MX', async () => {
         global.fetch = fetchMock((name, type) => {
             if (type === 'MX') return { Status: 0, Answer: [{ type: 15, data: '0 .' }] };

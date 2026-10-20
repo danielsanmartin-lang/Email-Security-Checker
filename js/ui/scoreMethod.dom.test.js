@@ -117,7 +117,7 @@ describe('panel de dominios parecidos', () => {
             checked: 42,
             unresolved: 2,
             found: [
-                { domain: 'acme-es.com', technique: 'combo', mx: ['mail.evil.example', 'mx2.evil.example'], ns: [], kind: 'mx' },
+                { domain: 'acme-es.com', technique: 'combo', mx: ['mail.evil.example', 'mx2.evil.example'], ns: [], spf: null, kind: 'mx' },
                 { domain: 'acrne.es', technique: 'homoglyph', mx: [], ns: [], kind: 'registered' },
                 { domain: 'acme.com', technique: 'tld', mx: ['mx1.acme.es'], ns: [], kind: 'own' }
             ]
@@ -128,14 +128,15 @@ describe('panel de dominios parecidos', () => {
         const text = (tr) => tr.textContent.replace(/\s+/g, ' ').trim();
         const rows = [...body.querySelectorAll(':scope > .lookalike-table-wrap tbody tr')].map(text);
         // Sin `age` ni `cert`, las columnas de registro y certificado quedan en "—".
-        expect(rows[0]).toBe('acme-es.com País en el nombre mail.evil.example (+1) Recibe correo, sin vínculo visible — —');
-        expect(rows[1]).toContain('Probablemente propio');
+        expect(rows[0]).toBe('acme-es.com País en el nombre mail.evil.example (+1) Bajo Recibe correo en un servidor propio o no reconocido · Sin SPF: lo que envíe no pasará la autenticación — —');
+        expect(rows[1]).toContain('Propio');
         // Los registrados sin MX van plegados aparte, solo con dominio y técnica.
         const folded = body.querySelector('details.lookalike-more');
         expect(folded.open).toBe(false);
         expect(folded.querySelector('summary').textContent).toBe('Una variante más está registrada pero sin MX: hoy no recibe correo.');
         expect([...folded.querySelectorAll('tbody tr')].map(text)).toEqual(['acrne.es Homoglifo']);
-        expect(document.getElementById('lookalike-badge').textContent).toBe('1 a vigilar');
+        // Ninguno de riesgo alto ni medio: no hay nada que vigilar.
+        expect(document.getElementById('lookalike-badge').textContent).toBe('Nada que vigilar');
     });
 
     it('si solo hay registrados sin MX, no los pliega', () => {
@@ -145,7 +146,7 @@ describe('panel de dominios parecidos', () => {
         });
         const body = document.getElementById('lookalike-body');
         expect(body.querySelector('details')).toBeNull();
-        expect(body.querySelector('tbody tr').textContent).toContain('Registrado, sin MX');
+        expect(body.querySelector('tbody tr').textContent.replace(/\s+/g, ' ')).toContain('Bajo No recibe correo hoy');
         expect(document.getElementById('lookalike-badge').textContent).toBe('Nada que vigilar');
     });
 
@@ -220,6 +221,55 @@ describe('panel de dominios parecidos', () => {
         });
     });
 
+    describe('veredicto de riesgo', () => {
+        const zepo = () => ({
+            checked: 27, unresolved: 0,
+            found: [
+                { domain: 'zepo.io', technique: 'tld', mx: ['route1.mx.cloudflare.net'], spf: 'v=spf1 include:_spf.mx.cloudflare.net ~all', ns: [], kind: 'mx', age: { status: 'unknown' } },
+                { domain: 'zepo.online', technique: 'tld', mx: ['eforward1.registrar-servers.com'], spf: 'v=spf1 include:spf.efwd.registrar-servers.com ~all', ns: [], kind: 'mx', age: { status: 'new', registered: '2026-09-16T00:00:00Z', days: 34 } },
+                { domain: 'ezpo.app', technique: 'transposition', mx: ['smtp.google.com'], spf: 'v=spf1 include:_spf.google.com ~all', ns: [], kind: 'mx', age: { status: 'old', registered: '2026-01-27T00:00:00Z', days: 266 } },
+                { domain: 'zepoapp.com', technique: 'combo', mx: ['aspmx.l.google.com'], ns: [], kind: 'own' }
+            ]
+        });
+        const rows = () => [...document.querySelectorAll('#lookalike-body > .lookalike-table-wrap tbody tr')];
+
+        it('ordena por riesgo y cada fila dice su nivel y por qué', () => {
+            renderLookalikes(zepo());
+            const risk = rows().map(tr => tr.querySelector('.lookalike-risk'));
+            expect(rows().map(tr => tr.cells[0].textContent)).toEqual(['zepo.online', 'ezpo.app', 'zepo.io', 'zepoapp.com']);
+            expect(risk.map(td => td.querySelector('.tag').textContent)).toEqual(['Alto', 'Medio', 'Bajo', 'Propio']);
+            expect(risk.map(td => td.querySelector('.tag').className.match(/tag--\w+/)[0])).toEqual(['tag--danger', 'tag--warning', 'tag--unknown', 'tag--provider']);
+            expect(risk[0].querySelector('.lookalike-reasons').textContent)
+                .toBe('Registrado hace 34 días · Reenvía a otro buzón el correo que recibe · Su SPF no autoriza envíos propios');
+            expect(risk[1].querySelector('.lookalike-reasons').textContent)
+                .toBe('Buzones en Google Workspace: envía y recibe como una cuenta real · Registrado el 27/1/2026');
+            expect(document.getElementById('lookalike-body').textContent).toContain('El riesgo sale de reglas fijas');
+        });
+
+        it('la insignia cuenta los de riesgo alto; sin ellos, los de medio', () => {
+            renderLookalikes(zepo());
+            const badge = document.getElementById('lookalike-badge');
+            expect(badge.textContent).toBe('1 de riesgo alto');
+            expect(badge.className).toContain('panel__badge--danger');
+            const sinAlto = zepo();
+            sinAlto.found.splice(1, 1);
+            renderLookalikes(sinAlto);
+            expect(badge.textContent).toBe('1 a vigilar');
+            expect(badge.className).toContain('panel__badge--warning');
+        });
+
+        it('mientras llega la fecha de registro, "evaluando" y la insignia espera', () => {
+            renderLookalikes({ checked: 5, unresolved: 0, found: [{ domain: 'a.com', technique: 'tld', mx: ['mail.a.com'], spf: null, ns: [], kind: 'mx', age: { status: 'checking' } }] });
+            expect(rows()[0].querySelector('.lookalike-risk .tag').textContent).toBe('evaluando…');
+            expect(document.getElementById('lookalike-badge').textContent).toBe('...');
+        });
+
+        it('escapa el proveedor y los servicios que vienen del DNS de terceros', () => {
+            renderLookalikes({ checked: 1, unresolved: 0, found: [{ domain: 'a.com', technique: 'tld', mx: ['mail.a.com'], spf: 'v=spf1 include:<img src=x onerror=alert(1)>.example -all', ns: [], kind: 'mx' }] });
+            expect(document.querySelector('#lookalike-body img')).toBeNull();
+        });
+    });
+
     it('una sola variante sin resolver va en singular', () => {
         renderLookalikes({ checked: 10, unresolved: 1, found: [] });
         expect(document.getElementById('lookalike-body').textContent).toContain('1 variante no se pudo resolver');
@@ -233,7 +283,8 @@ describe('panel de dominios parecidos', () => {
         const mx = document.querySelector('#lookalike-body .lookalike-mx');
         expect(mx.textContent).toBe('salesforce-net.mail.protection.outlook.com (+1)');
         expect(mx.querySelectorAll('wbr')).toHaveLength(4);
-        expect(document.querySelector('#lookalike-body .lookalike-domain').querySelectorAll('wbr')).toHaveLength(1);
+        // El parecido, en cambio, va entero: es corto y partido se leía peor.
+        expect(document.querySelector('#lookalike-body .lookalike-domain').querySelectorAll('wbr')).toHaveLength(0);
     });
 
     it('escapa lo que viene del DNS de terceros', () => {
@@ -259,7 +310,7 @@ describe('informe exportado', () => {
         const text = div.textContent.replace(/\s+/g, ' ');
         expect(text).toContain('Cómo se calcula la nota');
         expect(text).toContain('= 88,75');
-        expect(text).toContain('Dominios parecidos que reciben correo, sin vínculo visible: 1');
+        expect(text).toContain('Dominios parecidos de riesgo alto / medio: 0 / 0');
         expect(text).toContain('acme-com.com');
     });
 
@@ -284,5 +335,12 @@ describe('informe exportado', () => {
         expect(cells[1].map(td => td.textContent)).toEqual(['8/5/2018', "Renovado hace 5 días · Let's Encrypt"]);
         expect(cells[1].some(td => td.style.color === 'rgb(220, 38, 38)')).toBe(false);
         expect(div.textContent).toContain('Registrado');
+        // El veredicto: alto el nuevo; el homoglifo antiguo, sin SPF ni buzones, no puede
+        // enviar y queda en bajo. El resumen cuenta alto / medio.
+        const risk = rows.map(tr => tr.cells[3]);
+        expect(risk[0].querySelector('strong').textContent).toBe('Alto');
+        expect(risk[0].querySelector('strong').style.color).toBe('rgb(220, 38, 38)');
+        expect(risk[1].querySelector('strong').textContent).toBe('Bajo');
+        expect(div.textContent.replace(/\s+/g, ' ')).toContain('Dominios parecidos de riesgo alto / medio: 1 / 0');
     });
 });

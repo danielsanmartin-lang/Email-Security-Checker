@@ -7,6 +7,18 @@ y [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- **Veredicto de riesgo de cada dominio parecido**, con reglas fijas y sus motivos a la
+  vista:
+  - **Alto:** recibe correo y se registró hace menos de 90 días, o es un homoglifo que
+    puede enviar correo autenticado.
+  - **Medio:** puede enviar correo autenticado (buzones en un proveedor o un SPF que lo
+    autoriza).
+  - **Bajo:** no recibe correo, o solo lo reenvía o lo aparca.
+  - **Propio:** vinculado al dominio auditado.
+
+  La columna "Riesgo" sustituye a "Estado", el panel y el informe ordenan por riesgo y
+  la insignia cuenta los de riesgo alto ("1 de riesgo alto") o, si no hay, los de medio.
+  En zepo.app: zepo.online alto, ezpo.app medio, zep.app y zepo.io bajo. No puntúa.
 - **Antigüedad de los dominios parecidos.** Los que reciben correo llevan su fecha de alta,
   que se pide por RDAP al registro de su TLD. Un parecido registrado hace menos de 90 días
   sale en rojo ("Nuevo: hace 34 días"): es la señal más clara de una campaña en
