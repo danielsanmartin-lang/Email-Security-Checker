@@ -48,30 +48,34 @@ export function formatProviderSource(source, t) {
 }
 
 /**
+ * La capa a la que entrega el MX: un SEG (Proofpoint, Mimecast…) o un ICES en modo
+ * inline (Avanan, Perception Point…). null si el MX no apunta a ninguna.
+ */
+function mxGateway(result) {
+    const layers = [...(result.segList || []), ...(result.icesList || [])];
+    return layers.find(s => (s.evidence || []).some(e => e.signal === 'mx')) || null;
+}
+
+/**
  * Quién filtra el correo entrante.
  *
- * `provider` solo se rellena cuando el MX es de un PROVEEDOR de buzones (Microsoft,
- * Google…), así que un dominio con un gateway delante —Proofpoint, Mimecast— salía como
- * "no identificado" aunque su filtro de entrada estuviera perfectamente identificado.
- * Cuando pasa eso, se muestra el SEG que el MX confirma, que es la respuesta correcta a
- * la pregunta que hace la etiqueta.
+ * Si el MX entrega a un gateway, el filtro de entrada es ese gateway, aunque se haya
+ * identificado un proveedor. `provider` puede venir del SPF (un `include:_spf.google.com`
+ * con el MX en Proofpoint, caso salesforce.com), y eso dice quién ENVÍA, no quién recibe.
+ * Sin gateway en el MX, el proveedor es la mejor respuesta que hay.
  */
 export function displayInboundFilter(result, t) {
-    const provider = displayProvider(result, t);
-    if (provider !== t.unidentified_provider) return provider;
-    const mxSeg = (result.segList || []).find(s => (s.evidence || []).some(e => e.signal === 'mx'));
-    return mxSeg ? mxSeg.name : provider;
+    const gateway = mxGateway(result);
+    return gateway ? gateway.name : displayProvider(result, t);
 }
 
 /**
  * Fuente de la identificación del filtro de entrada, coherente con displayInboundFilter.
  */
 export function inboundFilterSource(result, t) {
-    const provider = displayProvider(result, t);
-    if (provider !== t.unidentified_provider) return formatProviderSource(result.providerSource, t);
-    const mxSeg = (result.segList || []).find(s => (s.evidence || []).some(e => e.signal === 'mx'));
-    if (!mxSeg) return formatProviderSource(result.providerSource, t);
-    const ev = mxSeg.evidence.find(e => e.signal === 'mx');
+    const gateway = mxGateway(result);
+    if (!gateway) return formatProviderSource(result.providerSource, t);
+    const ev = gateway.evidence.find(e => e.signal === 'mx');
     return `${t.evidence_mx} ${ev.value}`;
 }
 
