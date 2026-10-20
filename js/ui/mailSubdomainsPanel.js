@@ -8,7 +8,7 @@
 //               spoofable }], unresolved }
 //
 // Los nombres vienen de certificados públicos y del DNS: todo pasa por html``, que escapa.
-import { html, raw } from '../utils.js';
+import { html, raw, breakableHost } from '../utils.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
 
@@ -58,7 +58,7 @@ export function renderMailSubdomains(data) {
                 ? html`<span class="tag tag--warning lookalike-kind">${t.mailsub_spoofable}</span>`
                 : html`<span class="tag tag--provider lookalike-kind">${t.mailsub_protected}</span>`;
         return html`<tr>
-            <td class="lookalike-domain">${f.name}</td>
+            <td class="lookalike-domain">${breakableHost(f.name)}</td>
             <td>${mail}</td>
             <td class="lookalike-mx">${policy}${f.inherited ? html` <span class="lookalike-note">(${t.mailsub_inherited})</span>` : raw('')}</td>
             <td>${status}</td>

@@ -57,26 +57,44 @@ function mxGateway(result) {
 }
 
 /**
- * Quién filtra el correo entrante.
+ * Quién filtra el correo entrante y qué lo dice: { name, source }. Responde solo el MX.
  *
- * Si el MX entrega a un gateway, el filtro de entrada es ese gateway, aunque se haya
- * identificado un proveedor. `provider` puede venir del SPF (un `include:_spf.google.com`
- * con el MX en Proofpoint, caso salesforce.com), y eso dice quién ENVÍA, no quién recibe.
- * Sin gateway en el MX, el proveedor es la mejor respuesta que hay.
+ * - Si el MX entrega a un gateway, es ese gateway aunque se haya identificado un
+ *   proveedor: `provider` puede venir del SPF (un `include:_spf.google.com` con el MX en
+ *   Proofpoint, caso salesforce.com), y el SPF dice quién ENVÍA, no quién recibe.
+ * - Si el proveedor sale del MX, es el proveedor.
+ * - Si no, se nombra el MX, propio o no reconocido. Un Exchange híbrido con el MX en casa y
+ *   Microsoft 365 en el SPF no filtra la entrada en Microsoft 365.
+ * - Sin MX, no aplica.
  */
-export function displayInboundFilter(result, t) {
+function resolveInboundFilter(result, t) {
     const gateway = mxGateway(result);
-    return gateway ? gateway.name : displayProvider(result, t);
+    if (gateway) {
+        const ev = gateway.evidence.find(e => e.signal === 'mx');
+        return { name: gateway.name, source: `${t.evidence_mx} ${ev.value}` };
+    }
+    const fromProvider = { name: displayProvider(result, t), source: formatProviderSource(result.providerSource, t) };
+    const src = result.providerSource;
+    // Sin la lista de MX, o con la fuente en el formato antiguo (texto), no se sabe de
+    // dónde salió el proveedor: se muestra como antes.
+    if (!Array.isArray(result.mxRecords) || typeof src === 'string') return fromProvider;
+    if (src && src.key === 'evidence_mx') return fromProvider;
+    if (!result.mxRecords.length || result.nullMx) {
+        return { name: t.transport_not_applicable, source: result.nullMx ? 'Null MX (RFC 7505)' : t.no_mx_records };
+    }
+    const mx = [...result.mxRecords].sort((a, b) => a.priority - b.priority)[0];
+    const own = ((result.inboundFilter && result.inboundFilter.ownMx) || []).includes(mx.host);
+    return { name: own ? t.inbound_filter_own : t.unidentified_provider, source: `${t.evidence_mx} ${mx.host}` };
 }
 
-/**
- * Fuente de la identificación del filtro de entrada, coherente con displayInboundFilter.
- */
+/** Nombre del filtro de entrada (ver resolveInboundFilter). */
+export function displayInboundFilter(result, t) {
+    return resolveInboundFilter(result, t).name;
+}
+
+/** Fuente de la identificación del filtro de entrada, coherente con displayInboundFilter. */
 export function inboundFilterSource(result, t) {
-    const gateway = mxGateway(result);
-    if (!gateway) return formatProviderSource(result.providerSource, t);
-    const ev = gateway.evidence.find(e => e.signal === 'mx');
-    return `${t.evidence_mx} ${ev.value}`;
+    return resolveInboundFilter(result, t).source;
 }
 
 /**

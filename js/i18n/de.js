@@ -748,6 +748,7 @@ export default {
     // ===== E-Mail-Hosting: Cloud oder eigener Server? =====
     panel_mail_hosting_label: "E-Mail-Hosting",
     inbound_filter_label: "Eingangsfilter (MX)",
+    inbound_filter_own: "Eigener Server",
     mailbox_platform_label: "Postfach-Plattform",
     mh_tenant_label: "Mandant",
     mail_hosting_cloud: "In der Cloud",
@@ -827,6 +828,8 @@ export default {
     lookalike_cert_none: "Keine gültigen Zertifikate",
     lookalike_cert_unchecked: "Nicht geprüft",
     lookalike_cert_note: "Die ersten {n}, die E-Mails empfangen, werden in öffentlichen Zertifikatslogs gesucht: Ein frisch ausgestelltes Zertifikat geht oft einer Kampagne voraus.",
+    lookalike_registered_more: "{n} weitere Varianten sind registriert, aber ohne MX: Sie empfangen derzeit keine E-Mails.",
+    lookalike_registered_more_one: "Eine weitere Variante ist registriert, aber ohne MX: Sie empfängt derzeit keine E-Mails.",
     // ===== v5.2: comparación con la muestra de calibración =====
     benchmark_line: "Besser als {below} einer Stichprobe von {sample} Großunternehmen; {same} erreichen ebenfalls {grade}.",
     benchmark_line_unique: "Keines der {sample} Großunternehmen der Stichprobe erreicht {grade}.",
