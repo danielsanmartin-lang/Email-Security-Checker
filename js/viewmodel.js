@@ -6,6 +6,7 @@
 import { translations } from './i18n.js';
 import { isDnssecValidated } from './parsers.js';
 import { GRADE_CALIBRATION } from './analyzer.js';
+import { NEW_DOMAIN_DAYS } from './rdap.js';
 
 // Sustituye los {marcadores} de una cadena traducida (las claves van sin llaves).
 const fillVars = (text, values) => Object.entries(values)
@@ -376,17 +377,62 @@ export function benchmarkText(t, grade, calibration = GRADE_CALIBRATION) {
     return fillVars(t[key], { below: pct(b.below), same: pct(b.same), sample: b.sample, grade });
 }
 
+/** "hoy", "hace 1 día", "hace 5 días". */
+export function daysAgoText(t, days) {
+    if (days === 0) return t.days_ago_today;
+    if (days === 1) return t.days_ago_one;
+    return fillVars(t.days_ago, { days });
+}
+
+/** Una cadena con {n}, en singular (su clave `_one`) cuando n es 1. */
+export function countText(t, key, n) {
+    const text = n === 1 && t[`${key}_one`] ? t[`${key}_one`] : t[key];
+    return fillVars(text, { n });
+}
+
+// La fecha de registro (RDAP) manda. Sin ella, un historial de certificados más largo que
+// NEW_DOMAIN_DAYS también dice que el nombre no es nuevo; uno corto no dice nada (puede
+// ser un dominio antiguo que nunca tuvo web).
+const domainIsNew = (f) => !!(f.age && f.age.status === 'new');
+const oldByCt = (f) => !domainIsNew(f) && !!(f.cert && f.cert.firstSeen && f.cert.firstSeenDays > NEW_DOMAIN_DAYS);
+const domainIsOld = (f) => !!(f.age && f.age.status === 'old') || oldByCt(f);
+
 /**
- * Estado del certificado de un dominio parecido, en pocas palabras ("Reciente: hace 5
- * días", "Vigente desde 3/2/2026"…). El emisor va aparte (título o columna).
+ * Antigüedad de un dominio parecido, para la columna "Registrado": { text, tone, title }.
+ * `tone` es el de la etiqueta (null: texto sin etiqueta); `title`, el detalle al pasar el
+ * ratón. null si no se ha comprobado (no recibe correo).
  */
-export function lookalikeCertText(cert, t, locale = 'es-ES') {
-    if (!cert) return '';
+export function lookalikeAgeView(f, t, locale = 'es-ES') {
+    const date = (iso) => new Date(iso).toLocaleDateString(locale);
+    const age = f.age;
+    if (age && age.status === 'checking') return { text: t.lookalike_cert_checking, tone: null };
+    if (domainIsNew(f)) return { text: fillVars(t.lookalike_age_new, { ago: daysAgoText(t, age.days) }), tone: 'danger', title: date(age.registered) };
+    if (age && age.status === 'old') return { text: date(age.registered), tone: null };
+    if (oldByCt(f)) return { text: fillVars(t.lookalike_age_ct, { date: date(f.cert.firstSeen) }), tone: null };
+    if (!age) return null;
+    return { text: '—', tone: null, title: t.lookalike_age_unknown_hint };
+}
+
+/**
+ * Certificado de un dominio parecido, en pocas palabras: { text, tone, title }. Un
+ * certificado de hace menos de 30 días solo es alarma en un dominio nuevo: en uno antiguo
+ * es casi siempre una renovación (Let's Encrypt renueva cada 60 días), y si no se sabe la
+ * antigüedad se dice sin alarmar. null si no se ha mirado en CT.
+ */
+export function lookalikeCertView(f, t, locale = 'es-ES') {
+    const cert = f.cert;
+    if (!cert) return null;
+    const issuer = cert.issuer || undefined;
     switch (cert.status) {
-        case 'recent': return fillVars(t.lookalike_cert_recent, { days: cert.days });
-        case 'active': return fillVars(t.lookalike_cert_active, { date: new Date(cert.notBefore).toLocaleDateString(locale) });
-        case 'none': return t.lookalike_cert_none;
-        case 'unchecked': return t.lookalike_cert_unchecked;
-        default: return t.lookalike_cert_checking;
+        case 'recent': {
+            const ago = daysAgoText(t, cert.days);
+            if (domainIsNew(f)) return { text: fillVars(t.lookalike_cert_recent, { ago }), tone: 'danger', title: issuer };
+            if (domainIsOld(f)) return { text: fillVars(t.lookalike_cert_renewed, { ago }), tone: 'warning', title: issuer };
+            return { text: fillVars(t.lookalike_cert_issued, { ago }), tone: 'warning', title: [issuer, t.lookalike_cert_issued_hint].filter(Boolean).join(' · ') };
+        }
+        case 'active': return { text: fillVars(t.lookalike_cert_active, { date: new Date(cert.notBefore).toLocaleDateString(locale) }), tone: 'warning', title: issuer };
+        case 'none': return { text: t.lookalike_cert_none, tone: 'provider' };
+        case 'unchecked': return { text: t.lookalike_cert_unchecked, tone: 'unknown' };
+        default: return { text: t.lookalike_cert_checking, tone: 'unknown' };
     }
 }

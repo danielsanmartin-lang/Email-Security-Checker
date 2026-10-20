@@ -127,8 +127,8 @@ describe('panel de dominios parecidos', () => {
         expect(body.textContent).toContain('2 variantes no se pudieron resolver');
         const text = (tr) => tr.textContent.replace(/\s+/g, ' ').trim();
         const rows = [...body.querySelectorAll(':scope > .lookalike-table-wrap tbody tr')].map(text);
-        // Sin `cert`, la columna de certificado queda en "—".
-        expect(rows[0]).toBe('acme-es.com País en el nombre mail.evil.example (+1) Recibe correo, sin vínculo visible —');
+        // Sin `age` ni `cert`, las columnas de registro y certificado quedan en "—".
+        expect(rows[0]).toBe('acme-es.com País en el nombre mail.evil.example (+1) Recibe correo, sin vínculo visible — —');
         expect(rows[1]).toContain('Probablemente propio');
         // Los registrados sin MX van plegados aparte, solo con dominio y técnica.
         const folded = body.querySelector('details.lookalike-more');
@@ -153,17 +153,76 @@ describe('panel de dominios parecidos', () => {
         renderLookalikes({
             checked: 10, unresolved: 0,
             found: [
-                { domain: 'a.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'recent', days: 5, issuer: "Let's Encrypt", notBefore: '2026-10-14T00:00:00Z' } },
                 { domain: 'b.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'checking' } },
                 { domain: 'c.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'unchecked' } },
                 { domain: 'd.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'none' } }
             ]
         });
         const cells = [...document.querySelectorAll('#lookalike-body tbody tr td:last-child .tag')];
-        expect(cells.map(c => c.textContent)).toEqual(['Reciente: hace 5 días', 'comprobando…', 'No comprobado', 'Sin certificados vigentes']);
-        expect(cells[0].className).toContain('tag--danger');
-        expect(cells[0].getAttribute('title')).toBe("Let's Encrypt");
+        expect(cells.map(c => c.textContent)).toEqual(['comprobando…', 'No comprobado', 'Sin certificados vigentes']);
         expect(document.getElementById('lookalike-body').textContent).toContain('Los 3 primeros que reciben correo');
+    });
+
+    // El caso de zepo.app: un certificado de hace unos días es alarma en un dominio
+    // registrado hace un mes, y una renovación en uno registrado hace años.
+    describe('certificado reciente según la antigüedad del dominio', () => {
+        const recent = { status: 'recent', days: 5, issuer: "Let's Encrypt", notBefore: '2026-10-14T00:00:00Z' };
+        const render = (f) => {
+            renderLookalikes({ checked: 10, unresolved: 0, found: [{ domain: 'a.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', ...f }] });
+            const [age, cert] = [...document.querySelectorAll('#lookalike-body tbody tr td')].slice(-2);
+            const tag = (td) => td.querySelector('.tag, .lookalike-age');
+            return { age: tag(age), cert: tag(cert) };
+        };
+
+        it('dominio nuevo (RDAP): rojo en las dos columnas', () => {
+            const { age, cert } = render({ cert: recent, age: { status: 'new', registered: '2026-09-16T00:00:00Z', days: 34 } });
+            expect(age.textContent).toBe('Nuevo: hace 34 días');
+            expect(age.className).toContain('tag--danger');
+            expect(cert.textContent).toBe('Reciente: hace 5 días');
+            expect(cert.className).toContain('tag--danger');
+            expect(cert.getAttribute('title')).toBe("Let's Encrypt");
+        });
+
+        it('dominio antiguo (RDAP): la fecha de alta, y el certificado es una renovación', () => {
+            const { age, cert } = render({ cert: recent, age: { status: 'old', registered: '2018-05-08T00:00:00Z', days: 3087 } });
+            expect(age.textContent).toBe('8/5/2018');
+            expect(age.classList.contains('tag')).toBe(false);
+            expect(cert.textContent).toBe('Renovado hace 5 días');
+            expect(cert.className).toContain('tag--warning');
+        });
+
+        it('sin RDAP pero con historial de certificados largo: también renovación', () => {
+            const { age, cert } = render({ cert: { ...recent, firstSeen: '2021-03-01T00:00:00Z', firstSeenDays: 2058 }, age: { status: 'unknown' } });
+            expect(age.textContent).toBe('Certificados desde 1/3/2021');
+            expect(cert.textContent).toBe('Renovado hace 5 días');
+        });
+
+        it('sin saber la antigüedad: "emitido", sin alarma, y lo explica', () => {
+            // Un historial corto no dice nada: puede ser un dominio antiguo sin web hasta ahora.
+            const { age, cert } = render({ cert: { ...recent, firstSeen: '2026-10-14T00:00:00Z', firstSeenDays: 5 }, age: { status: 'unknown' } });
+            expect(age.textContent).toBe('—');
+            expect(age.getAttribute('title')).toContain('no publica la fecha de alta');
+            expect(cert.textContent).toBe('Emitido hace 5 días');
+            expect(cert.className).toContain('tag--warning');
+            expect(cert.getAttribute('title')).toBe("Let's Encrypt · No se sabe si el dominio es nuevo: puede ser una renovación.");
+        });
+
+        it('hoy y hace 1 día', () => {
+            expect(render({ cert: { ...recent, days: 0 }, age: { status: 'new', registered: '2026-10-18T00:00:00Z', days: 1 } }).cert.textContent).toBe('Reciente: hoy');
+            expect(render({ cert: recent, age: { status: 'new', registered: '2026-10-18T00:00:00Z', days: 1 } }).age.textContent).toBe('Nuevo: hace 1 día');
+        });
+
+        it('explica de dónde sale la fecha y qué no puede saberse', () => {
+            render({ cert: recent, age: { status: 'checking' } });
+            const text = document.getElementById('lookalike-body').textContent;
+            expect(text).toContain('menos de 90 días');
+            expect(text).toContain('puede haber cambiado de dueño');
+        });
+    });
+
+    it('una sola variante sin resolver va en singular', () => {
+        renderLookalikes({ checked: 10, unresolved: 1, found: [] });
+        expect(document.getElementById('lookalike-body').textContent).toContain('1 variante no se pudo resolver');
     });
 
     it('parte los nombres por los puntos, no letra a letra', () => {
@@ -202,5 +261,28 @@ describe('informe exportado', () => {
         expect(text).toContain('= 88,75');
         expect(text).toContain('Dominios parecidos que reciben correo, sin vínculo visible: 1');
         expect(text).toContain('acme-com.com');
+    });
+
+    it('lleva la antigüedad de los parecidos y solo pone en rojo la alarma', () => {
+        const result = resultWith(['mxa-1.gslb.pphosted.com']);
+        const recent = { status: 'recent', days: 5, issuer: "Let's Encrypt", notBefore: '2026-10-14T00:00:00Z' };
+        result.lookalikeResult = {
+            checked: 40, unresolved: 0,
+            found: [
+                { domain: 'acme.online', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: recent, age: { status: 'new', registered: '2026-09-16T00:00:00Z', days: 34 } },
+                { domain: 'acrne.com', technique: 'homoglyph', mx: ['m.x'], ns: [], kind: 'mx', cert: recent, age: { status: 'old', registered: '2018-05-08T00:00:00Z', days: 3087 } }
+            ]
+        };
+        state.currentResult = result;
+        state.currentDomain = 'acme.com';
+        const div = document.createElement('div');
+        div.innerHTML = generateReportHTML().toString();
+        const rows = [...div.querySelectorAll('tr')].filter(tr => /acme\.online|acrne\.com/.test(tr.textContent));
+        const cells = rows.map(tr => [...tr.cells].slice(-2));
+        expect(cells[0].map(td => td.textContent)).toEqual(['Nuevo: hace 34 días', "Reciente: hace 5 días · Let's Encrypt"]);
+        expect(cells[0].every(td => td.style.color === 'rgb(220, 38, 38)')).toBe(true);
+        expect(cells[1].map(td => td.textContent)).toEqual(['8/5/2018', "Renovado hace 5 días · Let's Encrypt"]);
+        expect(cells[1].some(td => td.style.color === 'rgb(220, 38, 38)')).toBe(false);
+        expect(div.textContent).toContain('Registrado');
     });
 });

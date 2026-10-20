@@ -7,6 +7,7 @@ import { analyze, calculateScoreAndFindings, identifyTXTVerifications, identifyN
 import { KB } from './knowledge.js';
 import { generateLookalikes } from './lookalike.js';
 import { getCtNames, markLookalikeCertChecks, checkLookalikeCerts } from './ct.js';
+import { markLookalikeAgeChecks, checkLookalikeAges } from './rdap.js';
 import { selectMailSubdomains } from './mailSubdomains.js';
 import { getSettings } from './settings.js';
 import { extractRootDomain, abortError, isAbortError, swallow } from './utils.js';
@@ -186,8 +187,9 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
                 mx: mx.map(r => r.host),
                 ns
             }, { ...opts, priority: 'low' });
-            // Los que se van a mirar en CT salen ya marcados como "comprobando".
+            // Los que se van a mirar en CT y en RDAP salen ya marcados como "comprobando".
             markLookalikeCertChecks(lookalike);
+            markLookalikeAgeChecks(lookalike);
             return lookalike;
         }).catch((err) => {
             if (!isAbortError(err)) console.warn('Lookalike search failed:', err);
@@ -199,6 +201,13 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     const lookalikeCertsPromise = lookalikePromise.then(lookalike => (lookalike ? checkLookalikeCerts(lookalike, opts) : null))
         .catch((err) => {
             if (!isAbortError(err)) console.warn('Lookalike certificate check failed:', err);
+            return null;
+        });
+    // Fecha de registro (RDAP) de los que reciben correo, a la vez que los certificados:
+    // dice si un certificado reciente es una campaña en preparación o una renovación.
+    const lookalikeAgesPromise = lookalikePromise.then(lookalike => (lookalike ? checkLookalikeAges(lookalike, opts) : null))
+        .catch((err) => {
+            if (!isAbortError(err)) console.warn('Lookalike registration check failed:', err);
             return null;
         });
 
@@ -315,7 +324,7 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
     // y le quitarían huecos.
     if (!background) {
         const none = Promise.resolve(null);
-        return { result, awarenessPromise: none, lookalikePromise, lookalikeCertsPromise, mailSubdomainsPromise: none, mailHostingPromise: none };
+        return { result, awarenessPromise: none, lookalikePromise, lookalikeCertsPromise, lookalikeAgesPromise, mailSubdomainsPromise: none, mailHostingPromise: none };
     }
     onStep('step-awareness', 'active');
     // Se le pasa el árbol SPF ya resuelto: así el PermError del panel de awareness sale
@@ -349,5 +358,5 @@ export async function performAnalysis(domain, dkimSelector = null, { onStep = ()
             return null;
         });
 
-    return { result, awarenessPromise, lookalikePromise, lookalikeCertsPromise, mailSubdomainsPromise, mailHostingPromise };
+    return { result, awarenessPromise, lookalikePromise, lookalikeCertsPromise, lookalikeAgesPromise, mailSubdomainsPromise, mailHostingPromise };
 }

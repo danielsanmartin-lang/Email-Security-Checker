@@ -8,17 +8,19 @@
 //
 // `cert` solo existe en los parecidos que se miran en Certificate Transparency (los
 // primeros que reciben correo): { status: 'checking' | 'recent' | 'active' | 'none' |
-// 'unchecked', notBefore?, issuer?, days? }. El panel se repinta cuando llegan.
+// 'unchecked', notBefore?, issuer?, days?, firstSeen?, firstSeenDays? }. `age`, en los que
+// reciben correo, es su fecha de registro (RDAP): { status: 'checking' | 'new' | 'old' |
+// 'unknown', registered?, days? }. El panel se repinta cuando llega cada uno.
 //
 // Los nombres de los MX vienen del DNS de terceros: todo pasa por html``, que escapa.
 import { html, raw, breakableHost } from '../utils.js';
 import { translations } from '../i18n.js';
 import { getLanguage, getLocale } from '../lang.js';
 import { LOOKALIKE_CERT_MAX } from '../ct.js';
-import { lookalikeCertText } from '../viewmodel.js';
+import { NEW_DOMAIN_DAYS } from '../rdap.js';
+import { lookalikeAgeView, lookalikeCertView, countText } from '../viewmodel.js';
 
 const KIND_TAG = { mx: 'warning', registered: 'unknown', own: 'provider' };
-const CERT_TAG = { recent: 'danger', active: 'warning', none: 'provider', unchecked: 'unknown', checking: 'unknown' };
 
 export function renderLookalikes(lookalike) {
     const body = document.getElementById('lookalike-body');
@@ -47,7 +49,7 @@ export function renderLookalikes(lookalike) {
 
     const intro = html`<p class="lookalike-intro">${t.lookalike_intro.split('{checked}').join(String(lookalike.checked))}</p>`;
     const unresolved = lookalike.unresolved > 0
-        ? html`<p class="lookalike-note">${t.lookalike_unresolved.split('{n}').join(String(lookalike.unresolved))}</p>`
+        ? html`<p class="lookalike-note">${countText(t, 'lookalike_unresolved', lookalike.unresolved)}</p>`
         : raw('');
 
     if (!lookalike.found.length) {
@@ -60,19 +62,22 @@ export function renderLookalikes(lookalike) {
         const mx = f.mx.length
             ? html`${breakableHost(f.mx[0])}${f.mx.length > 1 ? ` (+${f.mx.length - 1})` : ''}`
             : '—';
-        const cert = f.cert
-            ? html`<span class="tag tag--${raw(CERT_TAG[f.cert.status] || 'unknown')} lookalike-kind"${f.cert.issuer ? html` title="${f.cert.issuer}"` : raw('')}>${lookalikeCertText(f.cert, t, locale)}</span>`
-            : raw('—');
+        const certView = lookalikeCertView(f, t, locale);
+        const ageView = lookalikeAgeView(f, t, locale);
         return html`<tr>
             <td class="lookalike-domain">${breakableHost(f.domain)}</td>
             <td>${t[`lookalike_technique_${f.technique}`] || f.technique}</td>
             <td class="lookalike-mx">${mx}</td>
             <td><span class="tag tag--${raw(KIND_TAG[f.kind] || 'unknown')} lookalike-kind"${f.kind === 'own' ? html` title="${t.lookalike_own_hint}"` : raw('')}>${t[`lookalike_kind_${f.kind}`]}</span></td>
-            <td>${cert}</td>
+            <td>${viewHtml(ageView)}</td>
+            <td>${viewHtml(certView)}</td>
         </tr>`;
     };
     const certNote = lookalike.found.some(f => f.cert)
         ? html`<p class="lookalike-note">${t.lookalike_cert_note.split('{n}').join(String(LOOKALIKE_CERT_MAX))}</p>`
+        : raw('');
+    const ageNote = lookalike.found.some(f => f.age)
+        ? html`<p class="lookalike-note">${t.lookalike_age_note.split('{days}').join(String(NEW_DOMAIN_DAYS))}</p>`
         : raw('');
 
     // Los registrados sin MX hoy no reciben correo, y suelen ser la mayoría: en una tabla
@@ -84,9 +89,7 @@ export function renderLookalikes(lookalike) {
     const main = folded ? receiving : lookalike.found;
     const registeredHtml = folded
         ? html`<details class="lookalike-more">
-            <summary>${registered.length === 1
-                ? t.lookalike_registered_more_one
-                : t.lookalike_registered_more.split('{n}').join(String(registered.length))}</summary>
+            <summary>${countText(t, 'lookalike_registered_more', registered.length)}</summary>
             <div class="lookalike-table-wrap">
                 <table class="lookalike-table">
                     <thead><tr>
@@ -110,12 +113,24 @@ export function renderLookalikes(lookalike) {
                     <th>${t.lookalike_col_technique}</th>
                     <th>${t.lookalike_col_mx}</th>
                     <th>${t.lookalike_col_status}</th>
+                    <th>${t.lookalike_col_age}</th>
                     <th>${t.lookalike_col_cert}</th>
                 </tr></thead>
                 <tbody>${main.map(row)}</tbody>
             </table>
         </div>
         ${certNote}
+        ${ageNote}
         ${registeredHtml}
         ${unresolved}`;
+}
+
+// Una celda de lookalikeAgeView / lookalikeCertView: etiqueta si tiene tono, texto si no,
+// "—" si no hay nada que decir.
+function viewHtml(view) {
+    if (!view) return raw('—');
+    const title = view.title ? html` title="${view.title}"` : raw('');
+    return view.tone
+        ? html`<span class="tag tag--${raw(view.tone)} lookalike-kind"${title}>${view.text}</span>`
+        : html`<span class="lookalike-age"${title}>${view.text}</span>`;
 }

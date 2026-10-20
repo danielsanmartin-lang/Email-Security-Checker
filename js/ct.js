@@ -165,31 +165,45 @@ function _issuerOrg(issuerName) {
  * recién sacado para un dominio que imita a otro y recibe correo es la preparación
  * típica de una campaña.
  *
+ * `firstSeen` es la emisión más antigua del historial, caducados incluidos. Dice desde
+ * cuándo tiene certificados el nombre, que es lo que permite ver una renovación cuando el
+ * registro del TLD no publica la fecha de alta (RDAP). Solo crt.sh guarda el historial;
+ * con Certspotter queda en null.
+ *
  * crt.sh primero y Certspotter si falla. Rechaza si fallan las dos (el llamante lo
  * muestra como "no comprobado", que no es lo mismo que "sin certificados").
  *
- * @returns {Promise<Array<{ notBefore: string, issuer: string|null }>>} del más reciente al más antiguo
+ * @returns {Promise<{ certs: Array<{ notBefore: string, issuer: string|null }>, firstSeen: string|null }>}
+ *          `certs` del más reciente al más antiguo
  */
-export async function getCertIssuances(domain, { signal } = {}) {
+export async function getCertIssuances(domain, { signal, now = Date.now() } = {}) {
     if (signal && signal.aborted) throw abortError();
     const name = cleanName(domain);
-    let certs = null;
+    let all = null;
+    let withHistory = false;
     if (crtShUp()) {
         try {
-            const json = await _fetchJson(`https://crt.sh/?q=${encodeURIComponent(name)}&output=json&exclude=expired`, signal);
-            certs = json.map(e => ({ notBefore: e.not_before, issuer: _issuerOrg(e.issuer_name) }));
+            const json = await _fetchJson(`https://crt.sh/?q=${encodeURIComponent(name)}&output=json&deduplicate=Y`, signal);
+            all = json.map(e => ({ notBefore: e.not_before, notAfter: e.not_after, issuer: _issuerOrg(e.issuer_name) }));
+            withHistory = true;
         } catch {
             if (signal && signal.aborted) throw abortError();
             _markCrtShDown();
         }
     }
-    if (!certs) {
+    if (!all) {
         const json = await _fetchJson(`https://api.certspotter.com/v1/issuances?domain=${encodeURIComponent(name)}&expand=issuer`, signal);
-        certs = json.map(e => ({ notBefore: e.not_before, issuer: (e.issuer && (e.issuer.friendly_name || _issuerOrg(e.issuer.name))) || null }));
+        all = json.map(e => ({ notBefore: e.not_before, notAfter: e.not_after, issuer: (e.issuer && (e.issuer.friendly_name || _issuerOrg(e.issuer.name))) || null }));
     }
-    return certs
-        .filter(c => c.notBefore && !Number.isNaN(Date.parse(c.notBefore)))
-        .sort((a, b) => Date.parse(b.notBefore) - Date.parse(a.notBefore));
+    const dated = all.filter(c => c.notBefore && !Number.isNaN(Date.parse(c.notBefore)));
+    const firstSeen = withHistory && dated.length
+        ? dated.reduce((a, b) => (Date.parse(b.notBefore) < Date.parse(a.notBefore) ? b : a)).notBefore
+        : null;
+    const certs = dated
+        .filter(c => !c.notAfter || Number.isNaN(Date.parse(c.notAfter)) || Date.parse(c.notAfter) > now)
+        .sort((a, b) => Date.parse(b.notBefore) - Date.parse(a.notBefore))
+        .map(({ notBefore, issuer }) => ({ notBefore, issuer }));
+    return { certs, firstSeen };
 }
 
 // ===== Dominios parecidos con certificado =====
@@ -212,16 +226,22 @@ export function markLookalikeCertChecks(lookalike, max = LOOKALIKE_CERT_MAX) {
     return picked;
 }
 
-/** Lee la lista de certificados vigentes de un parecido (del más reciente al más antiguo). */
-export function lookalikeCertStatus(certs, now = Date.now()) {
-    if (!certs.length) return { status: 'none' };
+/**
+ * Lee los certificados de un parecido (getCertIssuances). `firstSeenDays`, cuando hay
+ * historial, son los días desde el primer certificado del nombre, caducados incluidos.
+ */
+export function lookalikeCertStatus({ certs, firstSeen = null }, now = Date.now()) {
+    const since = (iso) => Math.max(0, Math.floor((now - Date.parse(iso)) / DAY_MS));
+    const history = firstSeen ? { firstSeen, firstSeenDays: since(firstSeen) } : {};
+    if (!certs.length) return { status: 'none', ...history };
     const latest = certs[0];
-    const days = Math.max(0, Math.floor((now - Date.parse(latest.notBefore)) / DAY_MS));
+    const days = since(latest.notBefore);
     return {
         status: days <= RECENT_CERT_DAYS ? 'recent' : 'active',
         notBefore: latest.notBefore,
         issuer: latest.issuer,
-        days
+        days,
+        ...history
     };
 }
 
@@ -235,7 +255,7 @@ export async function checkLookalikeCerts(lookalike, { signal, now = Date.now() 
     for (const f of picked) {
         if (signal && signal.aborted) throw abortError();
         try {
-            f.cert = lookalikeCertStatus(await getCertIssuances(f.domain, { signal }), now);
+            f.cert = lookalikeCertStatus(await getCertIssuances(f.domain, { signal, now }), now);
         } catch (e) {
             if (signal && signal.aborted) throw abortError();
             f.cert = { status: 'unchecked' };

@@ -58,7 +58,7 @@ export async function runAnalysis(domain, dkimSelector = null) {
     ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis', 'step-awareness'].forEach(s => setStep(s, null));
 
     try {
-        const { result, awarenessPromise, lookalikePromise, lookalikeCertsPromise, mailSubdomainsPromise, mailHostingPromise } = await performAnalysis(domain, dkimSelector, {
+        const { result, awarenessPromise, lookalikePromise, lookalikeCertsPromise, lookalikeAgesPromise, mailSubdomainsPromise, mailHostingPromise } = await performAnalysis(domain, dkimSelector, {
             // Los pasos de un análisis obsoleto no deben tocar el indicador de progreso
             // del que está corriendo ahora.
             onStep: (step, stepState) => { if (!isStale()) setStep(step, stepState); },
@@ -91,11 +91,14 @@ export async function runAnalysis(domain, dkimSelector = null) {
             result.lookalikeResult = lookalikeResult;
             renderLookalikes(lookalikeResult);
         });
-        whenCurrent(lookalikeCertsPromise, (lookalikeResult) => {
-            if (!lookalikeResult) return;
-            result.lookalikeResult = lookalikeResult;
-            renderLookalikes(lookalikeResult);
-        });
+        // Certificados y fecha de registro rellenan el mismo objeto: cada uno repinta al llegar.
+        for (const p of [lookalikeCertsPromise, lookalikeAgesPromise]) {
+            whenCurrent(p, (lookalikeResult) => {
+                if (!lookalikeResult) return;
+                result.lookalikeResult = lookalikeResult;
+                renderLookalikes(lookalikeResult);
+            });
+        }
         whenCurrent(mailSubdomainsPromise, (mailSubdomains) => {
             result.mailSubdomains = mailSubdomains;
             renderMailSubdomains(mailSubdomains);

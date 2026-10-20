@@ -11,6 +11,7 @@
 import { html, raw, breakableHost } from '../utils.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
+import { countText } from '../viewmodel.js';
 
 const fill = (text, values) => Object.entries(values)
     .reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), String(text || ''));
@@ -37,12 +38,12 @@ export function renderMailSubdomains(data) {
 
     const spoofable = data.found.filter(f => f.spoofable === true).length;
     if (badge) {
-        badge.textContent = spoofable > 0 ? fill(t.mailsub_badge_spoofable, { n: spoofable }) : t.mailsub_badge_ok;
+        badge.textContent = spoofable > 0 ? countText(t, 'mailsub_badge_spoofable', spoofable) : t.mailsub_badge_ok;
         badge.className = `panel__badge${spoofable > 0 ? ' panel__badge--warning' : ''}`;
     }
     const intro = html`<p class="lookalike-intro">${fill(t.mailsub_intro, { names: data.ctNames, checked: data.checked })}</p>`;
     const unresolved = data.unresolved > 0
-        ? html`<p class="lookalike-note">${fill(t.mailsub_unresolved, { n: data.unresolved })}</p>`
+        ? html`<p class="lookalike-note">${countText(t, 'mailsub_unresolved', data.unresolved)}</p>`
         : raw('');
     if (!data.found.length) {
         body.innerHTML = html`${intro}<p class="no-data">${t.mailsub_none}</p>${unresolved}`;

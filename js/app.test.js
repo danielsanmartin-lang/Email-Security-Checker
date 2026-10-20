@@ -145,7 +145,9 @@ describe('performAnalysis (integración, DoH mockeado)', () => {
 
     it('con nombres CT: subdominios con correo, hospedaje recalculado y certificados de parecidos', async () => {
         const { clearCtCache } = await import('./ct.js');
+        const { clearRdapCache } = await import('./rdap.js');
         clearCtCache();
+        clearRdapCache();
         global.fetch = vi.fn(async (url) => {
             const s = String(url);
             if (s.includes('crt.sh/?q=%.acme.com')) {
@@ -185,6 +187,9 @@ describe('performAnalysis (integración, DoH mockeado)', () => {
         expect(acrne.kind).toBe('mx');
         // Las dos fuentes CT caídas: "no comprobado", no "sin certificados".
         expect(acrne.cert).toEqual({ status: 'unchecked' });
+        // Sin respuesta del bootstrap de IANA, la fecha de registro queda en "no se sabe".
+        expect(await run.lookalikeAgesPromise).toBe(lookalikes);
+        expect(acrne.age).toEqual({ status: 'unknown' });
         await run.awarenessPromise;
     });
 });
