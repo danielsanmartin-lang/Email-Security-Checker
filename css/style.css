@@ -2059,6 +2059,7 @@ span.tooltip-trigger.spf-tree-error { cursor: help; text-decoration: underline d
    letra a letra: con break-all la tabla encogía la columna hasta un carácter de ancho. */
 .lookalike-domain, .lookalike-mx { font-family: var(--font-mono); font-size: 0.78rem; overflow-wrap: break-word; }
 .lookalike-kind { padding: 2px 8px; border-radius: 100px; font-size: 0.68rem; font-weight: 600; white-space: nowrap; }
+.lookalike-age { font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; }
 .lookalike-more { margin-top: 12px; }
 .lookalike-more > summary { cursor: pointer; font-size: 0.78rem; color: var(--text-secondary); padding: 4px 0; }
 .lookalike-more[open] > summary { margin-bottom: 6px; }

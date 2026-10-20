@@ -29,7 +29,8 @@ import {
     scoreFormula,
     gradeMeaning,
     entraTenantText,
-    lookalikeCertText,
+    lookalikeCertView,
+    lookalikeAgeView,
     benchmarkText
 } from './viewmodel.js';
 import { buildRemediation } from './remediation.js';
@@ -45,6 +46,14 @@ function renderSpfTreeLight(tree) {
         : '';
     return `<ul style="list-style:none; margin:0; padding-left:0; font-family:monospace; font-size:12px; color:#334155;">`
         + `<li><strong>${escapeHtml(tree.domain)}</strong> <span style="color:#64748b;">(${tree.lookups} lookups)</span>${err}${kids}</li></ul>`;
+}
+
+// Celda del informe para lookalikeAgeView / lookalikeCertView: en rojo solo lo que es alarma
+// (dominio nuevo, o certificado reciente en un dominio nuevo). `extra` va detrás (emisor).
+function reportViewCell(view, extra) {
+    const color = view && view.tone === 'danger' ? '#dc2626' : '#64748b';
+    const text = view ? view.text + (extra ? ` · ${extra}` : '') : '—';
+    return `<td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${color};">${escapeHtml(text)}</td>`;
 }
 
 export function generateReportHTML() {
@@ -291,7 +300,8 @@ export function generateReportHTML() {
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHtml(t[`lookalike_technique_${f.technique}`] || f.technique)}</td>
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.mx[0] || '—')}</td>
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${f.kind === 'mx' ? '#b45309' : '#64748b'};">${escapeHtml(t[`lookalike_kind_${f.kind}`] || f.kind)}</td>
-                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${f.cert && f.cert.status === 'recent' ? '#dc2626' : '#64748b'};">${f.cert ? escapeHtml(lookalikeCertText(f.cert, t, getLocale(lang)) + (f.cert.issuer ? ` · ${f.cert.issuer}` : '')) : '—'}</td>
+                ${reportViewCell(lookalikeAgeView(f, t, getLocale(lang)))}
+                ${reportViewCell(lookalikeCertView(f, t, getLocale(lang)), f.cert && f.cert.issuer)}
             </tr>`).join('');
         lookalikeHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🔎 ${t.panel_lookalike_title}</h2>`
             + `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(t.lookalike_intro.split('{checked}').join(String(lk.checked)))}</p>`
@@ -302,6 +312,7 @@ export function generateReportHTML() {
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_technique}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_mx}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_status}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_age}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_cert}</th>
                     </tr>${rows}</table>`
                 : `<p style="font-family: sans-serif; font-size: 13px; color: #64748b;">${escapeHtml(t.lookalike_none)}</p>`);

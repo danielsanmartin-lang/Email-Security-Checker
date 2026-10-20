@@ -47,6 +47,7 @@ Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless
 * **Sin Backend:** Todo el procesamiento y parseo de registros ocurre en el cliente.
 * **DNS-over-HTTPS (DoH):** Utiliza las APIs públicas de Google DNS y Cloudflare DNS con fallback automático.
 * **Certificate Transparency (crt.sh, Certspotter):** los nombres de los certificados públicos del dominio alimentan el detector de awareness, el hospedaje del correo, los subdominios con correo y los certificados de los dominios parecidos.
+* **RDAP (registros de cada TLD):** la fecha de alta de los dominios parecidos que reciben correo dice si un certificado reciente es una campaña en preparación (dominio nuevo) o una renovación (dominio antiguo).
 * **Módulos ES6:** Separación estricta de responsabilidades en `/js/`. Se desarrolla y se prueba sin construir; lo publicado sale de `scripts/build.mjs` (esbuild).
 
 ```
@@ -59,6 +60,7 @@ js/
 ├── settings.js          # Preferencias: resolver DoH, proxy CORS opt-in, tenant, firmas externas
 ├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…): caché, dedup y cola por zona
 ├── ct.js                # Certificate Transparency (crt.sh + Certspotter), compartido
+├── rdap.js              # Fecha de registro de los dominios parecidos (RDAP + bootstrap de IANA)
 ├── mailSubdomains.js    # Subdominios con correo vistos en CT: selección y clasificación (puro)
 ├── remediation.js       # Registros de corrección del anexo del informe (puro)
 ├── analyzer.js          # Identificación de proveedores/SEGs + scoring por categorías
@@ -104,6 +106,7 @@ css/fonts/               # Tipografías autoalojadas (sin Google Fonts)
 * JavaScript Vanilla (ES6+ Modules)
 * API de DNS-over-HTTPS (Google / Cloudflare / Quad9 o un resolver propio, configurable)
 * Certificate Transparency API (crt.sh + Certspotter)
+* RDAP (RFC 9083), con el bootstrap de IANA (RFC 9224)
 * Vitest + jsdom (tests), ESLint + Prettier (calidad), GitHub Actions (CI/CD)
 * PWA (service worker + manifest) y tipografías autoalojadas: cero dependencias de terceros para renderizar
 
@@ -135,6 +138,12 @@ confidenciales.
   como mucho, los 3 dominios parecidos que reciben correo viajan como parámetro de
   búsqueda. Alimentan awareness, hospedaje, subdominios con correo y los certificados de
   los parecidos. Nunca se contacta con el dominio auditado.
+* **RDAP (`data.iana.org` y el registro de cada TLD):** la lista de IANA dice qué registro
+  atiende cada TLD, y a ese registro (Verisign para `.com`, Google para `.app`…) se le pide
+  la fecha de alta de, como mucho, 10 dominios parecidos que reciben correo. Viaja solo el
+  nombre del parecido; ni el dominio auditado ni sus servidores reciben nada. Muchos ccTLD
+  (`.es`, `.de`, `.io`, `.eu`…) no publican RDAP: ahí la fecha queda sin saber, y para los
+  que se miran en CT el historial de certificados de crt.sh hace de respaldo.
 * **Microsoft (`login.microsoftonline.com`):** el documento OIDC público dice si el dominio
   está en un tenant de Microsoft Entra. Recibe el dominio auditado; **activado por
   defecto** porque va a Microsoft y no a los servidores del dominio auditado, y se apaga en

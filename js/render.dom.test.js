@@ -481,10 +481,10 @@ describe('v5.2 en la interfaz', () => {
         const body = document.getElementById('mailsub-body');
         expect(body.querySelector('img')).toBeNull();
         expect(body.textContent).toContain('De 20 nombres vistos en certificados públicos se han consultado 2');
-        expect(body.textContent).toContain('1 no se pudieron consultar');
+        expect(body.textContent).toContain('1 no se pudo consultar');
         const status = [...body.querySelectorAll('tbody tr td:last-child')].map(td => td.textContent.trim());
         expect(status).toEqual(['Suplantable', 'Protegido', 'Sin comprobar']);
-        expect(document.getElementById('mailsub-badge').textContent).toBe('1 suplantables');
+        expect(document.getElementById('mailsub-badge').textContent).toBe('1 suplantable');
     });
 
     it('el panel de hospedaje muestra el tenant de Entra', () => {

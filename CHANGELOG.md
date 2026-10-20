@@ -5,7 +5,25 @@ y [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+
+- **Antigüedad de los dominios parecidos.** Los que reciben correo llevan su fecha de alta,
+  que se pide por RDAP al registro de su TLD. Un parecido registrado hace menos de 90 días
+  sale en rojo ("Nuevo: hace 34 días"): es la señal más clara de una campaña en
+  preparación. Muchos ccTLD (`.es`, `.de`, `.io`…) no publican RDAP; en los que se miran
+  en CT, el historial de certificados de crt.sh hace de respaldo ("Certificados desde
+  2021").
+
 ### Corregido
+
+- **Un certificado de hace menos de 30 días ya no es alarma por sí solo.** Let's Encrypt
+  renueva cada 60 días, así que en cualquier dominio con HTTPS salía "Reciente" la mitad
+  del tiempo: zepo.io y zep.app, registrados hace años, aparecían en rojo. Ahora es
+  "Reciente" (rojo) en un dominio nuevo, "Renovado" en uno antiguo y "Emitido", sin
+  alarma y explicando por qué, cuando no se sabe la antigüedad. "Hace 0 días" pasa a
+  "hoy".
+- **Singulares** en los paneles de dominios parecidos y subdominios con correo: "1
+  variante no se pudo resolver", "1 no se pudo consultar", "1 suplantable".
 
 - **"Filtro de entrada (MX)" nombraba al proveedor deducido del SPF aunque el MX
   apuntara a un gateway.** En salesforce.com, con el MX en Proofpoint y un

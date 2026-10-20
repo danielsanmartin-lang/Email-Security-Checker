@@ -101,21 +101,28 @@ describe('getCertIssuances', () => {
     beforeEach(() => clearCtCache());
     afterEach(() => vi.restoreAllMocks());
 
-    it('lee fecha y emisor de crt.sh y ordena del más reciente al más antiguo', async () => {
+    const NOW = Date.parse('2026-10-19T00:00:00Z');
+
+    it('lee fecha y emisor de crt.sh, solo los vigentes, del más reciente al más antiguo', async () => {
         global.fetch = ctFetch({
             crt: () => [
-                { not_before: '2026-01-10T00:00:00', issuer_name: 'C=US, O=Let\'s Encrypt, CN=R11' },
-                { not_before: '2026-10-01T00:00:00', issuer_name: 'C=US, O="DigiCert, Inc.", CN=X' },
+                { not_before: '2026-01-10T00:00:00', not_after: '2027-01-10T00:00:00', issuer_name: 'C=US, O=Let\'s Encrypt, CN=R11' },
+                { not_before: '2026-10-01T00:00:00', not_after: '2026-12-30T00:00:00', issuer_name: 'C=US, O="DigiCert, Inc.", CN=X' },
+                { not_before: '2019-03-01T00:00:00', not_after: '2019-05-30T00:00:00', issuer_name: 'O=Let\'s Encrypt' },
                 { not_before: 'no es una fecha', issuer_name: 'CN=Solo CN' }
             ],
             spotter: () => { throw new Error('no debería usarse'); }
         });
-        const certs = await getCertIssuances('acrne.com');
+        const { certs, firstSeen } = await getCertIssuances('acrne.com', { now: NOW });
         expect(certs).toEqual([
             { notBefore: '2026-10-01T00:00:00', issuer: 'DigiCert, Inc.' },
             { notBefore: '2026-01-10T00:00:00', issuer: 'Let\'s Encrypt' }
         ]);
-        expect(String(global.fetch.mock.calls[0][0])).toContain('q=acrne.com');
+        // El caducado no cuenta como vigente, pero sí dice desde cuándo hay certificados.
+        expect(firstSeen).toBe('2019-03-01T00:00:00');
+        const url = String(global.fetch.mock.calls[0][0]);
+        expect(url).toContain('q=acrne.com');
+        expect(url).not.toContain('exclude=expired');
     });
 
     it('si crt.sh falla, usa Certspotter', async () => {
@@ -123,10 +130,14 @@ describe('getCertIssuances', () => {
             crt: () => 502,
             spotter: () => [{ not_before: '2026-10-15T00:00:00Z', issuer: { friendly_name: 'Amazon Trust Services' } }, { not_before: '2026-09-01T00:00:00Z', issuer: { name: 'C=US, O=Google Trust Services, CN=WR3' } }]
         });
-        expect(await getCertIssuances('acrne.com')).toEqual([
-            { notBefore: '2026-10-15T00:00:00Z', issuer: 'Amazon Trust Services' },
-            { notBefore: '2026-09-01T00:00:00Z', issuer: 'Google Trust Services' }
-        ]);
+        // Certspotter no guarda el historial: sin `firstSeen`.
+        expect(await getCertIssuances('acrne.com')).toEqual({
+            certs: [
+                { notBefore: '2026-10-15T00:00:00Z', issuer: 'Amazon Trust Services' },
+                { notBefore: '2026-09-01T00:00:00Z', issuer: 'Google Trust Services' }
+            ],
+            firstSeen: null
+        });
     });
 
     it('tras una caída de crt.sh, las siguientes consultas van directas a Certspotter', async () => {
@@ -164,9 +175,11 @@ describe('certificados de los dominios parecidos', () => {
 
     it('lookalikeCertStatus: reciente hasta 30 días, vigente después, ninguno si no hay', async () => {
         const { lookalikeCertStatus } = await import('./ct.js');
-        expect(lookalikeCertStatus([], NOW)).toEqual({ status: 'none' });
-        expect(lookalikeCertStatus([{ notBefore: '2026-10-14T00:00:00Z', issuer: 'X' }], NOW)).toEqual({ status: 'recent', notBefore: '2026-10-14T00:00:00Z', issuer: 'X', days: 5 });
-        expect(lookalikeCertStatus([{ notBefore: '2026-08-01T00:00:00Z', issuer: null }], NOW)).toMatchObject({ status: 'active', days: 79 });
+        expect(lookalikeCertStatus({ certs: [] }, NOW)).toEqual({ status: 'none' });
+        expect(lookalikeCertStatus({ certs: [{ notBefore: '2026-10-14T00:00:00Z', issuer: 'X' }] }, NOW)).toEqual({ status: 'recent', notBefore: '2026-10-14T00:00:00Z', issuer: 'X', days: 5 });
+        expect(lookalikeCertStatus({ certs: [{ notBefore: '2026-08-01T00:00:00Z', issuer: null }] }, NOW)).toMatchObject({ status: 'active', days: 79 });
+        // Con historial, los días desde el primer certificado.
+        expect(lookalikeCertStatus({ certs: [], firstSeen: '2026-10-09T00:00:00Z' }, NOW)).toEqual({ status: 'none', firstSeen: '2026-10-09T00:00:00Z', firstSeenDays: 10 });
     });
 
     it('marca los 3 primeros que reciben correo y rellena su certificado en serie', async () => {
