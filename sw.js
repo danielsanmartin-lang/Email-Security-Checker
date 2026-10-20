@@ -12,7 +12,7 @@
  * de caché sin preguntar a la red. Sin construir (desarrollo local), los ficheros no
  * llevan hash y van a la red primero, como siempre.
  */
-const SW_VERSION = 'v5.2.0';
+const SW_VERSION = 'v5.2.1';
 
 // Los rellena scripts/build.mjs en cada despliegue: un número de secuencia (para ordenar
 // las generaciones de caché) y la lista de ficheros publicados. En desarrollo quedan así.

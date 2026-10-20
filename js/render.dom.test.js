@@ -468,6 +468,8 @@ describe('v5.2 en la interfaz', () => {
         expect(document.getElementById('mailsub-body').textContent).toContain('No se pudieron comprobar');
         renderMailSubdomains({ ctNames: 0, checked: 0, found: [], unresolved: 0 });
         expect(document.getElementById('mailsub-body').textContent).toContain('no devolvieron nombres');
+        // Sin nombres no se comprobó nada: la insignia no dice "sin suplantables".
+        expect(document.getElementById('mailsub-badge').textContent).toBe('—');
         renderMailSubdomains({
             ctNames: 20, checked: 2, unresolved: 1,
             found: [

@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [5.2.1] - 2026-10-20
+
+### Corregido
+
+- **La insignia de "Subdominios con correo" decía "Sin suplantables" sin haber comprobado
+  nada** cuando los logs de certificados no devolvían nombres (crt.sh caído y la cuota de
+  Certspotter agotada). El panel ya lo explicaba, pero la insignia se leía como una
+  respuesta. Ahora muestra "—", como cuando la búsqueda falla.
+
 ## [5.2.0] - 2026-10-20
 
 Más rápida y con más contexto. El resultado llega entre dos y cuatro veces antes, la app

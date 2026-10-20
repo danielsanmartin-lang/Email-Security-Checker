@@ -27,15 +27,18 @@ export function renderMailSubdomains(data) {
         return;
     }
 
+    // Sin nombres de los logs CT no se ha comprobado nada: la insignia no puede decir
+    // "sin suplantables", que se leería como una respuesta.
+    if (!data.ctNames) {
+        if (badge) { badge.textContent = '—'; badge.className = 'panel__badge'; }
+        body.innerHTML = html`<p class="no-data">${t.mailsub_no_ct}</p>`;
+        return;
+    }
+
     const spoofable = data.found.filter(f => f.spoofable === true).length;
     if (badge) {
         badge.textContent = spoofable > 0 ? fill(t.mailsub_badge_spoofable, { n: spoofable }) : t.mailsub_badge_ok;
         badge.className = `panel__badge${spoofable > 0 ? ' panel__badge--warning' : ''}`;
-    }
-
-    if (!data.ctNames) {
-        body.innerHTML = html`<p class="no-data">${t.mailsub_no_ct}</p>`;
-        return;
     }
     const intro = html`<p class="lookalike-intro">${fill(t.mailsub_intro, { names: data.ctNames, checked: data.checked })}</p>`;
     const unresolved = data.unresolved > 0
