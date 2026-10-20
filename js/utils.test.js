@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDomain, isValidDomain, isValidDkimSelector, parseDkimSelectors, html, raw, SafeHtml } from './utils.js';
+import { normalizeDomain, isValidDomain, isValidDkimSelector, parseDkimSelectors, html, raw, SafeHtml, breakableHost } from './utils.js';
 import { escapeHtml } from './parsers.js';
 
 describe('normalizeDomain', () => {
@@ -80,6 +80,17 @@ describe('html`` tagged template', () => {
 
     it('devuelve un SafeHtml', () => {
         expect(html`<a>`).toBeInstanceOf(SafeHtml);
+    });
+});
+
+describe('breakableHost', () => {
+    it('pone un punto de corte tras cada punto y nada más', () => {
+        expect(breakableHost('mxa-1.gslb.pphosted.com').toString()).toBe('mxa-1.<wbr>gslb.<wbr>pphosted.<wbr>com');
+        expect(breakableHost('localhost').toString()).toBe('localhost');
+    });
+
+    it('escapa cada trozo', () => {
+        expect(breakableHost('<img src=x>.evil.com').toString()).toBe('&lt;img src=x&gt;.<wbr>evil.<wbr>com');
     });
 });
 

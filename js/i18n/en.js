@@ -748,6 +748,7 @@ export default {
     // ===== Mail hosting: cloud or own server? =====
     panel_mail_hosting_label: "Mail hosting",
     inbound_filter_label: "Inbound filter (MX)",
+    inbound_filter_own: "Own server",
     mailbox_platform_label: "Mailbox platform",
     mh_tenant_label: "Tenant",
     mail_hosting_cloud: "Cloud",
@@ -827,6 +828,8 @@ export default {
     lookalike_cert_none: "No valid certificates",
     lookalike_cert_unchecked: "Not checked",
     lookalike_cert_note: "The first {n} that receive mail are looked up in public certificate logs: a freshly issued certificate often precedes a campaign.",
+    lookalike_registered_more: "{n} more variants are registered but have no MX: they don't receive mail today.",
+    lookalike_registered_more_one: "One more variant is registered but has no MX: it doesn't receive mail today.",
     // ===== v5.2: comparación con la muestra de calibración =====
     benchmark_line: "Better than {below} of a sample of {sample} large companies; {same} also score {grade}.",
     benchmark_line_unique: "None of the {sample} large companies in the sample reaches {grade}.",

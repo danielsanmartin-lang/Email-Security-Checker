@@ -577,6 +577,26 @@ describe('filtro de entrada: el gateway del MX manda sobre el proveedor del SPF'
         expect(inboundBlock().detail).toBe('MX apunta a acme-com.mailprotection.checkpoint.com');
     });
 
+    it('con el MX en el propio dominio, el filtro es un servidor propio aunque el SPF nombre a Microsoft', () => {
+        renderResults('acme.com', mxSpfResult(['mail.acme.com'], 'v=spf1 include:spf.protection.outlook.com -all', 'acme.com'));
+        expect(inboundBlock().value).toBe('Servidor propio');
+        expect(inboundBlock().detail).toBe('MX apunta a mail.acme.com');
+        // El proveedor sigue donde corresponde: en la tarjeta del resumen.
+        expect(document.getElementById('summary-provider-value').textContent).toBe('Microsoft 365');
+    });
+
+    it('con un MX de un tercero que no se reconoce, no identificado y el MX de menor prioridad', () => {
+        renderResults('acme.com', mxSpfResult(['mx1.raro.net', 'mx2.raro.net'], 'v=spf1 include:_spf.google.com -all', 'acme.com'));
+        expect(inboundBlock().value).toBe('No identificado');
+        expect(inboundBlock().detail).toBe('MX apunta a mx1.raro.net');
+    });
+
+    it('sin MX, no aplica', () => {
+        renderResults('acme.com', mxSpfResult([], 'v=spf1 include:_spf.google.com -all', 'acme.com'));
+        expect(inboundBlock().value).toBe('No aplica');
+        expect(inboundBlock().detail).toBe('No se encontraron registros MX');
+    });
+
     it('sin gateway en el MX, el filtro de entrada es el proveedor del MX', () => {
         renderResults('acme.com', mxSpfResult(['acme-com.mail.protection.outlook.com'], 'v=spf1 include:_spf.google.com -all', 'acme.com'));
         expect(inboundBlock().value).toBe('Microsoft 365');
