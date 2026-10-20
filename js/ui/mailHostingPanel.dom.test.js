@@ -3,9 +3,9 @@
 // El panel del proveedor ahora responde a DOS preguntas que antes se confundían en una:
 // quién FILTRA el correo (el MX) y dónde VIVEN los buzones. Estos tests fijan lo que el
 // panel puede y —sobre todo— lo que NO puede afirmar.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { renderProviderPanel } from './mxPanel.js';
-import { translations } from '../i18n.js';
+import { translations, ensureLanguage } from '../i18n.js';
 
 const t = translations.es;
 
@@ -158,6 +158,8 @@ describe('panel de proveedor: entrega de HTML', () => {
 });
 
 describe('panel de proveedor: los tres idiomas', () => {
+    // Inglés y alemán se descargan bajo demanda.
+    beforeAll(() => Promise.all(['en', 'de'].map(ensureLanguage)));
     it.each(['es', 'en', 'de'])('renderiza el veredicto en %s', (lang) => {
         localStorage.setItem('lang', lang);
         const el = build();

@@ -24,6 +24,11 @@ export const DEFAULT_SETTINGS = {
     // Origin y la página va sin Referer, así que el servidor del logo (casi siempre una
     // CDN) solo ve la IP del auditor. Apagado, el logo se carga con un clic.
     loadBimiLogos: true,
+    // Consulta del tenant de Microsoft Entra (login.microsoftonline.com, documento OIDC
+    // público). Por defecto ENCENDIDO: va a Microsoft, no al dominio auditado, y es la
+    // forma de confirmar Microsoft 365 aunque haya un gateway delante del MX. Envía el
+    // dominio auditado a Microsoft, igual que los logs CT lo envían a crt.sh.
+    lookupEntraTenant: true,
     // URL de un JSON de fingerprints de awareness para mantener las firmas al día.
     fingerprintsUrl: '',
 
@@ -128,4 +133,16 @@ export function resolverChain(name, type) {
         const r = RESOLVERS[key];
         return { label: r.label, url: r.url(name, type), ...(r.headers ? { headers: r.headers } : {}) };
     });
+}
+
+/**
+ * Origen (esquema + host) del resolver que se usará primero, o null si no se puede
+ * saber (URL propia mal formada). Para abrir la conexión TLS por adelantado.
+ */
+export function primaryResolverOrigin() {
+    try {
+        return new URL(resolverChain('example.com', 'A')[0].url).origin;
+    } catch {
+        return null;
+    }
 }

@@ -426,7 +426,8 @@ export const KB = {
         dane: 0.5,                   // TLSA en un MX propio: MTA autogestionado (M365 publica TLSA en *.mx.microsoft)
         mx_self: 0.45,               // la raíz del MX coincide con la del dominio auditado
         ptr_isp_static: 0.4,         // el PTR parece una línea de cliente de ISP
-        ct_onprem_host: 0.35         // owa./webmail./zimbra. en Certificate Transparency
+        ct_onprem_host: 0.35,        // owa./webmail./zimbra. en Certificate Transparency
+        entra_tenant: 0.3            // el dominio está verificado en un tenant de Microsoft Entra
     },
     categoryColors: {
         email: '#6366f1', seg: '#a855f7', ices: '#8b5cf6',

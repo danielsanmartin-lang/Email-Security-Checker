@@ -3,6 +3,112 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 y [Versionado Semántico](https://semver.org/lang/es/).
 
+## [5.2.0] - 2026-10-20
+
+Más rápida y con más contexto. El resultado llega entre dos y cuatro veces antes, la app
+pesa menos de la mitad al abrirse, y el análisis aprovecha mejor lo que ya consultaba:
+los certificados públicos del dominio, el tenant de Microsoft y la muestra con la que se
+calibraron las letras. El informe exportado trae un anexo con los registros que
+corregirían lo encontrado. **La nota no cambia** (salvo el caso de DKIM de "Corregido"):
+las de 5.1 y 5.2 son comparables.
+
+### Rendimiento
+
+- **Cada consulta espera solo a lo que necesita.** El análisis ya no avanza por etapas
+  (existencia del dominio → todo lo demás → DANE y RBL → hospedaje → autorización DMARC):
+  DANE y la reputación salen en cuanto se conocen los MX, la autorización de informes en
+  cuanto se conoce DMARC, los selectores DKIM fijos sin esperar al SPF, y las sondas de
+  cada nivel del árbol SPF a la vez que sus `include`. Medido con DoH de Google, las
+  mismas notas y la caché vacía: salesforce.com de 2,2 s a 0,6 s, mercadona.es de 2,1 s
+  a 0,7 s, gruporamos.com de 1,1 s a 0,7 s.
+- **Sin la espera fija de 300 ms** antes de pintar el resultado.
+- **Cola DNS con prioridad, tope por zona y cancelación.** El tope de 6 consultas a la
+  vez protege a los autoritativos del dominio auditado; ahora es por zona (con un techo
+  global de 16), así que los dominios parecidos, las DNSBL o Team Cymru ya no esperan
+  detrás. Lo de segundo plano va con prioridad baja y nunca ocupa más de 10 huecos. Y
+  lanzar otro dominio cancela el análisis anterior: lo que tenía en cola sale sin pedirse,
+  en vez de hacer esperar al nuevo detrás de cientos de consultas.
+- **Dos SERVFAIL bastan.** Si Google y Cloudflare dicen SERVFAIL, ya no se pregunta a
+  Quad9, que con una zona rota no contesta hasta agotar los 8 s del tiempo límite (un PTR
+  roto de un MX retenía así el resultado entero más de 15 s). Lo de segundo plano tampoco
+  reintenta: un nombre que no responde queda como "sin resolver".
+- **Certificate Transparency en paralelo.** Los logs CT se piden al empezar y se esperan
+  junto a las sondas DNS, no antes. crt.sh, solo con certificados vigentes y sin
+  duplicados (con dominios grandes la respuesta pesaba megas); si tarda más de 4 s entra
+  Certspotter, y si acaba de caerse se va directo a Certspotter durante 5 minutos.
+- **La app se empaqueta al publicarse** (esbuild): minificada, con un hash en cada nombre
+  y precarga de lo que se usa al arrancar. La carga inicial pasa de 33 módulos en cascada
+  y 215 KB comprimidos a 5 ficheros y 89 KB. El inglés, el alemán, el informe exportable y
+  el detector de awareness se descargan solo si se usan, y el service worker sirve de
+  caché lo que lleva hash, sin preguntar a la red.
+- **Conexión anticipada con el resolver DoH** al enfocar el buscador.
+
+### Añadido
+
+- **Tenant de Microsoft Entra.** El documento OIDC público de Microsoft dice si el dominio
+  está en un tenant (con su ID y su región), también con un gateway delante del MX. Se
+  muestra en el panel de hospedaje y en el informe, y refuerza una pista de nube que ya
+  existía, pero nunca decide sola: tener tenant solo dice que la organización usa algún
+  servicio de Microsoft (google.com tiene uno). El tenant de cuentas personales, que el
+  endpoint devuelve para dominios como gmail.com, no cuenta.
+- **Subdominios con correo**, un panel nuevo. De los nombres vistos en certificados
+  públicos se consultan los que parecen enviar correo (news., marketing., mail.…, como
+  mucho 15): su SPF, sus MX y la política DMARC que les aplica, la suya o la heredada con
+  `sp`. Un `p=reject` con `sp=none` deja suplantable justo el subdominio de los boletines,
+  y desde el ápex no se ve. Informa, no puntúa.
+- **Certificados de los dominios parecidos.** Los 3 primeros que reciben correo se buscan
+  en los logs CT: un certificado emitido hace 30 días o menos sale en rojo, porque suele
+  preceder a una campaña. Si los logs no responden, "no comprobado".
+- **El hospedaje del correo usa los certificados.** Un `owa.`, `webmail.` o `exchange.`
+  en un certificado refuerza la pista de servidor propio cuando ya había otra (la señal
+  existía desde la v3.3, sin conectar). El panel se recalcula cuando llegan los logs.
+- **Anexo del informe: registros de corrección**, listos para copiar: la escalera DMARC
+  hasta `reject` (conservando los destinos de informe), el registro que debe publicar un
+  destino de informes externo sin autorizar, el SPF corregido (fusión de varios
+  registros, `include` rotos fuera, `~all`, y los `include` más caros aplanados si pasa
+  de 10 consultas), MTA-STS (el TXT y el fichero, en testing y luego enforce, con los MX
+  reales) y TLS-RPT. Los buzones inventados van marcados como ejemplo.
+- **Comparación con la muestra.** La tarjeta de nota y el resumen del informe dicen dónde
+  queda la letra frente a los 61 dominios de la calibración: "Mejor que el 20 % de una
+  muestra de 61 grandes empresas; el 61 % tiene también una B".
+- **Ajuste "Consultar el tenant de Microsoft"**, activado por defecto.
+
+### Corregido
+
+- **DKIM ya no se pierde si falla la consulta del SPF.** Los selectores esperaban al
+  registro SPF y, si este fallaba, DKIM salía como "no comprobado" aunque estuviera
+  publicado. Es el único caso en que la nota puede cambiar respecto a 5.1.
+- **El service worker borraba las cachés de otros proyectos** publicados en el mismo
+  origen (`*.github.io`): solo toca ya las suyas. Además conserva la generación anterior,
+  para que una pestaña abierta de la versión de antes siga pudiendo cargar sus trozos.
+- **El despliegue publicaba los tests** de `js/ui/` (`*.dom.test.js`). Ahora solo se
+  publica `dist/`.
+- **Las consultas de autorización DMARC externa** iban una detrás de otra; van a la vez y
+  conservan el orden.
+
+### Privacidad
+
+- **Nuevo tercero: `login.microsoftonline.com`**, que recibe el dominio auditado para la
+  consulta del tenant. Va a Microsoft, nunca a un servidor del dominio auditado, y se
+  apaga en Ajustes. Declarado también en el `connect-src` de la CSP.
+- **Certificate Transparency ya no es solo cosa del detector de awareness**: crt.sh y
+  Certspotter reciben también, como mucho, los 3 dominios parecidos que reciben correo.
+
+### Interno
+
+- **`js/ct.js`**: los logs CT, compartidos por awareness, hospedaje, subdominios y
+  parecidos, con caché de una hora y deduplicación de consultas en vuelo.
+- **`js/remediation.js`** (anexo), **`js/mailSubdomains.js`** (subdominios),
+  **`js/docsExport.js`** (portapapeles de Google Docs, que en Safari tiene que escribirse
+  dentro del clic, aunque el informe aún se esté descargando).
+- **Diccionario por idioma en `js/i18n/`.** El español viaja con la app (es el idioma por
+  defecto, el del HTML y el de respaldo); `ensureLanguage()` carga los demás.
+- **`scripts/build.mjs`** y `npm run build`. Un test construye el sitio y comprueba que
+  todo lo referenciado existe, y que el motor de análisis minificado da la misma nota que
+  sin construir: al minificar, las reglas de la nota se buscaban por `Function.name` y
+  perdían su presupuesto (nota 0). Ahora la regla se identifica por su clave.
+- La CI también construye, y Pages publica `dist/`.
+
 ## [5.1.0] - 2026-09-24
 
 La nota se revisa para que sea más justa con lo que no se ve desde fuera, se calibra contra

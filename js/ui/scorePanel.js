@@ -3,7 +3,7 @@
 import { html, raw } from '../utils.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
-import { resolveFindingText, postureText, filteringText, filteringTone } from '../viewmodel.js';
+import { resolveFindingText, postureText, filteringText, filteringTone, benchmarkText } from '../viewmodel.js';
 
 export function renderScorePanel(result) {
     const lang = getLanguage();
@@ -42,6 +42,10 @@ export function renderScorePanel(result) {
 
         if (scoreNumberEl) scoreNumberEl.textContent = score;
         if (scoreGradeEl) scoreGradeEl.textContent = grade;
+
+        // Dónde queda la letra frente a la muestra con la que se calibraron los cortes.
+        const benchmarkEl = document.getElementById('score-benchmark');
+        if (benchmarkEl) benchmarkEl.textContent = benchmarkText(t, grade);
         
         if (ringFillEl) {
             const circumference = 314;

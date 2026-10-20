@@ -3,13 +3,13 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
     test: {
         environment: 'node',
-        include: ['js/**/*.test.js'],
+        include: ['js/**/*.test.js', 'scripts/**/*.test.js'],
         globals: false,
         coverage: {
             provider: 'v8',
             reporter: ['text', 'html', 'lcov'],
             include: ['js/**/*.js'],
-            exclude: ['js/**/*.test.js', 'js/i18n.js', 'js/lang.js', 'js/state.js'],
+            exclude: ['js/**/*.test.js', 'js/i18n.js', 'js/i18n/**', 'js/lang.js', 'js/state.js'],
             // Umbrales conservadores (por debajo de lo actual) para congelar lo
             // ganado sin romper el build; suben a medida que crece la cobertura.
             // v3: el test de integración con jsdom (integration.dom.test.js) recorre

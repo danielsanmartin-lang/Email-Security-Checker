@@ -9,3 +9,6 @@ coverage/
 
 # Configuración local de Claude Code (permisos y launch.json de preview)
 .claude/
+
+# Versión publicable (npm run build): se genera en CI, no se versiona
+dist/

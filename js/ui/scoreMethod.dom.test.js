@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest';
 import { analyze, calculateScoreAndFindings, SCORE_WEIGHTS } from '../analyzer.js';
 import { buildScoreMethod, renderScoreMethod } from './scoreMethod.js';
 import { renderLookalikes } from './lookalikePanel.js';
 import { generateReportHTML } from '../export.js';
 import { state } from '../state.js';
 import { setLanguage } from '../lang.js';
+import { ensureLanguage } from '../i18n.js';
+
+// Inglés y alemán se descargan bajo demanda.
+beforeAll(() => Promise.all(['en', 'de'].map(ensureLanguage)));
 
 const RSA_2048 = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmBBYI7zVX1AV5i/TYH8ujMlXkMfD7YzBoRnf1b34d5hhBa0RG3k7GT5Z8irrBPeP/ZIxKEIn4okhyhpd2NY0OP1RQsEEzDSnVQL5MmtINeyxY0bBALRL/maj6EtXrKrpAQvkfPOlEo9U4mRDJaLb0D0G6nxmqbztSlHToGlgp6B9EvDV/NNgYYhBVCaqfzVoJqgRzes5elhnODddSCw4burNfq+375sHa5vSlf6nZ38hz6witOE1NZEhI1MYIwiQhsfVy3tav9mdbL/YcW0gBmXMjq/03QlAQS8pUL4ZwGPhPjnt/0Q3X6jYforhfLIraQIrVRPhp5a6ilstNaZ8TQIDAQAB';
 
@@ -122,10 +126,28 @@ describe('panel de dominios parecidos', () => {
         expect(body.textContent).toContain('Se han comprobado 42 variantes');
         expect(body.textContent).toContain('2 variantes no se pudieron resolver');
         const rows = [...body.querySelectorAll('tbody tr')].map(tr => tr.textContent.replace(/\s+/g, ' ').trim());
-        expect(rows[0]).toBe('acme-es.com País en el nombre mail.evil.example (+1) Recibe correo, sin vínculo visible');
+        // Sin `cert`, la columna de certificado queda en "—".
+        expect(rows[0]).toBe('acme-es.com País en el nombre mail.evil.example (+1) Recibe correo, sin vínculo visible —');
         expect(rows[1]).toContain('Registrado, sin MX');
         expect(rows[2]).toContain('Probablemente propio');
         expect(document.getElementById('lookalike-badge').textContent).toBe('1 a vigilar');
+    });
+
+    it('muestra el certificado de los que se miran en CT, con su tono y la nota', () => {
+        renderLookalikes({
+            checked: 10, unresolved: 0,
+            found: [
+                { domain: 'a.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'recent', days: 5, issuer: "Let's Encrypt", notBefore: '2026-10-14T00:00:00Z' } },
+                { domain: 'b.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'checking' } },
+                { domain: 'c.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'unchecked' } },
+                { domain: 'd.com', technique: 'tld', mx: ['m.x'], ns: [], kind: 'mx', cert: { status: 'none' } }
+            ]
+        });
+        const cells = [...document.querySelectorAll('#lookalike-body tbody tr td:last-child .tag')];
+        expect(cells.map(c => c.textContent)).toEqual(['Reciente: hace 5 días', 'comprobando…', 'No comprobado', 'Sin certificados vigentes']);
+        expect(cells[0].className).toContain('tag--danger');
+        expect(cells[0].getAttribute('title')).toBe("Let's Encrypt");
+        expect(document.getElementById('lookalike-body').textContent).toContain('Los 3 primeros que reciben correo');
     });
 
     it('escapa lo que viene del DNS de terceros', () => {

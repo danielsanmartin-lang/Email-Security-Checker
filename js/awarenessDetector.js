@@ -9,13 +9,15 @@
  * No son detectables por este módulo. Ver campo `notes` en el resultado.
  *
  * Exporta:
- *   detectAwarenessVendors(domain: string) → Promise<AwarenessResult>
+ *   detectAwarenessVendors(domain: string, opts?) → Promise<AwarenessResult>
  *   AWARENESS_FINGERPRINTS  (el diccionario, recargable)
  *   flattenSpf(domain)      (util; usa la capa DNS unificada de api.js)
  */
 
 import { queryDNS } from './api.js';
 import { extractTxtValue } from './parsers.js';
+import { getCtNames } from './ct.js';
+import { isAbortError } from './utils.js';
 
 // ---------------------------------------------------------------------------
 // 1. DICCIONARIO DE FINGERPRINTS
@@ -636,8 +638,12 @@ export const AWARENESS_FINGERPRINTS = {
  */
 async function _doh(name, type, stats = null) {
     try {
-        return await queryDNS(name, type);
+        // `stats.dns` lleva la señal de cancelación y la prioridad de la ejecución: todo
+        // lo de este detector es segundo plano.
+        return await queryDNS(name, type, (stats && stats.dns) || {});
     } catch (e) {
+        // Una cancelación no es "no hay nada": se propaga para que la ejecución pare.
+        if (isAbortError(e)) throw e;
         if (stats) {
             stats.failed++;
             if (e.code === 'servfail') stats.servfail++;
@@ -646,9 +652,9 @@ async function _doh(name, type, stats = null) {
     }
 }
 
-/** Colector vacío para una ejecución del detector. */
-function _newDnsStats() {
-    return { failed: 0, servfail: 0 };
+/** Colector vacío para una ejecución del detector (y sus opciones de consulta DNS). */
+function _newDnsStats(dns = {}) {
+    return { failed: 0, servfail: 0, dns };
 }
 
 async function _getTxt(domain, stats = null) {
@@ -657,7 +663,10 @@ async function _getTxt(domain, stats = null) {
         // extractTxtValue concatena correctamente los chunks entrecomillados que DoH
         // devuelve para TXT >255 chars (claves DKIM de 2048 bits partidas en trozos).
         return (d.Answer || []).map(a => extractTxtValue(a.data));
-    } catch { return []; }
+    } catch (e) {
+        if (isAbortError(e)) throw e;
+        return [];
+    }
 }
 
 async function _getMxRaw(domain, stats = null) {
@@ -669,7 +678,10 @@ async function _getMxRaw(domain, stats = null) {
                 const parts = a.data.trim().split(/\s+/);
                 return parts[parts.length - 1].replace(/\.$/, '').toLowerCase();
             });
-    } catch { return []; }
+    } catch (e) {
+        if (isAbortError(e)) throw e;
+        return [];
+    }
 }
 
 async function _getCname(domain, stats = null) {
@@ -678,7 +690,10 @@ async function _getCname(domain, stats = null) {
         return (d.Answer || [])
             .filter(a => a.type === 5)
             .map(a => a.data.trim().replace(/\.$/, '').toLowerCase());
-    } catch { return []; }
+    } catch (e) {
+        if (isAbortError(e)) throw e;
+        return [];
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -813,75 +828,9 @@ export function _ipInCidr(observed, cidr) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. crt.sh — Certificate Transparency enrichment (con caché y rate-limit)
+// 6. Certificate Transparency: vive en ct.js, compartido con el resto del análisis
+//    (hospedaje del correo, subdominios con correo, dominios parecidos).
 // ---------------------------------------------------------------------------
-const _crtCache = new Map();
-const CRT_CACHE_TTL = 60 * 60 * 1000; // 60 min (los logs CT son frágiles/rate-limited)
-
-// Fuente primaria: crt.sh
-async function _fetchCrtSh(domain) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 10000);
-    try {
-        const url = `https://crt.sh/?q=%.${encodeURIComponent(domain)}&output=json`;
-        const res = await fetch(url, { signal: ctrl.signal });
-        if (!res.ok) throw new Error(`crt.sh HTTP ${res.status}`);
-        const json = await res.json();
-        const names = new Set();
-        for (const entry of json) {
-            if (entry.name_value) entry.name_value.split('\n').forEach(n => names.add(n.trim().toLowerCase()));
-            if (entry.common_name) names.add(entry.common_name.trim().toLowerCase());
-        }
-        return [...names];
-    } finally {
-        clearTimeout(tid);
-    }
-}
-
-// Fuente de respaldo: Certspotter (SSLMate). API pública con CORS permisivo.
-async function _fetchCertspotter(domain) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 10000);
-    try {
-        const url = `https://api.certspotter.com/v1/issuances?domain=${encodeURIComponent(domain)}&include_subdomains=true&expand=dns_names`;
-        const res = await fetch(url, { signal: ctrl.signal });
-        if (!res.ok) throw new Error(`certspotter HTTP ${res.status}`);
-        const json = await res.json();
-        const names = new Set();
-        for (const entry of json) {
-            for (const n of (entry.dns_names || [])) names.add(String(n).trim().toLowerCase());
-        }
-        return [...names];
-    } finally {
-        clearTimeout(tid);
-    }
-}
-
-// Orquesta ambas fuentes CT: crt.sh primero; si falla o no devuelve nada, Certspotter.
-// Si ambas responden, fusiona los nombres. Degrada con elegancia (devuelve []).
-async function _queryCrt(domain) {
-    const key = `crt:${domain}`;
-    const cached = _crtCache.get(key);
-    if (cached && Date.now() - cached.ts < CRT_CACHE_TTL) return cached.data;
-
-    const names = new Set();
-    let primaryOk = false;
-    try {
-        for (const n of await _fetchCrtSh(domain)) names.add(n);
-        primaryOk = true;
-    } catch { /* probamos la fuente de respaldo */ }
-
-    // Usamos Certspotter si crt.sh falló o no devolvió nada.
-    if (!primaryOk || names.size === 0) {
-        try {
-            for (const n of await _fetchCertspotter(domain)) names.add(n);
-        } catch { /* ambas fuentes no disponibles */ }
-    }
-
-    const data = [...names];
-    _crtCache.set(key, { data, ts: Date.now() }); // cacheamos incluso el fallo para no saturar
-    return data;
-}
 
 // Señales INDIRECTAS: indican el gateway de correo del vendor o co-ubicación, pero
 // NO confirman que el módulo de awareness esté contratado/desplegado.
@@ -934,27 +883,33 @@ const UNCONFIRMED_SCORE_CAP = 0.4;
  */
 export async function detectAwarenessVendors(domain, opts = {}) {
     domain = domain.trim().toLowerCase();
+    const { signal } = opts;
+
+    // --- Certificate Transparency ---
+    // Se pide YA y se espera junto a las sondas DNS, no antes: es la consulta más lenta y
+    // no depende de ninguna de ellas. El análisis principal suele pasarla ya en marcha
+    // (`opts.ctNames`), compartida con los demás paneles que la usan.
+    const crtNamesP = Promise.resolve(opts.ctNames || getCtNames(domain, { signal }))
+        .catch((e) => {
+            if (isAbortError(e)) throw e;
+            return [];
+        });
 
     // --- DNS ---
-    const dnsStats = _newDnsStats();
-    const spf = opts.spfTree
-        ? spfFromTree(opts.spfTree)
-        : await flattenSpf(domain, { lookups: 10 }, new Set(), dnsStats);
-    const mxHosts = await _getMxRaw(domain, dnsStats);
-    const rootTxts = await _getTxt(domain, dnsStats);
-
-    // DMARC: extraer rua/ruf por si apuntan a infra de vendor
-    const dmarcTxts = await _getTxt(`_dmarc.${domain}`, dnsStats);
+    const dnsStats = _newDnsStats({ signal, priority: 'low' });
+    const [spf, mxHosts, rootTxts, dmarcTxts] = await Promise.all([
+        opts.spfTree ? spfFromTree(opts.spfTree) : flattenSpf(domain, { lookups: 10 }, new Set(), dnsStats),
+        _getMxRaw(domain, dnsStats),
+        _getTxt(domain, dnsStats),
+        // DMARC: extraer rua/ruf por si apuntan a infra de vendor
+        _getTxt(`_dmarc.${domain}`, dnsStats)
+    ]);
     const dmarcRaw = dmarcTxts.find(t => t.toLowerCase().startsWith('v=dmarc1')) || '';
     const ruaMatch = dmarcRaw.match(/rua=([^;]+)/i);
     const rufMatch = dmarcRaw.match(/ruf=([^;]+)/i);
     const dmarcRua = ruaMatch ? ruaMatch[1].split(',').map(s => s.trim()) : [];
     const dmarcRuf = rufMatch ? rufMatch[1].split(',').map(s => s.trim()) : [];
     const dmarcEndpoints = [...dmarcRua, ...dmarcRuf].join(' ').toLowerCase();
-
-    // --- crt.sh ---
-    let crtNames = [];
-    try { crtNames = await _queryCrt(domain); } catch { /* silencio */ }
 
     // --- CNAME Probing ---
     // Subdominios típicos de landing/tracking de campañas de awareness, delegados
@@ -969,7 +924,7 @@ export async function detectAwarenessVendors(domain, opts = {}) {
         'cofense', 'phishme', 'proofpoint', 'mimecast', 'email-security'
     ];
     const cnameResults = {};
-    await Promise.all(AWARENESS_SUBDOMAINS.map(async sub => {
+    const cnameProbes = Promise.all(AWARENESS_SUBDOMAINS.map(async sub => {
         const targets = await _getCname(`${sub}.${domain}`, dnsStats);
         if (targets.length > 0) {
             cnameResults[sub] = targets;
@@ -979,7 +934,7 @@ export async function detectAwarenessVendors(domain, opts = {}) {
     // --- Generic DKIM selectors probing ---
     const GENERIC_AWARENESS_SELECTORS = ['s1', 's2', 'k1', 'k2', 'mail', 'default', 'phish', 'sim', 'training'];
     const genericDkimResults = {};
-    await Promise.all(GENERIC_AWARENESS_SELECTORS.map(async sel => {
+    const genericDkimProbes = Promise.all(GENERIC_AWARENESS_SELECTORS.map(async sel => {
         const txts = await _getTxt(`${sel}._domainkey.${domain}`, dnsStats);
         if (txts.length > 0) {
             genericDkimResults[sel] = txts;
@@ -989,14 +944,16 @@ export async function detectAwarenessVendors(domain, opts = {}) {
     // --- Selectores DKIM propios de cada vendor ---
     // Se consultan todos a la vez antes de puntuar. Antes se hacía dentro del bucle de
     // vendors, uno detrás de otro: 17 consultas en serie que, con la zona auditada lenta,
-    // alargaban el panel varios segundos.
+    // alargaban el panel varios segundos. Y las tres tandas de sondas (CNAME, DKIM
+    // genéricos y de vendor) van a la vez entre sí y con los logs CT.
     const vendorSelectors = [...new Set(Object.values(AWARENESS_FINGERPRINTS)
         .filter(fp => fp.detectableViaDns)
         .flatMap(fp => fp.dkimSelectors || []))];
     const vendorDkimResults = {};
-    await Promise.all(vendorSelectors.map(async sel => {
+    const vendorDkimProbes = Promise.all(vendorSelectors.map(async sel => {
         vendorDkimResults[sel] = await _getTxt(`${sel}._domainkey.${domain}`, dnsStats);
     }));
+    const [crtNames] = await Promise.all([crtNamesP, cnameProbes, genericDkimProbes, vendorDkimProbes]);
 
     // --- SCORING ---
     const detected = [];

@@ -1,5 +1,5 @@
 import { performAnalysis } from './analysis.js';
-import { renderResults, renderAwarenessVendors, renderLookalikes, showSection, setStep } from './ui.js';
+import { renderResults, renderAwarenessVendors, renderLookalikes, renderMailSubdomains, renderProviderPanel, showSection, setStep } from './ui.js';
 import { getLanguage } from './lang.js';
 import { translations } from './i18n.js';
 import { normalizeDomain, isValidDomain } from './utils.js';
@@ -11,10 +11,18 @@ export { state };
 export { performAnalysis };
 
 // Token de la ejecución en curso. Si el usuario lanza un segundo análisis antes de
-// que termine el primero, el viejo sigue resolviéndose (no se abortan las peticiones
-// DNS en vuelo, sería un refactor desproporcionado) pero su resultado se DESCARTA:
-// sin esto, el análisis más lento gana la pintada y muestra datos de otro dominio.
+// que termine el primero, el viejo se CANCELA: lo que tenía en la cola DNS sale sin
+// pedirse, así que el nuevo no espera detrás de él. Lo que ya estaba en vuelo termina
+// (y se cachea), pero su resultado se DESCARTA: sin esto, el análisis más lento ganaría
+// la pintada y mostraría datos de otro dominio.
 let _runId = 0;
+let _runController = null;
+
+/** Cancela el análisis en curso, si lo hay (al lanzar otro o al desmontar la página). */
+export function cancelAnalysis() {
+    if (_runController) _runController.abort();
+    _runController = null;
+}
 
 export async function runAnalysis(domain, dkimSelector = null) {
     domain = normalizeDomain(domain);
@@ -34,7 +42,10 @@ export async function runAnalysis(domain, dkimSelector = null) {
         return;
     }
 
+    cancelAnalysis();
     const myRun = ++_runId;
+    const controller = new AbortController();
+    _runController = controller;
     const isStale = () => myRun !== _runId;
 
     const btn = document.getElementById('search-btn');
@@ -47,10 +58,11 @@ export async function runAnalysis(domain, dkimSelector = null) {
     ['step-mx', 'step-spf', 'step-dmarc', 'step-dkim', 'step-bimi', 'step-advanced', 'step-analysis', 'step-awareness'].forEach(s => setStep(s, null));
 
     try {
-        const { result, awarenessPromise, lookalikePromise } = await performAnalysis(domain, dkimSelector, {
+        const { result, awarenessPromise, lookalikePromise, lookalikeCertsPromise, mailSubdomainsPromise, mailHostingPromise } = await performAnalysis(domain, dkimSelector, {
             // Los pasos de un análisis obsoleto no deben tocar el indicador de progreso
             // del que está corriendo ahora.
-            onStep: (step, stepState) => { if (!isStale()) setStep(step, stepState); }
+            onStep: (step, stepState) => { if (!isStale()) setStep(step, stepState); },
+            signal: controller.signal
         });
         if (isStale()) return;
 
@@ -58,24 +70,41 @@ export async function runAnalysis(domain, dkimSelector = null) {
         state.currentResult = result;
 
         // Render progresivo: se muestran los resultados en cuanto está el análisis
-        // principal; el panel de awareness aparece "escaneando" y se rellena solo
-        // cuando la detección (lenta) termina, sin bloquear el resto.
-        await new Promise(r => setTimeout(r, 300));
-        if (isStale()) return;
+        // principal; los paneles de segundo plano aparecen "escaneando" y se rellenan
+        // cuando su detección termina, sin bloquear el resto.
         renderResults(domain, result);
         showSection('results-section');
 
-        awarenessPromise.then((awarenessResult) => {
-            result.awarenessResult = awarenessResult;
-            // Solo repinta si el usuario sigue viendo este mismo resultado.
-            if (!isStale() && state.currentResult === result) {
-                renderAwarenessVendors(awarenessResult || null, getLanguage(), translations[getLanguage()]);
-            }
+        // Cada promesa de segundo plano guarda su dato en el result y repinta su panel,
+        // pero solo si el usuario sigue viendo este mismo resultado.
+        const whenCurrent = (promise, apply) => promise.then((value) => {
+            if (isStale() || state.currentResult !== result) return;
+            apply(value);
         });
-        // Dominios parecidos: mismo patrón. Hasta que resuelve, el panel dice "buscando".
-        lookalikePromise.then((lookalikeResult) => {
+        whenCurrent(awarenessPromise, (awarenessResult) => {
+            result.awarenessResult = awarenessResult;
+            renderAwarenessVendors(awarenessResult || null, getLanguage(), translations[getLanguage()]);
+        });
+        // Dominios parecidos: hasta que resuelve, el panel dice "buscando". Después llegan
+        // los certificados de los que reciben correo y se repinta.
+        whenCurrent(lookalikePromise, (lookalikeResult) => {
             result.lookalikeResult = lookalikeResult;
-            if (!isStale() && state.currentResult === result) renderLookalikes(lookalikeResult);
+            renderLookalikes(lookalikeResult);
+        });
+        whenCurrent(lookalikeCertsPromise, (lookalikeResult) => {
+            if (!lookalikeResult) return;
+            result.lookalikeResult = lookalikeResult;
+            renderLookalikes(lookalikeResult);
+        });
+        whenCurrent(mailSubdomainsPromise, (mailSubdomains) => {
+            result.mailSubdomains = mailSubdomains;
+            renderMailSubdomains(mailSubdomains);
+        });
+        // Con los nombres de los certificados, el hospedaje del correo puede afinarse.
+        whenCurrent(mailHostingPromise, (mailHosting) => {
+            if (!mailHosting) return;
+            result.mailHosting = mailHosting;
+            renderProviderPanel(result);
         });
     } catch (err) {
         if (isStale()) return;

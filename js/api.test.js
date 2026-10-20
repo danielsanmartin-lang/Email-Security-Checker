@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache, reverseIpForDns, getAutodiscover, getIpIntel, getDkimSelectorChain, discoverDmarcPolicy, isDmarcRecord, isDkimKeyRecord, getMTASTS, getDANE, checkLookalikes } from './api.js';
+import { queryDNS, getMX, getDMARC, getDKIM, getSPFLookupTree, checkRBL, getDNSSEC, checkDomainExists, checkDMARCExternalAuth, fetchMTASTSPolicyFile, clearDnsCache, reverseIpForDns, getAutodiscover, getIpIntel, getDkimSelectorChain, discoverDmarcPolicy, isDmarcRecord, isDkimKeyRecord, getMTASTS, getDANE, checkLookalikes, checkMailSubdomains, getEntraTenant } from './api.js';
 import { saveSettings, resetSettingsCache, DEFAULT_SETTINGS } from './settings.js';
 
 // Mock de fetch que responde con JSON con forma DoH según (name, type) de la query.
@@ -170,60 +170,101 @@ describe('queryDNS (deduplicación en vuelo)', () => {
     });
 });
 
-describe('queryDNS (semáforo de concurrencia)', () => {
+describe('queryDNS (cola: topes por zona y global)', () => {
     beforeEach(() => { clearDnsCache(); resetSettingsCache(); saveSettings({ ...DEFAULT_SETTINGS }); });
     afterEach(() => vi.restoreAllMocks());
 
-    // Un análisis real dispara ~120 consultas en picos de 40 simultáneas, y los
-    // autoritativos frágiles responden SERVFAIL a parte de la ráfaga. El tope es la
-    // razón de ser del cambio, así que se fija aquí.
-    it('nunca supera 6 consultas en vuelo por muchas que se pidan a la vez', async () => {
-        let active = 0, max = 0;
-        global.fetch = vi.fn(async () => {
-            active++;
-            if (active > max) max = active;
+    // Mock que cuenta las consultas en vuelo, en total y por zona (la zona del nombre
+    // consultado, igual que la calcula la cola).
+    function countingFetch(zoneOf) {
+        const state = { active: 0, max: 0, perZone: new Map(), maxPerZone: new Map() };
+        global.fetch = vi.fn(async (url) => {
+            const zone = zoneOf(new URL(String(url)).searchParams.get('name'));
+            state.active++;
+            state.max = Math.max(state.max, state.active);
+            const now = (state.perZone.get(zone) || 0) + 1;
+            state.perZone.set(zone, now);
+            state.maxPerZone.set(zone, Math.max(state.maxPerZone.get(zone) || 0, now));
             await new Promise(r => setTimeout(r, 5));
-            active--;
+            state.active--;
+            state.perZone.set(zone, state.perZone.get(zone) - 1);
             return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
         });
-        // 40 nombres DISTINTOS: con el mismo nombre la deduplicación en vuelo los
-        // colapsaría en una sola consulta y el test no probaría nada.
-        await Promise.all(Array.from({ length: 40 }, (_, i) => queryDNS(`h${i}.example`, 'TXT')));
-        // Exactamente 6, no "como mucho 6": así el test también detecta que la piscina se
+        return state;
+    }
+
+    // Un análisis real dispara ~120 consultas en picos de 40 simultáneas, y los
+    // autoritativos frágiles responden SERVFAIL a parte de la ráfaga. El tope POR ZONA
+    // es la razón de ser de la cola, así que se fija aquí.
+    it('nunca supera 6 consultas en vuelo contra una misma zona', async () => {
+        const state = countingFetch(() => 'zona.example');
+        // 40 nombres DISTINTOS de la misma zona: con el mismo nombre la deduplicación en
+        // vuelo los colapsaría en una sola consulta y el test no probaría nada.
+        await Promise.all(Array.from({ length: 40 }, (_, i) => queryDNS(`h${i}.zona.example`, 'TXT')));
+        // Exactamente 6, no "como mucho 6": así el test también detecta que la zona se
         // aproveche entera y no se serialice de más.
-        expect(max).toBe(6);
+        expect(state.maxPerZone.get('zona.example')).toBe(6);
         expect(global.fetch).toHaveBeenCalledTimes(40);
     });
 
-    it('un acierto de caché no pide turno: responde con la piscina saturada', async () => {
-        // Fija el ORDEN dentro de queryDNS: si la comprobación de caché se moviera detrás
-        // del semáforo, esta consulta ya resuelta se quedaría esperando detrás de las 6
-        // bloqueadas y el test moriría por timeout.
+    it('entre zonas distintas el techo es el global de 16', async () => {
+        const state = countingFetch(name => name);
+        await Promise.all(Array.from({ length: 40 }, (_, i) => queryDNS(`h${i}.example`, 'TXT')));
+        expect(state.max).toBe(16);
+        expect(global.fetch).toHaveBeenCalledTimes(40);
+    });
+
+    it('una zona saturada no frena a las demás (sin bloqueo en cabeza de cola)', async () => {
         let abrir;
         const puerta = new Promise(r => { abrir = r; });
         global.fetch = vi.fn(async (url) => {
-            if (new URL(String(url)).searchParams.get('name') !== 'cacheada.example') await puerta;
+            if (new URL(String(url)).searchParams.get('name').endsWith('.lenta.example')) await puerta;
             return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
         });
-        await queryDNS('cacheada.example', 'TXT');
-        const bloqueadas = Array.from({ length: 6 }, (_, i) => queryDNS(`b${i}.example`, 'TXT'));
-        await expect(queryDNS('cacheada.example', 'TXT')).resolves.toBeTruthy();
-        abrir(); // imprescindible: si no, los 6 turnos se filtrarían al siguiente test
+        // 10 consultas de una zona bloqueada: 6 en vuelo y 4 en cola por delante…
+        const lentas = Array.from({ length: 10 }, (_, i) => queryDNS(`l${i}.lenta.example`, 'TXT'));
+        try {
+            // …y aun así otra zona responde: la cola salta a quien sí tiene sitio.
+            await expect(queryDNS('rapida.example', 'TXT')).resolves.toBeTruthy();
+        } finally {
+            abrir(); // imprescindible: si no, los huecos se filtrarían al siguiente test
+        }
+        await Promise.all(lentas);
+    });
+
+    it('un acierto de caché no pide turno: responde con la zona saturada', async () => {
+        // Fija el ORDEN dentro de queryDNS: si la comprobación de caché se moviera detrás
+        // de la cola, esta consulta ya resuelta se quedaría esperando detrás de las 6
+        // bloqueadas de su misma zona y el test moriría por timeout.
+        let abrir;
+        const puerta = new Promise(r => { abrir = r; });
+        global.fetch = vi.fn(async (url) => {
+            if (new URL(String(url)).searchParams.get('name') !== 'cacheada.zona.example') await puerta;
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        await queryDNS('cacheada.zona.example', 'TXT');
+        const bloqueadas = Array.from({ length: 6 }, (_, i) => queryDNS(`b${i}.zona.example`, 'TXT'));
+        try {
+            await expect(queryDNS('cacheada.zona.example', 'TXT')).resolves.toBeTruthy();
+        } finally {
+            abrir();
+        }
         await Promise.all(bloqueadas);
     });
 
-    it('las sondas void encadenadas (A→AAAA) tampoco bloquean la piscina', async () => {
+    it('las sondas void encadenadas (A→AAAA) tampoco bloquean la zona', async () => {
         // _probeVoidLookup consulta A y, si viene vacía, AAAA: DNS dependiente EN SERIE.
         // Si el turno envolviera la sonda entera en vez de cada consulta, 6 sondas
-        // reteniendo turno y necesitando un séptimo se bloquearían entre ellas.
-        const mecanismos = Array.from({ length: 10 }, (_, i) => `a:h${i}.com`).join(' ');
+        // reteniendo turno y necesitando un séptimo se bloquearían entre ellas. Todas son
+        // de la misma zona, así que topan con el límite por zona.
+        const mecanismos = Array.from({ length: 10 }, (_, i) => `a:h${i}.zona.com`).join(' ');
         global.fetch = fetchMock((name, type) => {
-            if (type === 'TXT' && name === 'ex.com') {
+            if (type === 'TXT' && name === 'zona.com') {
                 return { Status: 0, Answer: [{ type: 16, data: `"v=spf1 ${mecanismos} -all"` }] };
             }
             return { Status: 0 }; // A y AAAA vacías: todas void
         });
-        const tree = await getSPFLookupTree('ex.com');
+        const tree = await getSPFLookupTree('zona.com');
         expect(tree.children.filter(c => c.void === true)).toHaveLength(10);
     });
 
@@ -247,6 +288,133 @@ describe('queryDNS (semáforo de concurrencia)', () => {
         await Promise.all(ruido);
         expect(JSON.stringify(tree)).toContain('n8.example');
     });
+
+    it('…ni cuando toda la cadena y el ruido son de la MISMA zona', async () => {
+        // La variante peligrosa con el tope por zona: un árbol SPF es casi siempre de una
+        // sola zona, así que es esa zona (6 huecos) la que no puede quedar retenida.
+        global.fetch = fetchMock((name, type) => {
+            if (type !== 'TXT') return { Status: 0 };
+            const m = name.match(/^n(\d+)\.zona\.example$/);
+            if (m) {
+                const i = Number(m[1]);
+                const rec = i < 8 ? `v=spf1 include:n${i + 1}.zona.example -all` : 'v=spf1 -all';
+                return { Status: 0, Answer: [{ type: 16, data: `"${rec}"` }] };
+            }
+            return { Status: 0 };
+        });
+        const ruido = Array.from({ length: 20 }, (_, i) => queryDNS(`ruido${i}.zona.example`, 'A'));
+        const tree = await getSPFLookupTree('n0.zona.example');
+        await Promise.all(ruido);
+        expect(JSON.stringify(tree)).toContain('n8.zona.example');
+    });
+});
+
+describe('queryDNS (cola: prioridad y cancelación)', () => {
+    beforeEach(() => { clearDnsCache(); resetSettingsCache(); saveSettings({ ...DEFAULT_SETTINGS }); });
+    afterEach(() => vi.restoreAllMocks());
+
+    // Fetch que retiene cada consulta hasta abrir su puerta, y anota el orden en que se
+    // piden los nombres.
+    function gatedFetch() {
+        const order = [];
+        let abrir;
+        const puerta = new Promise(r => { abrir = r; });
+        global.fetch = vi.fn(async (url) => {
+            order.push(new URL(String(url)).searchParams.get('name'));
+            await puerta;
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        return { order, abrir };
+    }
+
+    // Llena la zona `zona.example` (6 huecos) para que lo siguiente de esa zona espere.
+    const llenarZona = () => Array.from({ length: 6 }, (_, i) => queryDNS(`f${i}.zona.example`, 'TXT'));
+
+    it("lo 'high' pasa por delante de lo 'low' que llegó antes", async () => {
+        const { order, abrir } = gatedFetch();
+        const llenas = llenarZona();
+        const baja = queryDNS('baja.zona.example', 'TXT', { priority: 'low' });
+        const alta = queryDNS('alta.zona.example', 'TXT');
+        abrir();
+        await Promise.all([...llenas, baja, alta]);
+        expect(order.indexOf('alta.zona.example')).toBeLessThan(order.indexOf('baja.zona.example'));
+    });
+
+    it("una consulta 'high' sube de prioridad a la misma consulta 'low' pendiente", async () => {
+        const { order, abrir } = gatedFetch();
+        const llenas = llenarZona();
+        const otraBaja = queryDNS('otra.zona.example', 'TXT', { priority: 'low' });
+        const baja = queryDNS('subida.zona.example', 'TXT', { priority: 'low' });
+        // Misma consulta, ahora la espera alguien de primer plano: adelanta a `otra`.
+        const alta = queryDNS('subida.zona.example', 'TXT');
+        abrir();
+        await Promise.all([...llenas, otraBaja, baja, alta]);
+        expect(order.indexOf('subida.zona.example')).toBeLessThan(order.indexOf('otra.zona.example'));
+        expect(order.filter(n => n === 'subida.zona.example')).toHaveLength(1);
+    });
+
+    it('lo de segundo plano nunca ocupa más de 10 huecos', async () => {
+        let active = 0, max = 0;
+        global.fetch = vi.fn(async () => {
+            active++;
+            max = Math.max(max, active);
+            await new Promise(r => setTimeout(r, 5));
+            active--;
+            return { ok: true, status: 200, json: async () => ({ Status: 0, Answer: [] }) };
+        });
+        await Promise.all(Array.from({ length: 30 }, (_, i) => queryDNS(`b${i}.example`, 'TXT', { priority: 'low' })));
+        expect(max).toBe(10);
+    });
+
+    it('cancelar una consulta en cola la retira sin llegar a pedirla', async () => {
+        const { order, abrir } = gatedFetch();
+        const llenas = llenarZona();
+        const ctrl = new AbortController();
+        const cancelada = queryDNS('cancelada.zona.example', 'TXT', { signal: ctrl.signal });
+        ctrl.abort();
+        await expect(cancelada).rejects.toMatchObject({ name: 'AbortError', code: 'aborted' });
+        abrir();
+        await Promise.all(llenas);
+        expect(order).not.toContain('cancelada.zona.example');
+    });
+
+    it('si dos esperan la misma consulta y uno cancela, el otro la recibe', async () => {
+        const { order, abrir } = gatedFetch();
+        const llenas = llenarZona();
+        const ctrl = new AbortController();
+        const a = queryDNS('compartida.zona.example', 'TXT', { signal: ctrl.signal });
+        const b = queryDNS('compartida.zona.example', 'TXT');
+        ctrl.abort();
+        await expect(a).rejects.toMatchObject({ code: 'aborted' });
+        abrir();
+        await expect(b).resolves.toMatchObject({ Status: 0 });
+        await Promise.all(llenas);
+        expect(order.filter(n => n === 'compartida.zona.example')).toHaveLength(1);
+    });
+
+    it('una señal ya cancelada no pide nada ni deja la consulta colgada', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0, Answer: [] }));
+        const ctrl = new AbortController();
+        ctrl.abort();
+        await expect(queryDNS('x.example', 'TXT', { signal: ctrl.signal })).rejects.toMatchObject({ code: 'aborted' });
+        expect(global.fetch).not.toHaveBeenCalled();
+        // Nada a medias en la deduplicación: la siguiente petición sale a la red.
+        await expect(queryDNS('x.example', 'TXT')).resolves.toMatchObject({ Status: 0 });
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancelar durante la espera del reintento evita la segunda ronda', async () => {
+        global.fetch = fetchMock(() => ({ Status: 2 }));
+        const ctrl = new AbortController();
+        const p = queryDNS('caida.example', 'TXT', { signal: ctrl.signal });
+        // La primera ronda (dos SERVFAIL cortan la cadena) termina y empieza la espera
+        // de 300 ms.
+        await vi.waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+        ctrl.abort();
+        await expect(p).rejects.toMatchObject({ code: 'aborted' });
+        await new Promise(r => setTimeout(r, 400));
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
 });
 
 describe('queryDNS (reintento ante SERVFAIL)', () => {
@@ -265,6 +433,25 @@ describe('queryDNS (reintento ante SERVFAIL)', () => {
         const data = await queryDNS('flaky.example', 'TXT');
         expect(data.Status).toBe(0);
         expect(vuelta).toBe(4); // 3 de la primera cadena + 1 acierto en el reintento
+    });
+
+    it("lo de segundo plano ('low') no reintenta: un SERVFAIL lo deja sin resolver a la primera", async () => {
+        global.fetch = fetchMock(() => ({ Status: 2 }));
+        await expect(queryDNS('parecido.example', 'MX', { priority: 'low' })).rejects.toMatchObject({ code: 'servfail' });
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('dos SERVFAIL bastan: no se espera al tercer resolver', async () => {
+        // Quad9, con una zona rota, no contesta hasta agotar el tiempo límite: preguntarle
+        // después de que Google y Cloudflare ya hayan dicho SERVFAIL solo sumaba 8 s.
+        const hosts = [];
+        global.fetch = vi.fn(async (url) => {
+            hosts.push(new URL(String(url)).host);
+            return { ok: true, status: 200, json: async () => ({ Status: 2 }) };
+        });
+        await expect(queryDNS('rota.example', 'PTR')).rejects.toMatchObject({ code: 'servfail' });
+        expect(hosts).not.toContain('dns.quad9.net:5053');
+        expect(hosts).toEqual(['dns.google', 'cloudflare-dns.com', 'dns.google', 'cloudflare-dns.com']);
     });
 
     it('un fallo de red NO se reintenta: el problema es local, no de la zona', async () => {
@@ -287,15 +474,16 @@ describe('queryDNS (reintento ante SERVFAIL)', () => {
         // El detector de awareness sondea 17 selectores EN SERIE. Sin este corte, un
         // dominio con el DNS roto se llevaba +5 s de reloj para no averiguar nada.
         global.fetch = fetchMock(() => ({ Status: 2 }));
-        // Primer nombre: 3 resolvers + espera + 3 resolvers = 6, y la zona queda anotada.
+        // Primer nombre: 2 resolvers (dos SERVFAIL cortan la cadena) + espera + 2 = 4, y
+        // la zona queda anotada.
         await expect(queryDNS('a._domainkey.rota.example', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
-        expect(global.fetch).toHaveBeenCalledTimes(6);
+        expect(global.fetch).toHaveBeenCalledTimes(4);
         // Los siguientes nombres de la MISMA zona se rinden a la primera pasada.
         await expect(queryDNS('b._domainkey.rota.example', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
-        expect(global.fetch).toHaveBeenCalledTimes(9);
+        expect(global.fetch).toHaveBeenCalledTimes(6);
         // Otra zona distinta conserva su reintento: el corte es por zona, no global.
         await expect(queryDNS('c.otra.example', 'TXT')).rejects.toMatchObject({ code: 'servfail' });
-        expect(global.fetch).toHaveBeenCalledTimes(15);
+        expect(global.fetch).toHaveBeenCalledTimes(10);
     });
 
     it('con resolver propio no se reintenta (no se le dobla el tráfico a tu infra)', async () => {
@@ -395,6 +583,27 @@ describe('getSPFLookupTree', () => {
         });
         const tree = await getSPFLookupTree('a.com');
         expect(JSON.stringify(tree)).toContain('"error":"loop"');
+    });
+});
+
+describe('getSPFLookupTree: presupuesto de sondas void', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('con 30 mecanismos a/mx sondea como mucho 20, aunque includes y sondas vayan a la vez', async () => {
+        // 15 mecanismos en el ápex y 15 en un include: las sondas del ápex y la bajada al
+        // include ya no van una detrás de otra, y el tope tiene que seguir siendo global.
+        const mech = (pre) => Array.from({ length: 15 }, (_, i) => `a:${pre}${i}.otra.example`).join(' ');
+        global.fetch = fetchMock((name, type) => {
+            if (type === 'TXT' && name === 'p.example') return { Status: 0, Answer: [{ type: 16, data: `"v=spf1 ${mech('x')} include:hijo.example -all"` }] };
+            if (type === 'TXT' && name === 'hijo.example') return { Status: 0, Answer: [{ type: 16, data: `"v=spf1 ${mech('y')} -all"` }] };
+            return { Status: 0 };
+        });
+        const tree = await getSPFLookupTree('p.example');
+        const probed = (node) => node.children.reduce((n, c) => n + ('void' in c ? 1 : 0) + (c.tree ? probed(c.tree) : 0), 0);
+        expect(probed(tree)).toBe(20);
+        // El padre reparte antes que sus hijos: sus 15 sondas van todas.
+        expect(tree.children.filter(c => 'void' in c)).toHaveLength(15);
     });
 });
 
@@ -557,6 +766,19 @@ describe('checkDMARCExternalAuth', () => {
         global.fetch = fetchMock(() => ({ Status: 0 }));
         const r = await checkDMARCExternalAuth('acme.com', ['mailto:rua@acme.com']);
         expect(r).toHaveLength(0);
+    });
+
+    it('comprueba varios destinos a la vez y conserva el orden de los URIs', async () => {
+        // El primer destino tarda más: si el resultado siguiera el orden de llegada, el
+        // panel pintaría los destinos desordenados respecto al registro.
+        global.fetch = vi.fn(async (url) => {
+            const name = new URL(String(url)).searchParams.get('name');
+            if (name.endsWith('lento.com')) await new Promise(r => setTimeout(r, 20));
+            const ok = name === 'acme.com._report._dmarc.rapido.com';
+            return { ok: true, status: 200, json: async () => (ok ? { Status: 0, Answer: [{ type: 16, data: '"v=DMARC1"' }] } : { Status: 0 }) };
+        });
+        const r = await checkDMARCExternalAuth('acme.com', ['mailto:a@lento.com', 'mailto:b@rapido.com', 'mailto:c@lento.com']);
+        expect(r.map(x => [x.destDomain, x.authorized])).toEqual([['lento.com', false], ['rapido.com', true]]);
     });
 });
 
@@ -1039,3 +1261,79 @@ describe('checkLookalikes', () => {
     });
 });
 
+
+describe('getEntraTenant (descubrimiento OIDC de Microsoft)', () => {
+    afterEach(() => vi.restoreAllMocks());
+    const json = (status, body) => vi.fn(async () => ({ ok: status < 400, status, json: async () => body }));
+
+    it('saca el tenant y la región del documento OIDC', async () => {
+        global.fetch = json(200, {
+            issuer: 'https://login.microsoftonline.com/9744600E-3e04-492e-baa1-25ec245c6f10/v2.0',
+            tenant_region_scope: 'EU',
+            cloud_instance_name: 'microsoftonline.com'
+        });
+        await expect(getEntraTenant('acme.com')).resolves.toEqual({ status: 'found', id: '9744600e-3e04-492e-baa1-25ec245c6f10', region: 'EU', cloud: 'microsoftonline.com' });
+        const [url, init] = global.fetch.mock.calls[0];
+        expect(url).toBe('https://login.microsoftonline.com/acme.com/v2.0/.well-known/openid-configuration');
+        expect(init).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' });
+    });
+
+    it('el tenant de cuentas personales (el que sale para gmail.com) no cuenta', async () => {
+        global.fetch = json(200, { issuer: 'https://login.microsoftonline.com/9cd80435-793b-4f48-844b-6b3f37d1c1f3/v2.0' });
+        await expect(getEntraTenant('gmail.com')).resolves.toEqual({ status: 'none' });
+    });
+
+    it('AADSTS90002 es "sin tenant"; otro error o un fallo de red, "no disponible"', async () => {
+        global.fetch = json(400, { error: 'invalid_tenant', error_codes: [90002] });
+        await expect(getEntraTenant('nadie.example')).resolves.toEqual({ status: 'none' });
+        global.fetch = json(500, {});
+        await expect(getEntraTenant('acme.com')).resolves.toEqual({ status: 'unavailable' });
+        global.fetch = vi.fn(async () => { throw new TypeError('offline'); });
+        await expect(getEntraTenant('acme.com')).resolves.toEqual({ status: 'unavailable' });
+        global.fetch = json(200, { issuer: 'sin guid' });
+        await expect(getEntraTenant('acme.com')).resolves.toEqual({ status: 'unavailable' });
+    });
+
+    it('un dominio no válido no sale a la red; cancelado, rechaza', async () => {
+        global.fetch = vi.fn();
+        await expect(getEntraTenant('no válido')).resolves.toEqual({ status: 'none' });
+        expect(global.fetch).not.toHaveBeenCalled();
+        const ctrl = new AbortController();
+        global.fetch = vi.fn(async (u, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('abort')))));
+        const p = getEntraTenant('acme.com', { signal: ctrl.signal });
+        ctrl.abort();
+        await expect(p).rejects.toMatchObject({ code: 'aborted' });
+    });
+});
+
+describe('checkMailSubdomains', () => {
+    beforeEach(() => clearDnsCache());
+    afterEach(() => vi.restoreAllMocks());
+
+    it('devuelve solo los que envían o reciben, primero los suplantables, con la DMARC heredada', async () => {
+        global.fetch = fetchMock((name, type) => {
+            if (type === 'TXT' && name === 'news.acme.com') return { Status: 0, Answer: [{ type: 16, data: '"v=spf1 include:sendgrid.net -all"' }] };
+            if (type === 'MX' && name === 'mail.acme.com') return { Status: 0, Answer: [{ type: 15, data: '10 mx.acme.com.' }] };
+            if (type === 'TXT' && name === '_dmarc.mail.acme.com') return { Status: 0, Answer: [{ type: 16, data: '"v=DMARC1; p=reject"' }] };
+            if (type === 'TXT' && name === '_dmarc.acme.com') return { Status: 0, Answer: [{ type: 16, data: '"v=DMARC1; p=reject; sp=none"' }] };
+            if (type === 'TXT' && name === 'roto.acme.com') return { Status: 2 };
+            if (type === 'MX' && name === 'roto.acme.com') return { Status: 2 };
+            return { Status: 0 };
+        });
+        const r = await checkMailSubdomains(['mail.acme.com', 'news.acme.com', 'web.acme.com', 'roto.acme.com']);
+        expect(r.checked).toBe(4);
+        expect(r.unresolved).toBe(1);
+        expect(r.found.map(f => [f.name, f.policy, f.spoofable])).toEqual([
+            ['news.acme.com', 'none', true],
+            ['mail.acme.com', 'reject', false]
+        ]);
+        expect(r.found[0].inherited).toBe(true);
+    });
+
+    it('cancelado, rechaza', async () => {
+        global.fetch = fetchMock(() => ({ Status: 0 }));
+        const ctrl = new AbortController();
+        ctrl.abort();
+        await expect(checkMailSubdomains(['a.acme.com'], { signal: ctrl.signal })).rejects.toMatchObject({ code: 'aborted' });
+    });
+});

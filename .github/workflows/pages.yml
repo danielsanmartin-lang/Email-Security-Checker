@@ -1,7 +1,7 @@
 name: Deploy to GitHub Pages
 
-# Publica la app SOLO si lint y tests pasan, y sube únicamente los archivos
-# de la app (index.html, css/, js/ sin tests) en lugar del repo entero.
+# Publica la app SOLO si lint y tests pasan, y sube únicamente la versión construida
+# (dist/, ver scripts/build.mjs) en lugar del repo entero.
 # Requiere cambiar Settings → Pages → Source a "GitHub Actions".
 on:
   push:
@@ -41,24 +41,30 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare site (solo archivos de la app, sin tests ni artefactos)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # La versión publicable sale de scripts/build.mjs: empaquetada, minificada y con
+      # hash en los nombres. Solo se publica dist/, así que ni los tests ni el código
+      # sin construir llegan al sitio.
+      - name: Build (dist/)
+        run: npm run build
+      - name: Comprobar el sitio construido
         run: |
-          mkdir -p _site/js/ui _site/css/fonts
-          cp index.html manifest.webmanifest sw.js icon.svg _site/
-          cp css/*.css _site/css/
-          cp css/fonts/*.woff2 _site/css/fonts/
-          cp js/*.js _site/js/
-          cp js/ui/*.js _site/js/ui/
-          rm -f _site/js/*.test.js
           # Red de seguridad: si algo del shell falta, el service worker cachearía
           # una app rota. Mejor romper el despliegue aquí.
-          test -f _site/js/bootstrap.js
-          test -f _site/js/ui/scorePanel.js
-          test -f _site/css/fonts/outfit-latin.woff2
+          test -f dist/index.html
+          test -f dist/sw.js
+          test -f dist/css/fonts/outfit-latin.woff2
+          grep -q '<script type="module" src="js/bootstrap-' dist/index.html
+          test -z "$(find dist -name '*.test.js')"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: dist
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

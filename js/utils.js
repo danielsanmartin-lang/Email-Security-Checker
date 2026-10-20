@@ -115,66 +115,69 @@ export function parseDkimSelectors(input) {
     return [...new Set(parts.filter(isValidDkimSelector))];
 }
 
+// Explicit list of known compound TLDs (second-level domains that act as TLD)
+// Avoids the fragile length heuristic that breaks on e.g. ".info.tr", ".name.tr".
+// Vive a nivel de módulo: extractRootDomain se llama una vez por consulta DNS (la cola
+// agrupa por zona) y reconstruir el Set en cada llamada era trabajo tirado.
+const COMPOUND_TLDS = new Set([
+    // United Kingdom
+    'co.uk', 'org.uk', 'me.uk', 'net.uk', 'ac.uk', 'gov.uk', 'ltd.uk', 'plc.uk',
+    // Australia
+    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au', 'asn.au', 'id.au',
+    // Brazil
+    'com.br', 'net.br', 'org.br', 'edu.br', 'gov.br', 'mil.br',
+    // Spain
+    'com.es', 'org.es', 'nom.es', 'edu.es', 'gob.es',
+    // Argentina
+    'com.ar', 'net.ar', 'org.ar', 'edu.ar', 'gov.ar', 'mil.ar',
+    // Mexico
+    'com.mx', 'net.mx', 'org.mx', 'edu.mx', 'gob.mx',
+    // Colombia
+    'com.co', 'net.co', 'org.co', 'edu.co', 'gov.co', 'mil.co',
+    // Peru
+    'com.pe', 'net.pe', 'org.pe', 'edu.pe', 'gob.pe', 'mil.pe',
+    // New Zealand
+    'co.nz', 'net.nz', 'org.nz', 'geek.nz', 'gen.nz', 'ac.nz', 'govt.nz',
+    // Singapore
+    'com.sg', 'net.sg', 'org.sg', 'edu.sg', 'gov.sg',
+    // Hong Kong
+    'com.hk', 'net.hk', 'org.hk', 'edu.hk', 'gov.hk',
+    // Japan
+    'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp', 'ad.jp',
+    // South Africa
+    'co.za', 'org.za', 'net.za', 'edu.za', 'gov.za', 'ac.za',
+    // India
+    'co.in', 'net.in', 'org.in', 'edu.in', 'gov.in', 'ac.in', 'res.in',
+    // Israel
+    'co.il', 'net.il', 'org.il', 'ac.il', 'gov.il',
+    // South Korea
+    'co.kr', 'ne.kr', 'or.kr', 're.kr', 'pe.kr', 'ac.kr', 'go.kr',
+    // Turkey
+    'com.tr', 'net.tr', 'org.tr', 'edu.tr', 'gov.tr', 'info.tr', 'name.tr', 'biz.tr',
+    // Portugal
+    'com.pt', 'net.pt', 'org.pt', 'edu.pt', 'gov.pt',
+    // Poland
+    'com.pl', 'net.pl', 'org.pl', 'edu.pl', 'gov.pl',
+    // China
+    'com.cn', 'net.cn', 'org.cn', 'edu.cn', 'gov.cn', 'ac.cn',
+    // Russia
+    'com.ru', 'net.ru', 'org.ru', 'edu.ru', 'gov.ru',
+    // Ukraine
+    'com.ua', 'net.ua', 'org.ua', 'edu.ua', 'gov.ua',
+    // Romania
+    'com.ro', 'org.ro', 'net.ro', 'edu.ro', 'gov.ro',
+    // Chile
+    'com.cl', 'net.cl', 'org.cl', 'gov.cl',
+    // Venezuela
+    'com.ve', 'net.ve', 'org.ve', 'edu.ve', 'gov.ve',
+]);
+
 export function extractRootDomain(hostname) {
     if (!hostname) return '';
     const parts = hostname.split('.');
     if (parts.length <= 2) return hostname;
     const tld = parts[parts.length - 1];
     const sld = parts[parts.length - 2];
-    // Explicit list of known compound TLDs (second-level domains that act as TLD)
-    // Avoids the fragile length heuristic that breaks on e.g. ".info.tr", ".name.tr"
-    const COMPOUND_TLDS = new Set([
-        // United Kingdom
-        'co.uk', 'org.uk', 'me.uk', 'net.uk', 'ac.uk', 'gov.uk', 'ltd.uk', 'plc.uk',
-        // Australia
-        'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au', 'asn.au', 'id.au',
-        // Brazil
-        'com.br', 'net.br', 'org.br', 'edu.br', 'gov.br', 'mil.br',
-        // Spain
-        'com.es', 'org.es', 'nom.es', 'edu.es', 'gob.es',
-        // Argentina
-        'com.ar', 'net.ar', 'org.ar', 'edu.ar', 'gov.ar', 'mil.ar',
-        // Mexico
-        'com.mx', 'net.mx', 'org.mx', 'edu.mx', 'gob.mx',
-        // Colombia
-        'com.co', 'net.co', 'org.co', 'edu.co', 'gov.co', 'mil.co',
-        // Peru
-        'com.pe', 'net.pe', 'org.pe', 'edu.pe', 'gob.pe', 'mil.pe',
-        // New Zealand
-        'co.nz', 'net.nz', 'org.nz', 'geek.nz', 'gen.nz', 'ac.nz', 'govt.nz',
-        // Singapore
-        'com.sg', 'net.sg', 'org.sg', 'edu.sg', 'gov.sg',
-        // Hong Kong
-        'com.hk', 'net.hk', 'org.hk', 'edu.hk', 'gov.hk',
-        // Japan
-        'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp', 'ad.jp',
-        // South Africa
-        'co.za', 'org.za', 'net.za', 'edu.za', 'gov.za', 'ac.za',
-        // India
-        'co.in', 'net.in', 'org.in', 'edu.in', 'gov.in', 'ac.in', 'res.in',
-        // Israel
-        'co.il', 'net.il', 'org.il', 'ac.il', 'gov.il',
-        // South Korea
-        'co.kr', 'ne.kr', 'or.kr', 're.kr', 'pe.kr', 'ac.kr', 'go.kr',
-        // Turkey
-        'com.tr', 'net.tr', 'org.tr', 'edu.tr', 'gov.tr', 'info.tr', 'name.tr', 'biz.tr',
-        // Portugal
-        'com.pt', 'net.pt', 'org.pt', 'edu.pt', 'gov.pt',
-        // Poland
-        'com.pl', 'net.pl', 'org.pl', 'edu.pl', 'gov.pl',
-        // China
-        'com.cn', 'net.cn', 'org.cn', 'edu.cn', 'gov.cn', 'ac.cn',
-        // Russia
-        'com.ru', 'net.ru', 'org.ru', 'edu.ru', 'gov.ru',
-        // Ukraine
-        'com.ua', 'net.ua', 'org.ua', 'edu.ua', 'gov.ua',
-        // Romania
-        'com.ro', 'org.ro', 'net.ro', 'edu.ro', 'gov.ro',
-        // Chile
-        'com.cl', 'net.cl', 'org.cl', 'gov.cl',
-        // Venezuela
-        'com.ve', 'net.ve', 'org.ve', 'edu.ve', 'gov.ve',
-    ]);
     const possibleCompound = `${sld}.${tld}`;
     if (COMPOUND_TLDS.has(possibleCompound)) {
         return parts.slice(-3).join('.');
@@ -204,4 +207,70 @@ export function isSameOrSubdomain(host, domain) {
     const d = String(domain || '').toLowerCase().replace(/\.$/, '');
     if (!h || !d) return false;
     return h === d || h.endsWith(`.${d}`);
+}
+
+// ===== Cancelación =====
+// Un análisis que el usuario ha dejado atrás (lanzó otro dominio) se cancela con un
+// AbortSignal. El error es un Error normal y no un DOMException: el `code` de un
+// DOMException es de solo lectura, y aquí todo el código distingue los fallos por `code`.
+
+/** Error que rechaza el trabajo cancelado. `code: 'aborted'`, como los demás de la capa DNS. */
+export function abortError() {
+    const e = new Error('aborted');
+    e.name = 'AbortError';
+    e.code = 'aborted';
+    return e;
+}
+
+/** ¿Es una cancelación (nuestra o la de un fetch abortado) y no un fallo real? */
+export function isAbortError(e) {
+    return !!e && (e.code === 'aborted' || e.name === 'AbortError');
+}
+
+/**
+ * Para las promesas que se lanzan antes de saber si alguien las esperará: sin un
+ * manejador, su rechazo saldría como "unhandled rejection". Una sola función con nombre
+ * en vez de flechas sueltas por todo el código.
+ */
+export function swallow() {}
+
+/**
+ * La misma promesa, pero que se rechaza con `abortError()` en cuanto `signal` aborta. Para
+ * trabajo compartido entre varios llamantes: cancelar retira a uno, no el trabajo.
+ */
+export function withSignal(promise, signal) {
+    if (!signal) return promise;
+    return new Promise((resolve, reject) => {
+        const onAbort = () => reject(abortError());
+        if (signal.aborted) {
+            onAbort();
+            return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+        promise.then(
+            (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+            (e) => { signal.removeEventListener('abort', onAbort); reject(e); }
+        );
+    });
+}
+
+/**
+ * Señal que aborta con `signal` o al vencer `ms`, lo que pase antes. Devuelve también
+ * `done()` para soltar el temporizador y el listener en cuanto la petición termina.
+ */
+export function timeoutSignal(ms, signal) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    const onAbort = () => controller.abort();
+    if (signal) {
+        if (signal.aborted) controller.abort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    }
+    return {
+        signal: controller.signal,
+        done() {
+            clearTimeout(timer);
+            if (signal) signal.removeEventListener('abort', onAbort);
+        }
+    };
 }

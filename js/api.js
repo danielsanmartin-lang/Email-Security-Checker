@@ -1,8 +1,9 @@
 import { parseMTASTSPolicy, validateMTASTSPolicy, extractTxtValue, parseDMARC } from './parsers.js';
 import { getSettings, resolverChain } from './settings.js';
-import { isValidDomain, extractRootDomain, isSameOrSubdomain } from './utils.js';
+import { isValidDomain, extractRootDomain, isSameOrSubdomain, abortError, isAbortError, swallow, timeoutSignal } from './utils.js';
 import { treeWalkTargets, selectOrgDomain } from './dmarc.js';
 import { classifyLookalike, ownershipLinks, isDeliverableMx } from './lookalike.js';
+import { classifyMailSubdomain } from './mailSubdomains.js';
 
 // ===== DNS Cache =====
 const _dnsCache = new Map();
@@ -40,6 +41,13 @@ function _setCache(name, type, data) {
     }
 }
 
+// Aviso de consola para un fallo que se degrada. Una cancelación no es un fallo: el
+// análisis que la pidió ya no le importa a nadie, así que no se ensucia la consola.
+// El error va siempre el último, como en las llamadas originales a console.warn.
+function _warn(...args) {
+    if (!isAbortError(args[args.length - 1])) console.warn(...args);
+}
+
 // ===== DNS Query with timeout and fallback =====
 const DNS_TIMEOUT = 8000; // 8 seconds
 
@@ -59,8 +67,17 @@ const DNS_RCODE_SERVFAIL = 2;
 // simultáneas, y los servidores autoritativos frágiles (medido en worldnic.com, que
 // sirve gruporamos.com) responden SERVFAIL a una parte aleatoria de la ráfaga. El
 // resolver público reenvía ese SERVFAIL y la consulta se pierde aunque el registro
-// exista. Con un tope bajo, la misma zona responde a todo.
-const MAX_CONCURRENT_DNS = 6;
+// exista. Con un tope bajo POR ZONA, la misma zona responde a todo.
+//
+// El tope es por zona y no global porque lo que protege es a los autoritativos de UNA
+// zona: los 80 candidatos de dominios parecidos, las DNSBL o Team Cymru son zonas
+// distintas, y encolarlos detrás de las consultas del dominio auditado solo sumaba
+// espera. El tope global queda como techo de conexiones.
+const MAX_CONCURRENT_DNS = 16;
+const MAX_CONCURRENT_PER_ZONE = 6;
+// Lo de segundo plano (dominios parecidos, awareness, subdominios) nunca ocupa toda la
+// piscina: siempre quedan huecos para el análisis que el usuario está esperando.
+const MAX_CONCURRENT_LOW = 10;
 // Espera antes del único reintento ante SERVFAIL. Corta a propósito: lo que se busca
 // es dejar pasar el pico de la ráfaga, no esperar a que se recupere un servidor caído.
 const SERVFAIL_RETRY_DELAY = 300;
@@ -73,8 +90,12 @@ const SERVFAIL_RETRY_DELAY = 300;
 const SERVFAIL_ZONE_TTL = 30 * 1000;
 const _servfailZones = new Map();
 
-function _zoneIsKnownBroken(name) {
-    const zone = extractRootDomain(name);
+/** Zona de un nombre: la clave del tope por zona y de la memoria de zonas caídas. */
+function _zoneOf(name) {
+    return extractRootDomain(String(name).toLowerCase().replace(/\.$/, ''));
+}
+
+function _zoneIsKnownBroken(zone) {
     const ts = _servfailZones.get(zone);
     if (ts === undefined) return false;
     if (Date.now() - ts < SERVFAIL_ZONE_TTL) return true;
@@ -82,40 +103,103 @@ function _zoneIsKnownBroken(name) {
     return false;
 }
 
-// Semáforo FIFO. INVARIANTE: solo puede envolver la resolución de UNA consulta, nunca
-// nada que espere a más DNS mientras lo retiene. `getSPFLookupTree` es recursiva y hace
-// Promise.all sobre sus subárboles: si un padre retuviera un hueco mientras espera a sus
-// hijos, con la piscina llena de padres nadie avanzaría (deadlock). Hoy todos los
-// abanicos (árbol SPF, getSRV, getDANE, getIPAddresses, RBL en app.js) completan su
-// queryDNS ANTES de lanzar la siguiente tanda, así que el invariante se cumple.
+// ===== Cola de consultas =====
+// INVARIANTE: un hueco solo envuelve la resolución de UNA consulta, nunca nada que espere
+// a más DNS mientras lo retiene. `getSPFLookupTree` es recursiva y hace Promise.all sobre
+// sus subárboles, todos de la misma zona: si un padre retuviera un hueco mientras espera a
+// sus hijos, con la zona llena de padres nadie avanzaría (deadlock). Hoy todos los
+// abanicos (árbol SPF, getSRV, getDANE, getIPAddresses, RBL en analysis.js) completan su
+// queryDNS ANTES de lanzar la siguiente tanda, y el reintento suelta su hueco durante la
+// espera, así que el invariante se cumple.
+//
+// Cada consulta pendiente es un TRABAJO: { key, zone, priority, controller, waiters,
+// queued }. La cola es una sola lista; al quedar un hueco se despacha el primer trabajo
+// 'high' cuya zona tenga sitio y, si no hay, el primer 'low'. Una zona llena no frena a
+// las demás (no hay bloqueo en cabeza de cola).
 let _dnsActive = 0;
+let _lowActive = 0;
+const _zoneActive = new Map();
 const _dnsQueue = [];
 
-function _releaseDnsSlot() {
-    _dnsActive--;
-    const next = _dnsQueue.shift();
-    if (next) {
+function _canRun(job) {
+    if ((_zoneActive.get(job.zone) || 0) >= MAX_CONCURRENT_PER_ZONE) return false;
+    return job.priority === 'high' || _lowActive < MAX_CONCURRENT_LOW;
+}
+
+function _pump() {
+    while (_dnsActive < MAX_CONCURRENT_DNS && _dnsQueue.length) {
+        let idx = _dnsQueue.findIndex(w => w.job.priority === 'high' && _canRun(w.job));
+        if (idx < 0) idx = _dnsQueue.findIndex(w => _canRun(w.job));
+        if (idx < 0) return;
+        const [waiter] = _dnsQueue.splice(idx, 1);
+        waiter.job.queued = null;
+        // El hueco recuerda lo que ocupó: la prioridad del trabajo puede subir mientras
+        // está en vuelo, y al liberar hay que devolver exactamente lo que se tomó.
+        const slot = { zone: waiter.job.zone, low: waiter.job.priority !== 'high' };
         _dnsActive++;
-        next();
+        if (slot.low) _lowActive++;
+        _zoneActive.set(slot.zone, (_zoneActive.get(slot.zone) || 0) + 1);
+        waiter.grant(slot);
     }
 }
 
-function _acquireDnsSlot() {
-    if (_dnsActive < MAX_CONCURRENT_DNS) {
-        _dnsActive++;
-        return Promise.resolve();
-    }
-    return new Promise(resolve => _dnsQueue.push(resolve));
+function _releaseDnsSlot(slot) {
+    _dnsActive--;
+    if (slot.low) _lowActive--;
+    const left = (_zoneActive.get(slot.zone) || 1) - 1;
+    if (left > 0) _zoneActive.set(slot.zone, left);
+    else _zoneActive.delete(slot.zone);
+    _pump();
+}
+
+function _acquireDnsSlot(job) {
+    if (job.controller.signal.aborted) return Promise.reject(abortError());
+    return new Promise((grant, deny) => {
+        job.queued = { job, grant, deny };
+        _dnsQueue.push(job.queued);
+        _pump();
+    });
+}
+
+/** Saca de la cola un trabajo que ya no espera nadie. Lo que está en vuelo, sigue. */
+function _dequeue(job) {
+    const waiter = job.queued;
+    if (!waiter) return;
+    const idx = _dnsQueue.indexOf(waiter);
+    if (idx >= 0) _dnsQueue.splice(idx, 1);
+    job.queued = null;
+    waiter.deny(abortError());
 }
 
 /** Ejecuta `fn` ocupando un hueco de la piscina. Ver el invariante de arriba. */
-async function _withDnsSlot(fn) {
-    await _acquireDnsSlot();
+async function _withDnsSlot(job, fn) {
+    // Fuera del try a propósito: un trabajo cancelado en la cola nunca tuvo hueco, y no
+    // debe liberar uno.
+    const slot = await _acquireDnsSlot(job);
     try {
         return await fn();
     } finally {
-        _releaseDnsSlot();
+        _releaseDnsSlot(slot);
     }
+}
+
+/** Espera que se corta si el trabajo se cancela. */
+function _sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+        if (signal.aborted) {
+            reject(abortError());
+            return;
+        }
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(abortError());
+        };
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
 }
 
 async function _fetchDoH(url, headers) {
@@ -139,7 +223,13 @@ async function _resolveDNS(name, type) {
 
     let badStatus = null;
     let sawServfail = false;
+    let servfails = 0;
     for (const provider of providers) {
+        // Dos SERVFAIL de resolvers independientes ya dicen que la zona no responde: un
+        // tercero no aporta nada y puede costar mucho. Quad9, con una zona rota, espera a
+        // los autoritativos hasta agotar los 8 s del tiempo límite, y esa consulta (un PTR
+        // de un MX, por ejemplo) retenía el resultado entero.
+        if (servfails >= 2) break;
         let candidate;
         try {
             candidate = await _fetchDoH(provider.url, provider.headers);
@@ -150,7 +240,10 @@ async function _resolveDNS(name, type) {
         if (typeof candidate.Status === 'number' && !DNS_CONCLUSIVE_STATUSES.includes(candidate.Status)) {
             console.warn('%s DoH returned Status %s for %s (%s)', provider.label, candidate.Status, name, type);
             badStatus = candidate.Status;
-            if (candidate.Status === DNS_RCODE_SERVFAIL) sawServfail = true;
+            if (candidate.Status === DNS_RCODE_SERVFAIL) {
+                sawServfail = true;
+                servfails++;
+            }
             continue;
         }
         // Respuesta concluyente: cachear y devolver. Las respuestas de error no
@@ -182,54 +275,107 @@ async function _resolveDNS(name, type) {
  *
  * El reintento vuelve a la COLA en vez de retener su hueco durante la espera: retenerlo
  * desperdiciaría capacidad justo cuando la piscina está saturada, que es exactamente
- * cuando aparecen estos SERVFAIL.
+ * cuando aparecen estos SERVFAIL. Y si mientras espera ya nadie quiere la respuesta, no
+ * vuelve a pedirla.
  */
-async function _resolveWithRetry(name, type) {
+async function _resolveWithRetry(name, type, job) {
     try {
-        return await _withDnsSlot(() => _resolveDNS(name, type));
+        return await _withDnsSlot(job, () => _resolveDNS(name, type));
     } catch (e) {
         // Con resolver propio no se reintenta: quien lo configura lo hace para que el
         // dominio auditado no salga de su infraestructura, no para doblarle el tráfico.
         if (e.code !== 'servfail' || !e.retryable || getSettings().resolver === 'custom') throw e;
-        if (_zoneIsKnownBroken(name)) throw e;
-        await new Promise(r => setTimeout(r, SERVFAIL_RETRY_DELAY));
+        if (_zoneIsKnownBroken(job.zone)) throw e;
+        // Lo de segundo plano es enumeración best-effort (dominios parecidos, sondas de
+        // awareness): un nombre que no responde se cuenta como "sin resolver" y basta. Con
+        // un dominio de TLD caído, el reintento doblaba una espera que ya era de segundos.
+        if (job.priority !== 'high') throw e;
+        await _sleep(SERVFAIL_RETRY_DELAY, job.controller.signal);
         try {
-            return await _withDnsSlot(() => _resolveDNS(name, type));
+            return await _withDnsSlot(job, () => _resolveDNS(name, type));
         } catch (e2) {
             // Falló dos veces con espera de por medio: la zona no está tropezando, está
             // caída. Se anota para que el resto de nombres se rindan a la primera.
-            if (e2.code === 'servfail') _servfailZones.set(extractRootDomain(name), Date.now());
+            if (e2.code === 'servfail') _servfailZones.set(job.zone, Date.now());
             throw e2;
         }
     }
 }
 
-export async function queryDNS(name, type) {
-    // Check cache first. Los aciertos de caché y de deduplicación salen ANTES del
-    // semáforo: no cuestan red, así que encolarlos solo añadiría latencia.
+/**
+ * La promesa que recibe UN llamante de un trabajo compartido. Si su `signal` aborta,
+ * se rechaza solo la suya; el trabajo se cancela cuando ya no queda nadie esperándolo.
+ */
+function _subscribe(job, signal) {
+    job.waiters++;
+    // Sin señal, el llamante no puede retirarse: el trabajo le pertenece hasta el final.
+    if (!signal) return job.promise;
+    return new Promise((resolve, reject) => {
+        const onAbort = () => {
+            reject(abortError());
+            if (--job.waiters > 0) return;
+            // Nadie más lo quiere: fuera de `_inflight` YA (una petición nueva del mismo
+            // nombre no debe colgarse de un trabajo moribundo) y fuera de la cola.
+            if (_inflight.get(job.key) === job) _inflight.delete(job.key);
+            job.controller.abort();
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        job.promise.then(
+            (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+            (e) => { signal.removeEventListener('abort', onAbort); reject(e); }
+        );
+    });
+}
+
+/**
+ * Consulta DNS por DoH, con caché, deduplicación en vuelo y cola.
+ *
+ * - `signal`: cancela la consulta para ESTE llamante (rechaza con `code: 'aborted'`).
+ *   Si era el último interesado, la consulta sale de la cola sin llegar a pedirse; la
+ *   que ya está en vuelo termina y se cachea.
+ * - `priority`: 'high' (por defecto, lo que el usuario está esperando) o 'low' (segundo
+ *   plano). Si una consulta 'high' coincide con una 'low' ya pendiente, la sube.
+ *
+ * @param {string} name
+ * @param {string} type
+ * @param {{ signal?: AbortSignal, priority?: 'high'|'low' }} [opts]
+ */
+export async function queryDNS(name, type, opts = {}) {
+    const { signal, priority = 'high' } = opts;
+    if (signal && signal.aborted) throw abortError();
+    // Check cache first. Los aciertos de caché y de deduplicación salen ANTES de la cola:
+    // no cuestan red, así que encolarlos solo añadiría latencia.
     const cached = _getCached(name, type);
     if (cached) return cached;
 
     // Reutiliza una consulta idéntica ya en vuelo (evita duplicados concurrentes).
     const key = `${name}:${type}`;
-    const pending = _inflight.get(key);
-    if (pending) return pending;
-
-    const promise = _resolveWithRetry(name, type).finally(() => _inflight.delete(key));
-    _inflight.set(key, promise);
-    return promise;
+    let job = _inflight.get(key);
+    if (job) {
+        if (priority === 'high') job.priority = 'high';
+    } else {
+        job = { key, zone: _zoneOf(name), priority, controller: new AbortController(), waiters: 0, queued: null };
+        job.controller.signal.addEventListener('abort', () => _dequeue(job), { once: true });
+        job.promise = _resolveWithRetry(name, type, job).finally(() => {
+            if (_inflight.get(key) === job) _inflight.delete(key);
+        });
+        // Si todos sus llamantes se retiran, nadie escucha ya este rechazo.
+        job.promise.catch(swallow);
+        _inflight.set(key, job);
+    }
+    return _subscribe(job, signal);
 }
 
 // DoH RCODE: 0 = NOERROR, 3 = NXDOMAIN (dominio inexistente).
 // Devuelve false solo si el resolver confirma NXDOMAIN en el ápex del dominio.
-export async function checkDomainExists(domain) {
-    const data = await queryDNS(domain, 'NS');
+export async function checkDomainExists(domain, opts = {}) {
+    const data = await queryDNS(domain, 'NS', opts);
     if (data && typeof data.Status === 'number' && data.Status === 3) return false;
     return true;
 }
 
-export async function getMX(domain) {
-    return _parseMxAnswer(await queryDNS(domain, 'MX'));
+export async function getMX(domain, opts = {}) {
+    return _parseMxAnswer(await queryDNS(domain, 'MX', opts));
 }
 
 // Respuesta DoH de un MX → hosts ordenados por prioridad (con .nullMx si es Null MX).
@@ -258,8 +404,8 @@ function _parseMxAnswer(data) {
     return hosts;
 }
 
-export async function getSPF(domain) {
-    const data = await queryDNS(domain, 'TXT');
+export async function getSPF(domain, opts = {}) {
+    const data = await queryDNS(domain, 'TXT', opts);
     if (!data.Answer) return { record: null, records: [], multiple: false };
     const records = [];
     for (const a of data.Answer) {
@@ -288,8 +434,8 @@ export function isDmarcRecord(txt) {
     return DMARC_RECORD_RE.test(String(txt || ''));
 }
 
-export async function getDMARC(domain) {
-    const data = await queryDNS(`_dmarc.${domain}`, 'TXT');
+export async function getDMARC(domain, opts = {}) {
+    const data = await queryDNS(`_dmarc.${domain}`, 'TXT', opts);
     if (!data.Answer) return { record: null, records: [], multiple: false };
     const records = [];
     for (const a of data.Answer) {
@@ -331,9 +477,9 @@ const psdOf = (record) => {
  * @returns {Promise<{record, records, multiple, policyDomain, source, orgDomain,
  *   inherited, inheritedFrom, walked, incomplete}>}
  */
-export async function discoverDmarcPolicy(domain) {
+export async function discoverDmarcPolicy(domain, opts = {}) {
     const start = String(domain || '').toLowerCase().replace(/\.$/, '');
-    const own = await getDMARC(start);
+    const own = await getDMARC(start, opts);
     const found = [];
     const walked = [{ name: start, status: own.multiple ? 'multiple' : (own.record ? 'record' : 'none') }];
     if (own.record && !own.multiple) found.push({ name: start, record: own.record, psd: psdOf(own.record) });
@@ -344,7 +490,7 @@ export async function discoverDmarcPolicy(domain) {
         const targets = treeWalkTargets(start);
         // Se lanzan en paralelo (son como mucho 7 y la piscina de 6 las ordena), pero se
         // INTERPRETAN en orden: lo que haya por encima de un psd=n/psd=y no cuenta.
-        const answers = await Promise.allSettled(targets.map(t => getDMARC(t)));
+        const answers = await Promise.allSettled(targets.map(t => getDMARC(t, opts)));
         for (let i = 0; i < targets.length; i++) {
             const a = answers[i];
             if (a.status === 'rejected') {
@@ -451,7 +597,7 @@ export function discoverDKIMSelectors(spfRaw) {
 // `customSelector` acepta un selector suelto o una lista (el campo de la UI admite
 // varios separados por coma). Si se indica alguno, se consulta SOLO esa lista: es una
 // elección explícita del usuario, no un complemento a la detección best-effort.
-export async function getDKIM(domain, customSelector = null, spfRaw = null, icesSelectors = []) {
+export async function getDKIM(domain, customSelector = null, spfRaw = null, icesSelectors = [], opts = {}) {
     const custom = (Array.isArray(customSelector) ? customSelector : [customSelector]).filter(Boolean);
     let selectors = custom.length > 0 ? [...new Set(custom)] : COMMON_DKIM_SELECTORS;
     if (custom.length === 0 && spfRaw) {
@@ -464,7 +610,7 @@ export async function getDKIM(domain, customSelector = null, spfRaw = null, ices
     const errors = [];
     const promises = selectors.map(async (selector) => {
         try {
-            const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT');
+            const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT', opts);
             if (data && data.Answer) {
                 for (const a of data.Answer) {
                     // Solo los TXT: en una cadena CNAME el destino también viene en Answer.
@@ -489,9 +635,9 @@ export async function getDKIM(domain, customSelector = null, spfRaw = null, ices
     return { records: results, errors, attempted: selectors.length };
 }
 
-export async function getBIMI(domain) {
+export async function getBIMI(domain, opts = {}) {
     try {
-        const data = await queryDNS(`default._bimi.${domain}`, 'TXT');
+        const data = await queryDNS(`default._bimi.${domain}`, 'TXT', opts);
         if (data && data.Answer) {
             for (const a of data.Answer) {
                 const txt = extractTxtValue(a.data);
@@ -539,12 +685,12 @@ const SPF_VOID_PROBE_TYPES = new Set(['a', 'mx', 'exists']);
 
 // ¿La consulta de este mecanismo es "void"? (NXDOMAIN o cero respuestas)
 // Devuelve true | false | null (null = no se pudo determinar, no se cuenta).
-async function _probeVoidLookup(type, target) {
+async function _probeVoidLookup(type, target, opts = {}) {
     // Quita la máscara CIDR (`a:example.com/24`) antes de consultar.
     const name = String(target).split('/')[0].replace(/\.$/, '');
     if (!name || name === '(self)') return null;
     const answersOf = async (qtype) => {
-        const data = await queryDNS(name, qtype);
+        const data = await queryDNS(name, qtype, opts);
         if (data && data.Status === 3) return 0; // NXDOMAIN
         return ((data && data.Answer) || []).length;
     };
@@ -562,7 +708,11 @@ async function _probeVoidLookup(type, target) {
     }
 }
 
-export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx = { probeBudget: SPF_VOID_PROBE_BUDGET }) {
+// `ctx` se comparte por todo el árbol: el presupuesto de sondas y, si los hay, la señal de
+// cancelación y la prioridad de las consultas (`{ signal, priority }`).
+export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx = {}) {
+    ctx.probeBudget ??= SPF_VOID_PROBE_BUDGET;
+    const dnsOpts = { signal: ctx.signal, priority: ctx.priority };
     // node.error es un CÓDIGO neutral de idioma ('depth_exceeded' | 'loop' |
     // 'query_failed' | 'no_spf_record'). node.errorDetail contiene el mensaje
     // técnico original (si aplica).
@@ -581,7 +731,7 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx 
     const childPath = new Set([...path, domain]);
 
     try {
-        const spfData = await getSPF(domain);
+        const spfData = await getSPF(domain, dnsOpts);
         const spf = spfData.record;
         if (!spf) {
             // Un include:/redirect= cuyo destino NO publica SPF es un PermError en la
@@ -621,20 +771,25 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx 
         }
 
         // Sondeo de void lookups: resuelve los mecanismos hoja de este nivel para saber
-        // cuáles devuelven NXDOMAIN o cero respuestas. Se hace en paralelo y solo
-        // mientras quede presupuesto compartido con el resto del árbol.
+        // cuáles devuelven NXDOMAIN o cero respuestas, solo mientras quede presupuesto
+        // compartido con el resto del árbol. El presupuesto se reparte AQUÍ, de forma
+        // síncrona y antes de bajar a los hijos: cada nivel toma su parte antes que su
+        // descendencia, así que el reparto no depende de qué respuesta llegue antes.
         const probes = node.children.filter(c => SPF_VOID_PROBE_TYPES.has(c.type) && c.target !== '(self)');
         const budgeted = probes.slice(0, Math.max(0, ctx.probeBudget));
         ctx.probeBudget -= budgeted.length;
-        await Promise.all(budgeted.map(async (child) => {
-            const isVoid = await _probeVoidLookup(child.type, child.target);
+        const probing = Promise.all(budgeted.map(async (child) => {
+            const isVoid = await _probeVoidLookup(child.type, child.target, dnsOpts);
             if (isVoid !== null) child.void = isVoid;
         }));
 
-        // Segunda pasada: resuelve todos los include/redirect del nivel EN PARALELO.
-        const subtrees = await Promise.all(
-            nested.map(n => getSPFLookupTree(n.target, childPath, depth + 1, ctx))
-        );
+        // Los include/redirect del nivel se resuelven EN PARALELO entre sí y con las
+        // sondas: no dependen de ellas. Los subárboles se añaden después, en el orden del
+        // registro.
+        const [, subtrees] = await Promise.all([
+            probing,
+            Promise.all(nested.map(n => getSPFLookupTree(n.target, childPath, depth + 1, ctx)))
+        ]);
         subtrees.forEach((child, i) => {
             node.children.push({ type: nested[i].type, target: nested[i].target, tree: child });
             node.lookups += child.lookups;
@@ -648,12 +803,12 @@ export async function getSPFLookupTree(domain, path = new Set(), depth = 0, ctx 
 }
 
 // Resuelve todas las IPs (IPv4 e IPv6) de un host.
-export async function getIPAddresses(host) {
+export async function getIPAddresses(host, opts = {}) {
     const ips = [];
     try {
         const [aData, aaaaData] = await Promise.all([
-            queryDNS(host, 'A').catch(() => null),
-            queryDNS(host, 'AAAA').catch(() => null)
+            queryDNS(host, 'A', opts).catch(() => null),
+            queryDNS(host, 'AAAA', opts).catch(() => null)
         ]);
         if (aData && aData.Answer) {
             for (const a of aData.Answer) {
@@ -666,14 +821,14 @@ export async function getIPAddresses(host) {
             }
         }
     } catch (e) {
-        console.warn('Failed to resolve IPs for %s', host, e);
+        _warn('Failed to resolve IPs for %s', host, e);
     }
     return [...new Set(ips)];
 }
 
 // Compat: devuelve la primera IP (preferentemente IPv4).
-export async function getIPAddress(host) {
-    const ips = await getIPAddresses(host);
+export async function getIPAddress(host, opts = {}) {
+    const ips = await getIPAddresses(host, opts);
     return ips[0] || null;
 }
 
@@ -714,12 +869,12 @@ function expandIPv6ForRbl(ip) {
 //                 resultado NO concluyente. Muchas DNSBL (Spamhaus, SpamCop…) rechazan
 //                 las consultas que llegan vía resolvers DoH públicos (Google/Cloudflare),
 //                 por lo que estas comprobaciones son best-effort.
-export async function checkRBL(ip, rblHost) {
+export async function checkRBL(ip, rblHost, opts = {}) {
     try {
         const reversed = reverseIpForDns(ip);
         if (!reversed) return { status: 'error', listed: false, rbl: rblHost };
         const queryName = `${reversed}.${rblHost}`;
-        const data = await queryDNS(queryName, 'A');
+        const data = await queryDNS(queryName, 'A', opts);
         if (data && data.Answer && data.Answer.length > 0) {
             const codes = data.Answer.filter(a => a.type === 1 && a.data).map(a => a.data);
             // 127.255.255.x ⇒ código de error de la DNSBL (consulta rechazada / cuota / resolver público)
@@ -742,15 +897,15 @@ export async function checkRBL(ip, rblHost) {
 
 // ===== NEW: Advanced DNS queries for ICES detection =====
 
-export async function getAllTXT(domain) {
+export async function getAllTXT(domain, opts = {}) {
     try {
-        const data = await queryDNS(domain, 'TXT');
+        const data = await queryDNS(domain, 'TXT', opts);
         if (!data.Answer) return [];
         return data.Answer
             .filter(a => a.type === 16)
             .map(a => extractTxtValue(a.data));
     } catch (e) {
-        console.warn('Failed to get all TXT for %s', domain, e);
+        _warn('Failed to get all TXT for %s', domain, e);
         return [];
     }
 }
@@ -760,6 +915,7 @@ export async function getAllTXT(domain) {
 // al proxy, si está permitido.
 export async function fetchMTASTSPolicyFile(domain, opts = {}) {
     const direct = opts.direct !== false;
+    const { signal } = opts;
     // La URL se construye con el dominio auditado, que es justo lo que hace esta
     // comprobación. Aun así se valida AQUÍ, en el punto del fetch: la función es
     // exportada y no debe depender de que quien la llame haya validado antes.
@@ -798,17 +954,19 @@ export async function fetchMTASTSPolicyFile(domain, opts = {}) {
 
     try {
         if (!direct) throw new Error('Direct fetch disabled in settings');
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const timeout = timeoutSignal(8000, signal);
         // redirect:'manual' expone el 3xx como respuesta opaca en vez de seguirlo.
-        res = await fetch(url, {
-            method: 'GET',
-            cache: 'no-store',
-            redirect: 'manual',
-            referrerPolicy: 'no-referrer',
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
+        try {
+            res = await fetch(url, {
+                method: 'GET',
+                cache: 'no-store',
+                redirect: 'manual',
+                referrerPolicy: 'no-referrer',
+                signal: timeout.signal
+            });
+        } finally {
+            timeout.done();
+        }
         if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
             return redirectFail(res.status);
         }
@@ -828,10 +986,13 @@ export async function fetchMTASTSPolicyFile(domain, opts = {}) {
         if (direct) console.warn('Direct fetch for MTA-STS failed (likely CORS or network error). Trying proxy fallback.', e);
         try {
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-            const proxyRes = await fetch(proxyUrl, { signal: controller.signal });
-            clearTimeout(timeoutId);
+            const timeout = timeoutSignal(8000, signal);
+            let proxyRes;
+            try {
+                proxyRes = await fetch(proxyUrl, { signal: timeout.signal });
+            } finally {
+                timeout.done();
+            }
             if (!proxyRes.ok) throw new Error(`Proxy HTTP error: ${proxyRes.status}`);
             const data = await proxyRes.json();
             if (!data || !data.contents) throw new Error(`Empty contents from proxy`);
@@ -890,17 +1051,16 @@ export async function fetchMTASTSPolicyFile(domain, opts = {}) {
  * ¿Resuelve `host` a alguna dirección? Solo por DoH: no toca el host.
  * @returns {Promise<'ok'|'missing'|'unknown'>} 'unknown' = no se pudo consultar
  */
-async function probeHostResolves(host) {
-    try {
-        const a = await queryDNS(host, 'A');
-        if ((a && a.Answer || []).some(r => r.type === 1)) return 'ok';
-        if (a && a.Status === 3) return 'missing';
-        const aaaa = await queryDNS(host, 'AAAA');
-        if ((aaaa && aaaa.Answer || []).some(r => r.type === 28)) return 'ok';
-        return 'missing';
-    } catch {
-        return 'unknown';
-    }
+async function probeHostResolves(host, opts = {}) {
+    // A y AAAA a la vez: la AAAA solo decide cuando la A no trae direcciones, pero
+    // pedirla después costaba una ida y vuelta entera en la ruta crítica.
+    const [a, aaaa] = await Promise.allSettled([queryDNS(host, 'A', opts), queryDNS(host, 'AAAA', opts)]);
+    if (a.status === 'rejected') return 'unknown';
+    if ((a.value && a.value.Answer || []).some(r => r.type === 1)) return 'ok';
+    if (a.value && a.value.Status === 3) return 'missing';
+    if (aaaa.status === 'rejected') return 'unknown';
+    if ((aaaa.value && aaaa.value.Answer || []).some(r => r.type === 28)) return 'ok';
+    return 'missing';
 }
 
 /**
@@ -913,21 +1073,21 @@ async function probeHostResolves(host) {
  * además casi siempre la bloquea CORS. Sin permiso, la política queda "no descargada"
  * (no evaluable, no penaliza).
  */
-async function resolveMtaStsPolicy(domain) {
+async function resolveMtaStsPolicy(domain, opts = {}) {
     const host = `mta-sts.${domain}`;
     const notFetched = (validationReason) => ({
         url: `https://${host}/.well-known/mta-sts.txt`, host, httpStatus: null, fetchOk: false, body: null,
         parsed: null, mode: null, valid: false, error: null, validationReason
     });
-    if (await probeHostResolves(host) === 'missing') return notFetched('host_missing');
+    if (await probeHostResolves(host, opts) === 'missing') return notFetched('host_missing');
     const s = getSettings();
     if (!s.contactAuditedHosts && !s.allowCorsProxy) return notFetched('not_fetched');
-    return fetchMTASTSPolicyFile(domain, { direct: !!s.contactAuditedHosts });
+    return fetchMTASTSPolicyFile(domain, { direct: !!s.contactAuditedHosts, signal: opts.signal });
 }
 
-export async function getMTASTS(domain) {
+export async function getMTASTS(domain, opts = {}) {
     try {
-        const data = await queryDNS(`_mta-sts.${domain}`, 'TXT');
+        const data = await queryDNS(`_mta-sts.${domain}`, 'TXT', opts);
         if (!data.Answer) return null;
         for (const a of data.Answer) {
             const txt = extractTxtValue(a.data);
@@ -937,19 +1097,19 @@ export async function getMTASTS(domain) {
                     record: txt,
                     id: idMatch ? idMatch[1].trim() : null
                 };
-                result.policy = await resolveMtaStsPolicy(domain);
+                result.policy = await resolveMtaStsPolicy(domain, opts);
                 return result;
             }
         }
     } catch (e) {
-        console.warn('Failed to get MTA-STS for %s', domain, e);
+        _warn('Failed to get MTA-STS for %s', domain, e);
     }
     return null;
 }
 
-export async function getTLSRPT(domain) {
+export async function getTLSRPT(domain, opts = {}) {
     try {
-        const data = await queryDNS(`_smtp._tls.${domain}`, 'TXT');
+        const data = await queryDNS(`_smtp._tls.${domain}`, 'TXT', opts);
         if (!data.Answer) return null;
         for (const a of data.Answer) {
             const txt = extractTxtValue(a.data);
@@ -960,25 +1120,25 @@ export async function getTLSRPT(domain) {
             }
         }
     } catch (e) {
-        console.warn('Failed to get TLS-RPT for %s', domain, e);
+        _warn('Failed to get TLS-RPT for %s', domain, e);
     }
     return null;
 }
 
-export async function getNS(domain) {
+export async function getNS(domain, opts = {}) {
     try {
-        const data = await queryDNS(domain, 'NS');
+        const data = await queryDNS(domain, 'NS', opts);
         if (!data.Answer) return [];
         return data.Answer
             .filter(a => a.type === 2)
             .map(a => a.data.replace(/\.$/, ''));
     } catch (e) {
-        console.warn('Failed to get NS for %s', domain, e);
+        _warn('Failed to get NS for %s', domain, e);
         return [];
     }
 }
 
-export async function getSRV(domain) {
+export async function getSRV(domain, opts = {}) {
     const srvRecords = {};
     const checks = [
         { key: 'autodiscover', record: `_autodiscover._tcp.${domain}` },
@@ -988,7 +1148,7 @@ export async function getSRV(domain) {
     
     await Promise.all(checks.map(async check => {
         try {
-            const data = await queryDNS(check.record, 'SRV');
+            const data = await queryDNS(check.record, 'SRV', opts);
             if (data.Answer && data.Answer.length > 0) {
                 srvRecords[check.key] = data.Answer
                     .filter(a => a.type === 33)
@@ -1003,7 +1163,7 @@ export async function getSRV(domain) {
                     });
             }
         } catch (e) {
-            console.warn('Failed to query SRV for %s', check.record, e);
+            _warn('Failed to query SRV for %s', check.record, e);
         }
     }));
     
@@ -1017,10 +1177,10 @@ export async function getSRV(domain) {
 //                     Google, Cloudflare y Quad9 validan; de un resolver propio no se sabe.
 // DNSKEY sin AD es una zona firmada cuya cadena de confianza no valida (falta el DS en
 // la zona padre, o está rota): no protege nada, y el scoring lo distingue.
-export async function getDNSSEC(domain) {
+export async function getDNSSEC(domain, opts = {}) {
     const validationKnown = getSettings().resolver !== 'custom';
     try {
-        const data = await queryDNS(domain, 'DNSKEY');
+        const data = await queryDNS(domain, 'DNSKEY', opts);
         const hasDnskey = !!(data && data.Answer && data.Answer.some(a => a.type === 48));
         const ad = !!(data && data.AD);
         return { signed: hasDnskey || ad, hasDnskey, ad, validationKnown };
@@ -1042,8 +1202,7 @@ export async function getDNSSEC(domain) {
 // lo estaba. `opts.orgDomain` es el dominio organizativo que ha dado el Tree Walk; sin él
 // se estima con extractRootDomain.
 export async function checkDMARCExternalAuth(policyDomain, uris, opts = {}) {
-    const results = [];
-    if (!uris || uris.length === 0) return results;
+    if (!uris || uris.length === 0) return [];
     const analyzed = String(policyDomain).toLowerCase().replace(/\.$/, '');
     // El RFC compara DOMINIOS ORGANIZATIVOS, no cadenas exactas: comparar literales
     // acusaba de "destino externo no autorizado" a quien manda sus informes a un
@@ -1051,7 +1210,10 @@ export async function checkDMARCExternalAuth(policyDomain, uris, opts = {}) {
     const analyzedOrg = opts.orgDomain
         ? String(opts.orgDomain).toLowerCase().replace(/\.$/, '')
         : extractRootDomain(analyzed);
+    // Primero, de forma síncrona, qué destinos hay que comprobar (sin repetir); después,
+    // todos a la vez. Promise.all conserva el orden de los URIs en el resultado.
     const seen = new Set();
+    const targets = [];
     for (const uri of uris) {
         const m = String(uri).match(/^\s*mailto:[^@\s]+@([^\s!,;?]+)/i);
         if (!m) continue;
@@ -1062,8 +1224,11 @@ export async function checkDMARCExternalAuth(policyDomain, uris, opts = {}) {
         if (!opts.orgDomain && extractRootDomain(destDomain) === analyzedOrg) continue;
         if (seen.has(destDomain)) continue;
         seen.add(destDomain);
+        targets.push({ uri, destDomain });
+    }
+    return Promise.all(targets.map(async ({ uri, destDomain }) => {
         try {
-            const data = await queryDNS(`${analyzed}._report._dmarc.${destDomain}`, 'TXT');
+            const data = await queryDNS(`${analyzed}._report._dmarc.${destDomain}`, 'TXT', opts);
             let authorized = false;
             let override = null;
             if (data && data.Answer) {
@@ -1080,18 +1245,17 @@ export async function checkDMARCExternalAuth(policyDomain, uris, opts = {}) {
                     }
                 }
             }
-            results.push({ uri, destDomain, authorized, ...(override ? { override } : {}) });
-        } catch (e) {
-            results.push({ uri, destDomain, authorized: null });
+            return { uri, destDomain, authorized, ...(override ? { override } : {}) };
+        } catch {
+            return { uri, destDomain, authorized: null };
         }
-    }
-    return results;
+    }));
 }
 
 // `validated` (no enumerable, para no alterar a quien recorre los hosts) guarda si cada
 // respuesta TLSA llegó validada por DNSSEC: un TLSA sin validar no lo usa ningún MTA
 // (RFC 7672 §2.2).
-export async function getDANE(mxHosts) {
+export async function getDANE(mxHosts, opts = {}) {
     const daneRecords = {};
     const validated = {};
     Object.defineProperty(daneRecords, 'validated', { value: validated, enumerable: false });
@@ -1099,7 +1263,7 @@ export async function getDANE(mxHosts) {
     const validationKnown = getSettings().resolver !== 'custom';
     await Promise.all(mxHosts.map(async mx => {
         try {
-            const data = await queryDNS(`_25._tcp.${mx}`, 'TLSA');
+            const data = await queryDNS(`_25._tcp.${mx}`, 'TLSA', opts);
             if (data.Answer && data.Answer.length > 0) {
                 daneRecords[mx] = data.Answer
                     .filter(a => a.type === 52 || a.type === 32768) // 52 is TLSA type
@@ -1107,7 +1271,7 @@ export async function getDANE(mxHosts) {
                 if (validationKnown) validated[mx] = !!data.AD;
             }
         } catch (e) {
-            console.warn('Failed to query DANE for _25._tcp.%s', mx, e);
+            _warn('Failed to query DANE for _25._tcp.%s', mx, e);
         }
     }));
     return daneRecords;
@@ -1137,24 +1301,71 @@ export async function getDANE(mxHosts) {
  *
  * @returns {Promise<{cname: string|null, ips: string[], status: 'ok'|'nxdomain'|'unavailable'}>}
  */
-export async function getAutodiscover(domain) {
+export async function getAutodiscover(domain, opts = {}) {
     const host = `autodiscover.${domain}`;
     let cname = null;
     const ips = [];
     try {
         // Una sola consulta A basta: la cadena Answer trae el CNAME (type 5) y la
         // dirección final (type 1). Pedir CNAME por separado sería una consulta de más.
-        const data = await queryDNS(host, 'A');
+        const data = await queryDNS(host, 'A', opts);
         for (const a of (data && data.Answer) || []) {
             if (a.type === 5 && a.data && !cname) cname = String(a.data).replace(/\.$/, '').toLowerCase();
             if (a.type === 1 && a.data) ips.push(a.data);
         }
     } catch (e) {
-        console.warn('Failed to resolve autodiscover for %s', domain, e);
+        _warn('Failed to resolve autodiscover for %s', domain, e);
         return { cname: null, ips: [], status: 'unavailable' };
     }
     const status = (cname || ips.length) ? 'ok' : 'nxdomain';
     return { cname, ips: [...new Set(ips)], status };
+}
+
+// Tenant de las cuentas PERSONALES de Microsoft (outlook.com, hotmail…). El endpoint lo
+// devuelve también para dominios de consumo ajenos, como gmail.com: no es un tenant de la
+// organización y se trata como "sin tenant".
+const MSA_CONSUMER_TENANT = '9cd80435-793b-4f48-844b-6b3f37d1c1f3';
+const ENTRA_TIMEOUT = 4000;
+const GUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * ¿Está el dominio verificado en un tenant de Microsoft Entra? Lo dice el documento de
+ * descubrimiento OpenID de Microsoft, público y con CORS abierto: trae el ID del tenant
+ * (en `issuer`) y su región. La consulta va a login.microsoftonline.com, nunca a un
+ * servidor del dominio auditado. Se puede apagar en Ajustes.
+ *
+ * Lo que NO dice: dónde están los buzones. Tener tenant solo significa usar ALGÚN
+ * servicio de Microsoft (google.com tiene uno), así que el clasificador de hospedaje lo
+ * usa para reforzar, nunca para decidir.
+ *
+ * @returns {Promise<{status: 'found'|'none'|'unavailable', id?: string, region?: string|null, cloud?: string|null}>}
+ */
+export async function getEntraTenant(domain, opts = {}) {
+    if (!isValidDomain(domain)) return { status: 'none' };
+    const timeout = timeoutSignal(ENTRA_TIMEOUT, opts.signal);
+    try {
+        const res = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(domain)}/v2.0/.well-known/openid-configuration`, {
+            signal: timeout.signal,
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer'
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            // AADSTS90002: "Tenant not found". Cualquier otro error no dice nada del dominio.
+            const codes = Array.isArray(json.error_codes) ? json.error_codes : [];
+            return { status: codes.includes(90002) ? 'none' : 'unavailable' };
+        }
+        const m = String(json.issuer || '').match(GUID_RE);
+        if (!m) return { status: 'unavailable' };
+        const id = m[0].toLowerCase();
+        if (id === MSA_CONSUMER_TENANT) return { status: 'none' };
+        return { status: 'found', id, region: json.tenant_region_scope || null, cloud: json.cloud_instance_name || null };
+    } catch {
+        if (opts.signal && opts.signal.aborted) throw abortError();
+        return { status: 'unavailable' };
+    } finally {
+        timeout.done();
+    }
 }
 
 // El nombre de un ASN no cambia entre consultas y muchas IPs comparten ASN: sin
@@ -1165,18 +1376,21 @@ const _asNameCache = new Map();
  * Nombre de la organización dueña de un ASN, vía Team Cymru sobre DNS.
  * `AS8075.asn.cymru.com` TXT → "8075 | US | arin | … | MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation, US"
  */
-async function getASName(asn) {
+async function getASName(asn, opts = {}) {
     if (!asn) return null;
     if (_asNameCache.has(asn)) return _asNameCache.get(asn);
     let name = null;
     try {
-        const data = await queryDNS(`AS${asn}.asn.cymru.com`, 'TXT');
+        const data = await queryDNS(`AS${asn}.asn.cymru.com`, 'TXT', opts);
         const txt = extractTxtValue(((data && data.Answer) || []).map(a => a.data).find(Boolean) || '');
         // El último campo del TXT es la descripción de la organización.
         const parts = txt.split('|').map(s => s.trim());
         if (parts.length >= 5 && parts[4]) name = parts[4];
     } catch (e) {
-        console.warn('Failed to resolve AS name for AS%s', asn, e);
+        // Una cancelación no dice nada del ASN: memorizar su null lo dejaría sin nombre
+        // para el resto de la sesión.
+        if (isAbortError(e)) return null;
+        _warn('Failed to resolve AS name for AS%s', asn, e);
     }
     _asNameCache.set(asn, name);
     return name;
@@ -1196,7 +1410,7 @@ async function getASName(asn) {
  *
  * @returns {Promise<{ip: string, asn: string|null, asName: string|null, prefix: string|null, cc: string|null, ptr: string|null}>}
  */
-export async function getIpIntel(ip) {
+export async function getIpIntel(ip, opts = {}) {
     const out = { ip, asn: null, asName: null, prefix: null, cc: null, ptr: null };
     const reversed = reverseIpForDns(ip);
     if (!reversed) return out;
@@ -1204,8 +1418,8 @@ export async function getIpIntel(ip) {
     const arpa = ip.includes(':') ? 'ip6.arpa' : 'in-addr.arpa';
 
     const [cymru, ptr] = await Promise.all([
-        queryDNS(`${reversed}.${zone}`, 'TXT').catch(() => null),
-        queryDNS(`${reversed}.${arpa}`, 'PTR').catch(() => null)
+        queryDNS(`${reversed}.${zone}`, 'TXT', opts).catch(() => null),
+        queryDNS(`${reversed}.${arpa}`, 'PTR', opts).catch(() => null)
     ]);
 
     if (cymru && cymru.Answer) {
@@ -1220,7 +1434,7 @@ export async function getIpIntel(ip) {
         const rec = ptr.Answer.find(a => a.type === 12 && a.data);
         if (rec) out.ptr = String(rec.data).replace(/\.$/, '').toLowerCase();
     }
-    if (out.asn) out.asName = await getASName(out.asn);
+    if (out.asn) out.asName = await getASName(out.asn, opts);
     return out;
 }
 
@@ -1237,13 +1451,13 @@ export async function getIpIntel(ip) {
  *
  * @returns {Promise<Array<{selector: string, cname: string|null, hasKey: boolean}>>}
  */
-export async function getDkimSelectorChain(domain, selectors = ['selector1', 'selector2']) {
+export async function getDkimSelectorChain(domain, selectors = ['selector1', 'selector2'], opts = {}) {
     const results = await Promise.all(selectors.map(async (selector) => {
         const out = { selector, cname: null, hasKey: false };
         try {
             // Misma consulta (nombre, tipo) que hace getDKIM para selector1: la caché
             // de queryDNS la sirve sin tráfico adicional.
-            const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT');
+            const data = await queryDNS(`${selector}._domainkey.${domain}`, 'TXT', opts);
             for (const a of (data && data.Answer) || []) {
                 if (a.type === 5 && a.data && !out.cname) {
                     out.cname = String(a.data).replace(/\.$/, '').toLowerCase();
@@ -1251,7 +1465,7 @@ export async function getDkimSelectorChain(domain, selectors = ['selector1', 'se
                 if (a.type === 16 && isDkimKeyRecord(extractTxtValue(a.data))) out.hasKey = true;
             }
         } catch (e) {
-            console.warn('Failed to resolve DKIM chain %s._domainkey.%s', selector, domain, e);
+            _warn('Failed to resolve DKIM chain %s._domainkey.%s', selector, domain, e);
         }
         return out;
     }));
@@ -1270,13 +1484,13 @@ export async function getDkimSelectorChain(domain, selectors = ['selector1', 'se
  * @param {{ domain: string, mx: string[], ns: string[] }} baseline el dominio auditado
  * @returns {Promise<{ checked: number, found: Array, unresolved: number }>}
  */
-export async function checkLookalikes(candidates, baseline) {
+export async function checkLookalikes(candidates, baseline, opts = {}) {
     let unresolved = 0;
     const found = [];
     await Promise.all(candidates.map(async (candidate, index) => {
         let data;
         try {
-            data = await queryDNS(candidate.domain, 'MX');
+            data = await queryDNS(candidate.domain, 'MX', opts);
         } catch {
             unresolved++;
             return;
@@ -1291,10 +1505,10 @@ export async function checkLookalikes(candidates, baseline) {
         }
         // Para reconocer los registros defensivos: sus NS, y adónde apuntan su SPF y su
         // DMARC. Un fallo en cualquiera de las tres solo deja la heurística con menos datos.
-        const txtOf = (name) => queryDNS(name, 'TXT')
+        const txtOf = (name) => queryDNS(name, 'TXT', opts)
             .then(d => (d.Answer || []).filter(a => a.type === 16).map(a => extractTxtValue(a.data)))
             .catch(() => []);
-        const [ns, txt, dmarc] = await Promise.all([getNS(candidate.domain), txtOf(candidate.domain), txtOf(`_dmarc.${candidate.domain}`)]);
+        const [ns, txt, dmarc] = await Promise.all([getNS(candidate.domain, opts), txtOf(candidate.domain), txtOf(`_dmarc.${candidate.domain}`)]);
         const links = ownershipLinks(txt, dmarc);
         found.push({ ...candidate, index, mx, ns, kind: classifyLookalike({ mx, ns, links }, baseline) });
     }));
@@ -1303,4 +1517,41 @@ export async function checkLookalikes(candidates, baseline) {
     const RANK = { mx: 0, registered: 1, own: 2 };
     found.sort((a, b) => (RANK[a.kind] - RANK[b.kind]) || (a.index - b.index));
     return { checked: candidates.length, found: found.map(({ index: _i, ...rest }) => rest), unresolved };
+}
+
+/**
+ * Consulta los subdominios elegidos por selectMailSubdomains (vistos en Certificate
+ * Transparency): su SPF, sus MX y la política DMARC que les aplica (la suya o la heredada
+ * con `sp`). Devuelve solo los que envían o reciben correo, primero los suplantables.
+ *
+ * Son nombres de la zona auditada: quien llama lo lanza cuando el análisis principal ya ha
+ * terminado y con prioridad baja, para no quitarle huecos.
+ *
+ * @param {string[]} names
+ * @returns {Promise<{ checked: number, found: Array, unresolved: number }>}
+ */
+export async function checkMailSubdomains(names, opts = {}) {
+    let unresolved = 0;
+    const rows = await Promise.all((names || []).map(async (name) => {
+        const [spf, mx, dmarc] = await Promise.allSettled([
+            getSPF(name, opts),
+            getMX(name, opts),
+            discoverDmarcPolicy(name, opts)
+        ]);
+        if (spf.status === 'rejected' && mx.status === 'rejected') {
+            unresolved++;
+            return null;
+        }
+        const row = classifyMailSubdomain(name, {
+            spf: spf.status === 'fulfilled' ? spf.value.record : null,
+            mx: mx.status === 'fulfilled' ? mx.value.map(r => r.host) : [],
+            dmarc: dmarc.status === 'fulfilled' ? dmarc.value : null,
+            dmarcUnavailable: dmarc.status === 'rejected'
+        });
+        return row.sends || row.receives ? row : null;
+    }));
+    if (opts.signal && opts.signal.aborted) throw abortError();
+    const found = rows.filter(Boolean)
+        .sort((a, b) => (Number(b.spoofable === true) - Number(a.spoofable === true)) || a.name.localeCompare(b.name));
+    return { checked: (names || []).length, found, unresolved };
 }

@@ -398,3 +398,98 @@ describe('BIMI: el logo no se pide al dominio auditado sin permiso', () => {
         }
     });
 });
+
+// ===========================================================================
+// v5.2: anexo de registros de corrección, subdominios con correo, comparación con la
+// muestra y tenant de Microsoft Entra, en la interfaz y en el informe.
+// ===========================================================================
+describe('v5.2 en el informe exportado', () => {
+    beforeEach(buildDom);
+
+    it('el anexo propone la escalera DMARC y escapa lo que viene del DNS', () => {
+        const result = dmarcResult('v=DMARC1; p=none; rua=mailto:a@acme.com');
+        result.dmarcExternalAuth = [{ uri: 'mailto:x@<b>vendor</b>.com', destDomain: '<b data-evil=1>vendor</b>.com', authorized: false }];
+        state.currentResult = result;
+        state.currentDomain = 'acme.com';
+        const container = document.createElement('div');
+        container.innerHTML = generateReportHTML().toString();
+        const text = container.textContent;
+        expect(text).toContain('Anexo: registros de corrección');
+        expect(text).toContain('v=DMARC1; p=quarantine; rua=mailto:a@acme.com');
+        expect(text).toContain('v=DMARC1; p=reject; rua=mailto:a@acme.com');
+        expect(text).toContain('_dmarc.acme.com');
+        expect(container.querySelectorAll('[data-evil]').length).toBe(0);
+    });
+
+    it('sin nada que corregir, el anexo lo dice', () => {
+        const result = dmarcResult('v=DMARC1; p=reject; rua=mailto:a@acme.com', {
+            mtaSts: { record: 'v=STSv1; id=1', policy: { validationReason: 'not_fetched' } },
+            tlsRpt: { record: 'v=TLSRPTv1; rua=mailto:t@acme.com', rua: ['mailto:t@acme.com'] }
+        });
+        state.currentResult = result;
+        state.currentDomain = 'acme.com';
+        expect(generateReportHTML().toString()).toContain('No hace falta cambiar ninguno de los registros evaluados');
+    });
+
+    it('incluye la comparación con la muestra, los subdominios con correo y el tenant', () => {
+        const result = dmarcResult('v=DMARC1; p=reject; rua=mailto:a@acme.com');
+        result.mailSubdomains = {
+            ctNames: 12, checked: 3, unresolved: 0,
+            found: [{ name: 'news.acme.com', sends: true, receives: false, policy: 'none', inherited: true, spoofable: true }]
+        };
+        result.mailHosting = { ...result.mailHosting, entraTenant: { id: '9744600e-3e04-492e-baa1-25ec245c6f10', region: 'EU' } };
+        state.currentResult = result;
+        state.currentDomain = 'acme.com';
+        const report = generateReportHTML().toString();
+        expect(report).toContain('Comparación con la muestra');
+        expect(report).toContain('grandes empresas');
+        expect(report).toContain('news.acme.com');
+        expect(report).toContain('Subdominios con correo suplantables');
+        expect(report).toContain('9744600e-3e04-492e-baa1-25ec245c6f10 · región Europa');
+    });
+});
+
+describe('v5.2 en la interfaz', () => {
+    beforeEach(() => {
+        buildDom();
+        document.body.insertAdjacentHTML('beforeend', '<p id="score-benchmark"></p><span id="mailsub-badge"></span><div id="mailsub-body"></div>');
+    });
+
+    it('la tarjeta de nota dice dónde queda la letra frente a la muestra', () => {
+        renderResults('acme.com', dmarcResult('v=DMARC1; p=reject; rua=mailto:a@acme.com'));
+        expect(document.getElementById('score-benchmark').textContent).toMatch(/muestra de 61 grandes empresas/);
+    });
+
+    it('el panel de subdominios: buscando, fallo, sin nombres CT y resultados escapados', async () => {
+        const { renderMailSubdomains } = await import('./ui.js');
+        renderMailSubdomains(undefined);
+        expect(document.getElementById('mailsub-body').textContent).toContain('Buscando subdominios');
+        renderMailSubdomains(null);
+        expect(document.getElementById('mailsub-body').textContent).toContain('No se pudieron comprobar');
+        renderMailSubdomains({ ctNames: 0, checked: 0, found: [], unresolved: 0 });
+        expect(document.getElementById('mailsub-body').textContent).toContain('no devolvieron nombres');
+        renderMailSubdomains({
+            ctNames: 20, checked: 2, unresolved: 1,
+            found: [
+                { name: '<img src=x onerror=alert(1)>.acme.com', sends: true, receives: true, policy: 'none', inherited: true, spoofable: true },
+                { name: 'mail.acme.com', sends: false, receives: true, policy: 'reject', inherited: false, spoofable: false },
+                { name: 'raro.acme.com', sends: true, receives: false, policy: 'unknown', inherited: false, spoofable: null }
+            ]
+        });
+        const body = document.getElementById('mailsub-body');
+        expect(body.querySelector('img')).toBeNull();
+        expect(body.textContent).toContain('De 20 nombres vistos en certificados públicos se han consultado 2');
+        expect(body.textContent).toContain('1 no se pudieron consultar');
+        const status = [...body.querySelectorAll('tbody tr td:last-child')].map(td => td.textContent.trim());
+        expect(status).toEqual(['Suplantable', 'Protegido', 'Sin comprobar']);
+        expect(document.getElementById('mailsub-badge').textContent).toBe('1 suplantables');
+    });
+
+    it('el panel de hospedaje muestra el tenant de Entra', () => {
+        const result = dmarcResult('v=DMARC1; p=reject; rua=mailto:a@acme.com');
+        result.mailHosting = { ...result.mailHosting, entraTenant: { id: 'abc-tenant', region: 'XX' } };
+        renderResults('acme.com', result);
+        // Región desconocida: se muestra el código tal cual.
+        expect(document.getElementById('provider-body').textContent).toContain('Tenant de Microsoft Entra: abc-tenant · región XX');
+    });
+});
