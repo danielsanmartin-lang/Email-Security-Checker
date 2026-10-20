@@ -773,7 +773,7 @@ describe('checkDMARCExternalAuth', () => {
         // panel pintaría los destinos desordenados respecto al registro.
         global.fetch = vi.fn(async (url) => {
             const name = new URL(String(url)).searchParams.get('name');
-            if (name.endsWith('lento.com')) await new Promise(r => setTimeout(r, 20));
+            if (name === 'acme.com._report._dmarc.lento.com') await new Promise(r => setTimeout(r, 20));
             const ok = name === 'acme.com._report._dmarc.rapido.com';
             return { ok: true, status: 200, json: async () => (ok ? { Status: 0, Answer: [{ type: 16, data: '"v=DMARC1"' }] } : { Status: 0 }) };
         });
