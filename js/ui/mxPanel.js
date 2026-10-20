@@ -4,7 +4,7 @@ import { html, raw } from '../utils.js';
 import { identifyMX } from '../analyzer.js';
 import { translations } from '../i18n.js';
 import { getLanguage } from '../lang.js';
-import { displayInboundFilter, inboundFilterSource, displayMailHosting, mailHostingDetail, mailHostingPlatform, mailHostingEvidence, mailHostingNotes } from '../viewmodel.js';
+import { displayInboundFilter, inboundFilterSource, displayMailHosting, mailHostingDetail, mailHostingPlatform, mailHostingEvidence, mailHostingNotes, entraTenantText } from '../viewmodel.js';
 
 export function renderMxPanel(domain, result) {
     const lang = getLanguage();
@@ -44,6 +44,7 @@ export function renderProviderPanel(result) {
             <div class="info-block__label">${t.mailbox_platform_label}</div>
             <div class="info-block__value">${mailHostingPlatform(mh, t)}${hostingBadge(mh, t)}</div>
             ${mh.tenant ? html`<div class="info-block__detail">${t.mh_tenant_label}: ${mh.tenant}</div>` : raw('')}
+            ${mh.entraTenant ? html`<div class="info-block__detail">${t.mh_entra_label}: ${entraTenantText(mh, t)}</div>` : raw('')}
         </div>
         <div class="info-block info-block--spaced">
             <div class="info-block__label">${t.panel_mail_hosting_label}</div>

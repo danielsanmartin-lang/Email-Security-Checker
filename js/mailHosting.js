@@ -146,8 +146,9 @@ function extractTenant(cname) {
  * @param {boolean} signals.googleDkim    hay clave en google._domainkey
  * @param {object}  signals.daneRecords   mapa host → registros TLSA
  * @param {Array}   signals.ctHostnames   nombres vistos en Certificate Transparency
+ * @param {object}  signals.entraTenant   { status, id, region, cloud } del OIDC de Microsoft (getEntraTenant)
  * @param {boolean} signals.segFronting   hay un SEG en el MX (solo para el aviso; no puntúa)
- * @returns {{kind, confidence, level, platform, tenant, evidence, notes, incomplete}}
+ * @returns {{kind, confidence, level, platform, tenant, entraTenant?, evidence, notes, incomplete}}
  */
 export function classifyMailHosting(signals = {}) {
     const {
@@ -160,6 +161,7 @@ export function classifyMailHosting(signals = {}) {
         googleDkim = false,
         daneRecords = {},
         ctHostnames = [],
+        entraTenant = null,
         segFronting = false
     } = signals;
 
@@ -246,6 +248,13 @@ export function classifyMailHosting(signals = {}) {
     }
     if (googleDkim && platform === 'unknown') platform = 'google';
 
+    // --- 2b. Tenant de Microsoft Entra (descubrimiento OIDC) ------------------------
+    // Que el dominio esté verificado en un tenant de Entra solo dice que la organización
+    // usa ALGÚN servicio de Microsoft (Azure, Teams, Power BI…): google.com tiene uno. Por
+    // eso refuerza una pista de nube que ya existía y nunca la sostiene sola.
+    const entra = entraTenant && entraTenant.status === 'found' && entraTenant.id ? entraTenant : null;
+    if (entra) push(cloud, 'entra_tenant', entra.id);
+
     // --- 3. MX: aporta al eje del buzón solo cuando es un proveedor, no un gateway --
     for (const id of mxIds) {
         if (id.type === 'self') {
@@ -280,9 +289,11 @@ export function classifyMailHosting(signals = {}) {
     if (daneHosts.length) push(own, 'dane', daneHosts[0]);
 
     // Certificate Transparency: un certificado prueba que el nombre existió, no que el
-    // servicio siga activo. Por eso es la señal más débil y nunca decide por sí sola.
-    // (Preparada, pero NO cableada en v1: crt.sh es frágil y activarla convertiría algún
-    // 'undetermined' honesto en una conjetura. Ver el README del módulo.)
+    // servicio siga activo. Por eso es la señal más débil y nunca decide por sí sola: solo
+    // refuerza otra pista de infraestructura propia. Llega después del resultado principal
+    // (los logs CT son la consulta más lenta) y el panel se recalcula entonces
+    // (reclassifyMailHosting en analyzer.js); si los logs no responden, todo queda como
+    // estaba sin ellos.
     const onpremHost = (ctHostnames || []).find(n => {
         const label = String(n).toLowerCase().split('.')[0];
         return (KB.onprem_ct_hostnames || []).includes(label) && sameRoot(n, domain);
@@ -293,10 +304,12 @@ export function classifyMailHosting(signals = {}) {
     const ownScore = noisyOr(own.map(e => e.weight));
     const cloudScore = noisyOr(cloud.map(e => e.weight));
 
-    // La evidencia de CT no puede sostener sola una afirmación (ver arriba).
+    // La evidencia de CT y la del tenant de Entra no pueden sostener solas una
+    // afirmación (ver arriba).
     const ownHasStandalone = own.some(e => e.signal !== 'ct_onprem_host');
+    const cloudHasStandalone = cloud.some(e => e.signal !== 'entra_tenant');
     const ownClaims = ownScore >= CLAIM_THRESHOLD && ownHasStandalone;
-    const cloudClaims = cloudScore >= CLAIM_THRESHOLD;
+    const cloudClaims = cloudScore >= CLAIM_THRESHOLD && cloudHasStandalone;
 
     let kind;
     let confidence;
@@ -345,6 +358,7 @@ export function classifyMailHosting(signals = {}) {
         level: hostingLevel(confidence),
         platform,
         tenant,
+        ...(entra ? { entraTenant: { id: entra.id, region: entra.region || null, cloud: entra.cloud || null } } : {}),
         ...(hosterName ? { hoster: hosterName } : {}),
         evidence,
         notes,

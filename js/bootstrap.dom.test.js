@@ -26,4 +26,13 @@ describe('bootstrap.js en el navegador', () => {
         document.getElementById('settings-btn').click();
         expect(modal.classList.contains('hidden')).toBe(false);
     });
+
+    it('al primer foco del buscador abre la conexión con el resolver, una sola vez', () => {
+        const input = document.getElementById('domain-input');
+        input.dispatchEvent(new window.Event('focus'));
+        input.dispatchEvent(new window.Event('focus'));
+        const links = [...document.head.querySelectorAll('link[rel="preconnect"]')];
+        expect(links.map(l => l.href)).toEqual(['https://dns.google/']);
+        expect(links[0].crossOrigin).toBe('anonymous');
+    });
 });

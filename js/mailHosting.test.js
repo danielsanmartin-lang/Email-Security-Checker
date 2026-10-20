@@ -388,3 +388,31 @@ describe('DANE ya no implica MTA propio (Microsoft 365 publica TLSA)', () => {
         expect(r.evidence.some(e => e.signal === 'autodiscover_own_domain')).toBe(true);
     });
 });
+
+describe('classifyMailHosting: tenant de Microsoft Entra (v5.2)', () => {
+    const tenant = { status: 'found', id: 't-1', region: 'EU', cloud: 'microsoftonline.com' };
+
+    it('solo, no sostiene la nube: google.com también tiene tenant', () => {
+        const r = classifyMailHosting({ domain: 'acme.com', entraTenant: tenant });
+        expect(r.kind).toBe('undetermined');
+        expect(r.entraTenant).toEqual({ id: 't-1', region: 'EU', cloud: 'microsoftonline.com' });
+        expect(r.evidence.map(e => e.signal)).toEqual(['entra_tenant']);
+    });
+
+    it('refuerza una pista de nube que ya existía', () => {
+        const base = { domain: 'acme.com', autodiscover: { cname: null, ips: ['40.1.1.1'], status: 'ok' }, ipIntel: { '40.1.1.1': { ip: '40.1.1.1', asn: '8075', asName: 'MICROSOFT-CORP' } } };
+        const sin = classifyMailHosting(base);
+        const con = classifyMailHosting({ ...base, entraTenant: tenant });
+        expect(sin.kind).toBe('undetermined');
+        expect(con.kind).toBe('cloud');
+        expect(con.confidence).toBeGreaterThan(sin.confidence);
+    });
+
+    it('"sin tenant" o "no disponible" no aportan nada', () => {
+        for (const entraTenant of [{ status: 'none' }, { status: 'unavailable' }, null]) {
+            const r = classifyMailHosting({ domain: 'acme.com', entraTenant });
+            expect(r.entraTenant).toBeUndefined();
+            expect(r.evidence).toEqual([]);
+        }
+    });
+});

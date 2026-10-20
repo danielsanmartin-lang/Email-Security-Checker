@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { translations } from './i18n.js';
-import { SUPPORTED_LANGS, getLocale } from './lang.js';
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach } from 'vitest';
+import { translations, ensureLanguage } from './i18n.js';
+import { SUPPORTED_LANGS, getLocale, getLanguage, getStoredLanguage, setLanguage } from './lang.js';
+
+// Inglés y alemán se cargan bajo demanda: para comparar los diccionarios, primero todos.
+await Promise.all(SUPPORTED_LANGS.map(ensureLanguage));
 
 // El diccionario es la única fuente de las cadenas de la interfaz: una clave que
 // falte en un idioma no rompe nada visiblemente, sencillamente deja ese trozo de
@@ -57,5 +61,23 @@ describe('getLocale', () => {
 
     it('cae a español ante un idioma desconocido', () => {
         expect(getLocale('xx')).toBe('es-ES');
+    });
+});
+
+describe('carga de idiomas bajo demanda', () => {
+    afterEach(() => setLanguage('es'));
+
+    it('ensureLanguage resuelve a true con un idioma conocido y a false con uno desconocido', async () => {
+        await expect(ensureLanguage('en')).resolves.toBe(true);
+        await expect(ensureLanguage('fr')).resolves.toBe(false);
+    });
+
+    it('getLanguage no devuelve un idioma cuyo diccionario no está (cae a español)', () => {
+        setLanguage('xx');
+        expect(getStoredLanguage()).toBe('es');
+        expect(getLanguage()).toBe('es');
+        setLanguage('de');
+        expect(getStoredLanguage()).toBe('de');
+        expect(getLanguage()).toBe('de'); // ya cargado arriba
     });
 });

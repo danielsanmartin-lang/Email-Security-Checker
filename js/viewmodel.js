@@ -5,6 +5,11 @@
 
 import { translations } from './i18n.js';
 import { isDnssecValidated } from './parsers.js';
+import { GRADE_CALIBRATION } from './analyzer.js';
+
+// Sustituye los {marcadores} de una cadena traducida (las claves van sin llaves).
+const fillVars = (text, values) => Object.entries(values)
+    .reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), String(text || ''));
 
 /**
  * Etiqueta de categoría de servicio localizada.
@@ -105,6 +110,17 @@ export function mailHostingEvidence(mailHosting, t) {
 export function mailHostingNotes(mailHosting, t) {
     const notes = (mailHosting && Array.isArray(mailHosting.notes)) ? mailHosting.notes : [];
     return notes.map(n => t[`mh_note_${n.key}`]).filter(Boolean);
+}
+
+/**
+ * Línea del tenant de Microsoft Entra ("<id> · región Europa. Estar en un tenant solo
+ * indica…"), o '' si no lo hay. La comparten el panel y el informe.
+ */
+export function entraTenantText(mailHosting, t) {
+    const entra = mailHosting && mailHosting.entraTenant;
+    if (!entra || !entra.id) return '';
+    const region = entra.region ? (t[`entra_region_${entra.region}`] || entra.region) : t.entra_region_unknown;
+    return fillVars(t.mh_entra_note, { id: entra.id, region });
 }
 
 /** Resuelve el texto de un finding (clave i18n + reemplazos). Idéntico en ui y export. */
@@ -302,4 +318,53 @@ export function spfQualifierResult(qualifier) {
 export function rblCheckStatus(check) {
     if (!check) return 'error';
     return check.status || (check.listed ? 'listed' : 'clean');
+}
+
+// ===== Comparación con la muestra de calibración =====
+// Las letras se calibraron con una muestra de grandes empresas (GRADE_CALIBRATION en
+// analyzer.js), de la que solo se conserva el reparto por letra. La comparación es por
+// letra, no por puntos: es lo que la muestra permite decir sin inventar.
+const GRADE_ORDER = ['F', 'D', 'C', 'B', 'A', 'A+'];
+
+/**
+ * Qué parte de la muestra queda por debajo, igual y por encima de una letra (en %).
+ * @returns {{ below: number, same: number, above: number, sample: number, date: string }|null}
+ */
+export function benchmarkFor(grade, calibration = GRADE_CALIBRATION) {
+    const idx = GRADE_ORDER.indexOf(grade);
+    if (idx < 0 || !calibration || !calibration.sample) return null;
+    const shares = calibration.shares || {};
+    // Los repartos están redondeados y pueden sumar 101: se acota a 100.
+    const sum = (grades) => Math.min(100, grades.reduce((n, g) => n + (shares[g] || 0), 0));
+    return {
+        below: sum(GRADE_ORDER.slice(0, idx)),
+        same: shares[grade] || 0,
+        above: sum(GRADE_ORDER.slice(idx + 1)),
+        sample: calibration.sample,
+        date: calibration.date
+    };
+}
+
+/** La comparación en una frase ("Mejor que el 20 % de una muestra de 61 grandes empresas…"). */
+export function benchmarkText(t, grade, calibration = GRADE_CALIBRATION) {
+    const b = benchmarkFor(grade, calibration);
+    if (!b) return '';
+    const pct = (n) => fillVars(t.pct_fmt || '{n} %', { n });
+    const key = b.same === 0 ? 'benchmark_line_unique' : b.below === 0 ? 'benchmark_line_bottom' : 'benchmark_line';
+    return fillVars(t[key], { below: pct(b.below), same: pct(b.same), sample: b.sample, grade });
+}
+
+/**
+ * Estado del certificado de un dominio parecido, en pocas palabras ("Reciente: hace 5
+ * días", "Vigente desde 3/2/2026"…). El emisor va aparte (título o columna).
+ */
+export function lookalikeCertText(cert, t, locale = 'es-ES') {
+    if (!cert) return '';
+    switch (cert.status) {
+        case 'recent': return fillVars(t.lookalike_cert_recent, { days: cert.days });
+        case 'active': return fillVars(t.lookalike_cert_active, { date: new Date(cert.notBefore).toLocaleDateString(locale) });
+        case 'none': return t.lookalike_cert_none;
+        case 'unchecked': return t.lookalike_cert_unchecked;
+        default: return t.lookalike_cert_checking;
+    }
 }

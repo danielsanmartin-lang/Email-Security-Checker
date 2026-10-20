@@ -3,10 +3,8 @@ import { identifySPFService, identifyDMARCReporter } from './analyzer.js';
 import { getLanguage, getLocale } from './lang.js';
 import { translations } from './i18n.js';
 import { escapeHtml } from './parsers.js';
-import { html, raw } from './utils.js';
+import { copyReportToDocs } from './docsExport.js';
 
-// Icono de confirmación del botón "Exportar a Google Docs" (SVG propio, estático).
-const CHECK_ICON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
 import {
     getCategoryLabel,
     formatProviderSource,
@@ -29,8 +27,12 @@ import {
     postureText,
     filteringText,
     scoreFormula,
-    gradeMeaning
+    gradeMeaning,
+    entraTenantText,
+    lookalikeCertText,
+    benchmarkText
 } from './viewmodel.js';
+import { buildRemediation } from './remediation.js';
 
 // Árbol de lookups SPF en tema claro (para el informe exportado, no la UI oscura).
 function renderSpfTreeLight(tree) {
@@ -98,6 +100,7 @@ export function generateReportHTML() {
             + `<li><strong>${t.inbound_filter_label}:</strong> ${escapeHtml(displayInboundFilter(currentResult, t))}</li>`
             + `<li><strong>${t.mailbox_platform_label}:</strong> ${escapeHtml(mailHostingPlatform(mh, t))}`
             + (mh.tenant ? ` <small style="color: #64748b;">(${t.mh_tenant_label}: ${escapeHtml(mh.tenant)})</small>` : '')
+            + (mh.entraTenant ? `<br><small style="color: #64748b;">${t.mh_entra_label}: ${escapeHtml(entraTenantText(mh, t))}</small>` : '')
             + `</li>`
             + `<li><strong>${t.panel_mail_hosting_label}:</strong> ${escapeHtml(displayMailHosting(mh, t))}${conf}`
             + `<br><small style="color: #64748b;">${escapeHtml(mailHostingDetail(mh, t))}</small>`
@@ -288,6 +291,7 @@ export function generateReportHTML() {
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHtml(t[`lookalike_technique_${f.technique}`] || f.technique)}</td>
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.mx[0] || '—')}</td>
                 <td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${f.kind === 'mx' ? '#b45309' : '#64748b'};">${escapeHtml(t[`lookalike_kind_${f.kind}`] || f.kind)}</td>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${f.cert && f.cert.status === 'recent' ? '#dc2626' : '#64748b'};">${f.cert ? escapeHtml(lookalikeCertText(f.cert, t, getLocale(lang)) + (f.cert.issuer ? ` · ${f.cert.issuer}` : '')) : '—'}</td>
             </tr>`).join('');
         lookalikeHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🔎 ${t.panel_lookalike_title}</h2>`
             + `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(t.lookalike_intro.split('{checked}').join(String(lk.checked)))}</p>`
@@ -298,9 +302,62 @@ export function generateReportHTML() {
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_technique}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_mx}</th>
                         <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_status}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.lookalike_col_cert}</th>
                     </tr>${rows}</table>`
                 : `<p style="font-family: sans-serif; font-size: 13px; color: #64748b;">${escapeHtml(t.lookalike_none)}</p>`);
     }
+
+    // Subdominios con correo (Certificate Transparency): solo si la búsqueda terminó.
+    let mailSubHtml = '';
+    let mailSubSummaryLine = '';
+    const ms = currentResult.mailSubdomains;
+    if (ms && Array.isArray(ms.found) && ms.ctNames) {
+        const spoofableCount = ms.found.filter(f => f.spoofable === true).length;
+        mailSubSummaryLine = `<li><strong>${t.report_mailsub_label}:</strong> ${spoofableCount}</li>`;
+        const fillN = (text, vars) => Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), String(text));
+        const statusText = (f) => (f.spoofable === null ? t.mailsub_unknown : f.spoofable ? t.mailsub_spoofable : t.mailsub_protected);
+        const rows = ms.found.map(f => `<tr>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.name)}</td>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHtml([f.sends ? t.mailsub_sends : null, f.receives ? t.mailsub_receives : null].filter(Boolean).join(' · '))}</td>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace;">${escapeHtml(f.policy === 'unknown' ? '—' : f.policy)}${f.inherited ? ` <small style="color: #64748b;">(${escapeHtml(t.mailsub_inherited)})</small>` : ''}</td>
+                <td style="padding: 6px 8px; border: 1px solid #e2e8f0; color: ${f.spoofable ? '#b45309' : '#64748b'};">${escapeHtml(statusText(f))}</td>
+            </tr>`).join('');
+        mailSubHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">📨 ${t.panel_mail_subdomains_title}</h2>`
+            + `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(fillN(t.mailsub_intro, { names: ms.ctNames, checked: ms.checked }))}</p>`
+            + (ms.found.length
+                ? `<table border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 12.5px; text-align: left;">
+                    <tr style="background-color: #312e81; color: #ffffff;">
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.mailsub_col_name}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.mailsub_col_mail}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.mailsub_col_policy}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.mailsub_col_status}</th>
+                    </tr>${rows}</table>`
+                : `<p style="font-family: sans-serif; font-size: 13px; color: #64748b;">${escapeHtml(t.mailsub_none)}</p>`);
+    }
+
+    // Anexo: registros de corrección listos para copiar (remediation.js). Los valores salen
+    // del DNS del dominio auditado, así que se escapan como todo lo externo.
+    const remediations = buildRemediation(currentResult, String(currentDomain).toLowerCase());
+    const noteText = (n) => Object.entries(n.vars || {})
+        .reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), t[n.key] || n.key);
+    const remRows = remediations.map(r => `<tr>
+            <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-family: monospace; font-size: 12px; vertical-align: top; word-break: break-all;">${r.type === 'HTTPS' ? escapeHtml(t.rem_file_label.split('{url}').join(r.host)) : escapeHtml(r.host)}</td>
+            <td style="padding: 6px 8px; border: 1px solid #e2e8f0; vertical-align: top;">${escapeHtml(r.type === 'HTTPS' ? 'HTTPS' : r.type)}</td>
+            <td style="padding: 6px 8px; border: 1px solid #e2e8f0; vertical-align: top;">
+                <pre style="margin: 0 0 4px 0; white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 12px; background-color: #f1f5f9; padding: 6px; border-radius: 4px;">${escapeHtml(r.value)}</pre>
+                ${r.notes.map(n => `<div style="font-size: 12px; color: #475569;">${escapeHtml(noteText(n))}</div>`).join('')}
+            </td>
+        </tr>`).join('');
+    const remediationHtml = `<h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">🛠️ ${t.report_remediation_title}</h2>`
+        + (remediations.length
+            ? `<p style="font-family: sans-serif; font-size: 13px; color: #475569; line-height: 1.5;">${escapeHtml(t.report_remediation_intro)}</p>`
+                + `<table border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 12.5px; text-align: left; table-layout: fixed;">
+                    <tr style="background-color: #312e81; color: #ffffff;">
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left; width: 32%;">${t.rem_col_host}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left; width: 10%;">${t.rem_col_type}</th>
+                        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">${t.rem_col_value}</th>
+                    </tr>${remRows}</table>`
+            : `<p style="font-family: sans-serif; font-size: 13px; color: #64748b;">${escapeHtml(t.report_remediation_none)}</p>`);
 
     const providerDisplay = displayProvider(currentResult, t);
     // Viene del DNS del dominio auditado cuando la política no es una palabra conocida
@@ -614,6 +671,7 @@ export function generateReportHTML() {
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">📋 ${execSummaryLabel}</h2>
             <ul style="padding-left: 20px; font-family: sans-serif; font-size: 13.5px; color: #334155; line-height: 1.6; text-align: left;">
                 <li><strong>${t.score_title_panel}:</strong> <span style="background-color: ${gradeBg}; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; display: inline-block; text-align: center;">${grade}</span> (${score}/100) — ${t.posture_label}: ${escapeHtml(postureText(t, currentResult.scoreCard && currentResult.scoreCard.posture))}</li>
+                <li><strong>${t.report_benchmark_label}:</strong> ${escapeHtml(benchmarkText(t, grade))}</li>
                 <li><strong>${t.score_cat_filtering}:</strong> ${filteringLine}</li>
                 <li><strong>${t.transport_chip_label}:</strong> ${transportLine}</li>
                 <li><strong>${t.summary_provider}:</strong> ${escapeHtml(providerDisplay)} <br><small style="color: #64748b;">(${escapeHtml(formatProviderSource(currentResult.providerSource, t))})</small></li>
@@ -622,6 +680,7 @@ export function generateReportHTML() {
                 <li><strong>${authorizedServicesLabel}:</strong> ${currentResult.spfServices.length} ${currentResult.spfServices.length === 1 ? (t.detected_singular || t.detected_plural) : t.detected_plural}</li>
                 ${awarenessSummaryLine}
                 ${lookalikeSummaryLine}
+                ${mailSubSummaryLine}
                 <li><strong>${rblSummaryLabel}:</strong> ${rblStatusVal}</li>
             </ul>
 
@@ -632,6 +691,7 @@ export function generateReportHTML() {
             ${servicesHtml}
             ${awarenessHtml}
             ${lookalikeHtml}
+            ${mailSubHtml}
 
             <!-- MX Records Section -->
             <h2 style="color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-family: sans-serif;">✉️ 1. ${t.panel_mx_title}</h2>
@@ -788,6 +848,9 @@ export function generateReportHTML() {
 
             <!-- RBL Reputation Section -->
             ${rblHtml}
+
+            <!-- Anexo: registros de corrección -->
+            ${remediationHtml}
             
             <!-- Footer -->
             <hr style="margin-top: 40px; border: 0; border-top: 1px solid #e2e8f0;">
@@ -800,30 +863,7 @@ export function generateReportHTML() {
 
 export async function exportToGoogle() {
     if (!state.currentDomain || !state.currentResult) return;
-    const htmlContent = generateReportHTML();
-    const btn = document.getElementById('export-google-btn');
-    const originalHTML = btn.innerHTML;
-    const lang = getLanguage();
-    
-    const t = translations[lang];
-    try {
-        const blobHtml = new Blob([htmlContent], { type: 'text/html' });
-        const blobText = new Blob([t.report_clipboard_msg + state.currentDomain], { type: 'text/plain' });
-        const clipboardItem = new ClipboardItem({
-            'text/html': blobHtml,
-            'text/plain': blobText
-        });
-        await navigator.clipboard.write([clipboardItem]);
-
-        btn.innerHTML = html`${raw(CHECK_ICON_SVG)} ${t.msg_copied}`;
-
-        setTimeout(() => { btn.innerHTML = originalHTML; }, 6000);
-        window.open('https://docs.new', '_blank');
-    } catch (err) {
-        console.error('Error copying to clipboard', err);
-        alert(t.msg_export_clipboard_fail);
-        window.open('https://docs.new', '_blank');
-    }
+    return copyReportToDocs(generateReportHTML(), state.currentDomain);
 }
 
 export function exportToFile() {

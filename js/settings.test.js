@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getSettings, saveSettings, resetSettingsCache, resolverChain, DEFAULT_SETTINGS } from './settings.js';
+import { getSettings, saveSettings, resetSettingsCache, resolverChain, DEFAULT_SETTINGS, primaryResolverOrigin } from './settings.js';
 
 describe('settings', () => {
     beforeEach(() => {
@@ -75,5 +75,26 @@ describe('settings', () => {
     it('escapa el nombre consultado en la URL', () => {
         const chain = resolverChain('ex ample.com', 'TXT');
         expect(chain[0].url).toContain('ex%20ample.com');
+    });
+});
+
+describe('primaryResolverOrigin (preconnect)', () => {
+    beforeEach(() => { resetSettingsCache(); saveSettings({ ...DEFAULT_SETTINGS }); });
+
+    it('el origen del resolver que se usará primero', () => {
+        expect(primaryResolverOrigin()).toBe('https://dns.google');
+        saveSettings({ resolver: 'quad9' });
+        expect(primaryResolverOrigin()).toBe('https://dns.quad9.net:5053');
+        saveSettings({ resolver: 'custom', customResolverUrl: 'https://dns.interno.local/resolve?x=1' });
+        expect(primaryResolverOrigin()).toBe('https://dns.interno.local');
+    });
+
+    it('null con una URL propia mal formada', () => {
+        saveSettings({ resolver: 'custom', customResolverUrl: 'no es una url' });
+        expect(primaryResolverOrigin()).toBeNull();
+    });
+
+    it('la consulta del tenant de Microsoft viene activada por defecto', () => {
+        expect(getSettings().lookupEntraTenant).toBe(true);
     });
 });

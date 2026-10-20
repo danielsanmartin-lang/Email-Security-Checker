@@ -1,6 +1,6 @@
 {
   "name": "email-security-checker",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "description": "Auditoría de seguridad de correo (SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, DANE, DNSSEC), detección de proveedores vía DNS-over-HTTPS y visor local de informes agregados DMARC. Front-end estático, sin backend.",
   "type": "module",
   "private": true,
@@ -9,12 +9,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
-    "lint": "eslint js sw.js --max-warnings=0",
+    "lint": "eslint js sw.js scripts --max-warnings=0",
+    "build": "node scripts/build.mjs",
     "format": "prettier --write \"js/**/*.js\""
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@vitest/coverage-v8": "^2.0.0",
+    "esbuild": "0.28.2",
     "eslint": "^9.0.0",
     "globals": "^14.0.0",
     "jsdom": "^25.0.1",

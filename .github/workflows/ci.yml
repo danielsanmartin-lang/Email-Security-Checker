@@ -24,6 +24,8 @@ jobs:
         run: npm run lint
       - name: Tests con cobertura (umbrales bloqueantes)
         run: npm run coverage
+      - name: Build (dist/)
+        run: npm run build
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

@@ -52,6 +52,22 @@ export default [
         }
     },
     {
+        // Scripts de Node (construcción, calibración) y su test.
+        files: ['scripts/**/*.{js,mjs}'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            globals: {
+                ...globals.node
+            }
+        },
+        rules: {
+            'no-undef': 'error',
+            'prefer-const': 'warn',
+            'no-var': 'error'
+        }
+    },
+    {
         // Archivos de test: añadir globals de Vitest y Node.
         files: ['js/**/*.test.js'],
         languageOptions: {

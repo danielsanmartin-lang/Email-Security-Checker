@@ -3,18 +3,17 @@
 // exportación) y delega TODA la lógica de análisis en app.js. Vive separado para que
 // app.js quede como orquestación pura y testeable sin navegador: antes este bloque
 // de ~250 líneas era la razón de que app.js tuviera un 36% de cobertura.
-import { runAnalysis, state } from './app.js';
+import { runAnalysis, cancelAnalysis, state } from './app.js';
 import { renderResults, showSection, closeKbModal, translateDOM, analyzeHeaders } from './ui.js';
-import { exportToGoogle, exportToFile, exportToPDF } from './export.js';
+import { copyReportToDocs } from './docsExport.js';
 import { KB } from './knowledge.js';
 import { setLanguage } from './lang.js';
 import { normalizeDomain, parseDkimSelectors } from './utils.js';
-import { getSettings, saveSettings, ADVANCED_TOOLS } from './settings.js';
+import { getSettings, saveSettings, ADVANCED_TOOLS, primaryResolverOrigin } from './settings.js';
 import { initDmarcReportPanel } from './ui/dmarcReportPanel.js';
 import { clearDnsCache } from './api.js';
-import { loadFingerprintsFromUrl } from './awarenessDetector.js';
-import { translations } from './i18n.js';
-import { getLanguage } from './lang.js';
+import { translations, ensureLanguage } from './i18n.js';
+import { getLanguage, getStoredLanguage } from './lang.js';
 
 // Service worker: solo bajo http(s). Con file:// el navegador lo rechaza, y en
 // desarrollo local sí interesa tenerlo para probar el modo sin conexión.
@@ -23,6 +22,81 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
         navigator.serviceWorker.register('sw.js').catch(err => {
             console.warn('No se pudo registrar el service worker', err);
         });
+    });
+}
+
+// ===== Módulos que se descargan bajo demanda =====
+// El informe exportado (export.js) solo hace falta al exportar. Se pide en cuanto hay un
+// resultado en pantalla, para que el clic lo encuentre ya cargado.
+let _exportModule = null;
+function loadExport() {
+    if (!_exportModule) {
+        _exportModule = import('./export.js').catch((err) => {
+            _exportModule = null;
+            throw err;
+        });
+    }
+    return _exportModule;
+}
+
+/**
+ * Un trozo que no se puede descargar suele ser una pestaña abierta de una versión
+ * anterior tras un despliegue: el servidor ya no lo tiene. Se recarga la página UNA vez
+ * para pasar a la versión nueva; si vuelve a fallar, no se insiste (sería un bucle).
+ */
+function reloadOnce(err) {
+    console.error('No se pudo cargar un módulo de la aplicación', err);
+    try {
+        if (sessionStorage.getItem('esc_chunk_reload')) return;
+        sessionStorage.setItem('esc_chunk_reload', '1');
+    } catch {
+        return;
+    }
+    location.reload();
+}
+
+/** Lanza el análisis y, con el resultado en pantalla, precarga el informe exportable. */
+function analyzeDomain(domain, dkimSelectors) {
+    return runAnalysis(domain, dkimSelectors).then(() => {
+        if (state.currentResult) loadExport().catch(() => { /* se reintenta al exportar */ });
+    });
+}
+
+/**
+ * Abre por adelantado la conexión con el resolver DoH elegido: el handshake TLS de la
+ * primera consulta deja de estar en la ruta crítica del análisis. Se hace al primer foco
+ * del buscador (alguien va a analizar), no al cargar la página, y una sola vez por
+ * origen. `crossorigin` porque las consultas DoH son fetch CORS sin credenciales.
+ */
+const _preconnected = new Set();
+function preconnectResolver() {
+    const origin = primaryResolverOrigin();
+    if (!origin || _preconnected.has(origin)) return;
+    _preconnected.add(origin);
+    const link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = origin;
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+}
+
+/**
+ * Vuelve a traducir la página (y el resultado que se esté viendo) al idioma activo.
+ * Se llama al cambiar de idioma y cuando termina de descargarse el diccionario elegido.
+ */
+function refreshLanguage() {
+    translateDOM();
+    if (state.currentResult && state.currentDomain) {
+        renderResults(state.currentDomain, state.currentResult);
+    }
+}
+
+// El inglés y el alemán viajan aparte del resto de la app: si el usuario los eligió, su
+// diccionario se pide YA, mientras se termina de cargar la página. Hasta que llega, la
+// interfaz se ve en español (getLanguage) y al llegar se vuelve a traducir.
+if (typeof localStorage !== 'undefined' && getStoredLanguage() !== getLanguage()) {
+    ensureLanguage(getStoredLanguage()).then((ok) => {
+        if (ok) refreshLanguage();
     });
 }
 
@@ -68,6 +142,7 @@ export function init() {
 
     const form = document.getElementById('search-form');
     const input = document.getElementById('domain-input');
+    if (input) input.addEventListener('focus', preconnectResolver, opts);
     const dkimInput = document.getElementById('dkim-input');
 
     // Language Selector UI Logic
@@ -84,22 +159,24 @@ export function init() {
             langBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         }, opts);
         
+        // Si se pulsan dos idiomas seguidos, gana el último aunque su diccionario llegue antes.
+        let langRequest = 0;
         document.querySelectorAll('.lang-dropdown__item').forEach(item => {
-            item.addEventListener('click', (e) => {
+            item.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const newLang = item.getAttribute('data-lang');
-                setLanguage(newLang);
                 langSelector.classList.remove('open');
                 langDropdown.classList.add('hidden');
                 langBtn.setAttribute('aria-expanded', 'false');
-                
-                // Translate static page
-                translateDOM();
-                
-                // If results are currently showing, re-render them with new translations
-                if (state.currentResult && state.currentDomain) {
-                    renderResults(state.currentDomain, state.currentResult);
-                }
+
+                // El diccionario primero y la elección después: guardar antes un idioma
+                // sin diccionario dejaría la interfaz a medio traducir. Si no se puede
+                // descargar, se queda el idioma actual.
+                const request = ++langRequest;
+                const ok = await ensureLanguage(newLang);
+                if (!ok || request !== langRequest) return;
+                setLanguage(newLang);
+                refreshLanguage();
             }, opts);
         });
         
@@ -186,7 +263,7 @@ export function init() {
         input.value = domainParam;
         const dkimParam = parseDkimSelectors(urlParams.get('dkim'));
         if (dkimInput && dkimParam.length) dkimInput.value = dkimParam.join(', ');
-        runAnalysis(domainParam, dkimParam.length ? dkimParam : null);
+        analyzeDomain(domainParam, dkimParam.length ? dkimParam : null);
     }
 
     form.addEventListener('submit', e => {
@@ -210,7 +287,7 @@ export function init() {
             console.warn('history.pushState failed, usually because of file:// protocol', err);
         }
 
-        if (domain) runAnalysis(domain, dkimSelectors.length ? dkimSelectors : null);
+        if (domain) analyzeDomain(domain, dkimSelectors.length ? dkimSelectors : null);
     }, opts);
 
     document.querySelectorAll('.search-hint').forEach(hint => {
@@ -228,14 +305,25 @@ export function init() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, opts);
 
+    // Google Docs escribe en el portapapeles en el mismo clic (Safari no deja hacerlo
+    // después de una espera), con el informe como promesa. Word y PDF pueden esperar a
+    // que el módulo del informe termine de descargarse.
     const googleBtn = document.getElementById('export-google-btn');
-    if (googleBtn) googleBtn.addEventListener('click', exportToGoogle, opts);
+    if (googleBtn) {
+        googleBtn.addEventListener('click', () => {
+            if (!state.currentDomain || !state.currentResult) return;
+            const report = loadExport().then(m => m.generateReportHTML());
+            report.catch(reloadOnce);
+            copyReportToDocs(report, state.currentDomain);
+        }, opts);
+    }
+    const exportWith = (name) => () => loadExport().then(m => m[name]()).catch(reloadOnce);
 
     const fileBtn = document.getElementById('export-file-btn');
-    if (fileBtn) fileBtn.addEventListener('click', exportToFile, opts);
+    if (fileBtn) fileBtn.addEventListener('click', exportWith('exportToFile'), opts);
 
     const pdfBtn = document.getElementById('export-pdf-btn');
-    if (pdfBtn) pdfBtn.addEventListener('click', exportToPDF, opts);
+    if (pdfBtn) pdfBtn.addEventListener('click', exportWith('exportToPDF'), opts);
 
     // Visor de informes agregados DMARC (RUA): colapsado, es una herramienta aparte
     // del análisis DNS y no todo el mundo tiene un informe a mano.
@@ -265,6 +353,7 @@ export function init() {
         const corsProxy = document.getElementById('settings-cors-proxy');
         const contactHosts = document.getElementById('settings-contact-hosts');
         const loadBimi = document.getElementById('settings-load-bimi');
+        const lookupEntra = document.getElementById('settings-entra');
         const fingerprintsUrl = document.getElementById('settings-fingerprints-url');
         const toolInputs = {
             showDmarcReportViewer: document.getElementById('settings-tool-rua'),
@@ -290,6 +379,7 @@ export function init() {
             corsProxy.checked = s.allowCorsProxy;
             if (contactHosts) contactHosts.checked = !!s.contactAuditedHosts;
             if (loadBimi) loadBimi.checked = !!s.loadBimiLogos;
+            if (lookupEntra) lookupEntra.checked = !!s.lookupEntraTenant;
             fingerprintsUrl.value = s.fingerprintsUrl;
             for (const [key, input] of Object.entries(toolInputs)) {
                 if (input) input.checked = !!s[key];
@@ -316,6 +406,7 @@ export function init() {
                 allowCorsProxy: corsProxy.checked,
                 contactAuditedHosts: !!contactHosts?.checked,
                 loadBimiLogos: !!loadBimi?.checked,
+                lookupEntraTenant: !!lookupEntra?.checked,
                 fingerprintsUrl: fingerprintsUrl.value.trim(),
                 showDmarcReportViewer: !!toolInputs.showDmarcReportViewer?.checked,
                 showDkimSelector: !!toolInputs.showDkimSelector?.checked,
@@ -329,6 +420,7 @@ export function init() {
             const url = fingerprintsUrl.value.trim();
             if (url) {
                 try {
+                    const { loadFingerprintsFromUrl } = await import('./awarenessDetector.js');
                     await loadFingerprintsFromUrl(url);
                     say('settings_fingerprints_ok');
                 } catch (err) {
@@ -343,7 +435,7 @@ export function init() {
                 say('settings_refresh_done');
                 close();
                 const selectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
-                runAnalysis(state.currentDomain, selectors.length ? selectors : null);
+                analyzeDomain(state.currentDomain, selectors.length ? selectors : null);
             } else {
                 say('settings_refresh_empty');
             }
@@ -391,7 +483,7 @@ export function init() {
     document.getElementById('error-retry').addEventListener('click', () => {
         const domain = input.value.trim().toLowerCase();
         const dkimSelectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
-        if (domain) runAnalysis(domain, dkimSelectors.length ? dkimSelectors : null);
+        if (domain) analyzeDomain(domain, dkimSelectors.length ? dkimSelectors : null);
     }, opts);
 
     document.getElementById('add-kb-close').addEventListener('click', closeKbModal, opts);
@@ -433,11 +525,16 @@ export function init() {
         
         if (state.currentDomain) {
             const selectors = dkimInput ? parseDkimSelectors(dkimInput.value) : [];
-            runAnalysis(state.currentDomain, selectors.length ? selectors : null);
+            analyzeDomain(state.currentDomain, selectors.length ? selectors : null);
         }
     }, opts);
 
-    return () => controller.abort();
+    // Desmontar también cancela el análisis en curso: si no, su cola DNS seguiría viva
+    // (y pintando) en una página que ya no existe.
+    return () => {
+        controller.abort();
+        cancelAnalysis();
+    };
 }
 
 document.addEventListener('DOMContentLoaded', () => init());

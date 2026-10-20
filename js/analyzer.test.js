@@ -1582,3 +1582,28 @@ describe('v5.1: las letras y sus topes', () => {
         expect(letterGrade(UNVERIFIED_CAP + 1)).toBe('A+');
     });
 });
+
+describe('reclassifyMailHosting (nombres de Certificate Transparency, v5.2)', () => {
+    const base = () => analyze([{ priority: 10, host: 'mail.acme.com' }], 'v=spf1 mx -all', 'v=DMARC1; p=reject', { domain: 'acme.com' });
+
+    it('un owa. en un certificado refuerza el MX propio hasta afirmar servidor propio', async () => {
+        const { reclassifyMailHosting } = await import('./analyzer.js');
+        const result = base();
+        expect(result.mailHosting.kind).toBe('undetermined');
+        const updated = reclassifyMailHosting(result, ['owa.acme.com', 'www.acme.com']);
+        expect(updated.kind).toBe('on_premise');
+        expect(updated.evidence.map(e => e.signal)).toContain('ct_onprem_host');
+        // No toca el result: quien llama decide si lo sustituye.
+        expect(result.mailHosting.kind).toBe('undetermined');
+    });
+
+    it('sin nombres, o con un result montado a mano, no hay nada que recalcular', async () => {
+        const { reclassifyMailHosting } = await import('./analyzer.js');
+        expect(reclassifyMailHosting(base(), [])).toBeNull();
+        expect(reclassifyMailHosting({ mailHosting: {} }, ['owa.acme.com'])).toBeNull();
+    });
+
+    it('la entrada guardada no aparece al recorrer el result', () => {
+        expect(Object.keys(base())).not.toContain('mailHostingInput');
+    });
+});

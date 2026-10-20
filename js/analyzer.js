@@ -529,12 +529,13 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
     // Eje de la PLATAFORMA DE BUZÓN, independiente del filtro de entrada que se acaba de
     // calcular. Las señales las resuelve app.js (esto es síncrono y puro); aquí solo se
     // aporta la identificación de los MX, que ya vive en este módulo.
-    const mailHosting = classifyMailHosting({
+    const mailHostingInput = {
         domain,
         mxIds: mxRecords.map(mx => ({ ...identifyMX(mx.host, domain, orgDomain), host: mx.host })),
         segFronting: segList.some(s => (s.evidence || []).some(e => e.signal === 'mx')),
         ...(advancedData.mailHostingSignals || {})
-    });
+    };
+    const mailHosting = classifyMailHosting(mailHostingInput);
 
     // Tercer eje de la nota: ¿hay una capa de filtrado por encima de la nativa?
     const inboundFilter = classifyInboundFilter({
@@ -542,7 +543,7 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         nullMx: !!(advancedData.nullMx || mxRecords.nullMx)
     });
 
-    return {
+    const out = {
         provider, providerIdentified, providerSource, segList, icesList,
         inboundFilter,
         mailHosting,
@@ -578,6 +579,11 @@ export function analyze(mxRecords, spfRaw, dmarcRaw, advancedData = {}) {
         daneRecords: advancedData.daneRecords || null,
         dnssec: advancedData.dnssec || null
     };
+    // La entrada del clasificador de hospedaje, para volver a clasificar cuando lleguen
+    // los nombres de Certificate Transparency (reclassifyMailHosting). No enumerable: no
+    // es un dato del resultado, sino lo que hace falta para recalcular uno.
+    Object.defineProperty(out, 'mailHostingInput', { value: mailHostingInput });
+    return out;
 }
 
 // ===== Puntuación del ecosistema de correo (v5) =====
@@ -715,6 +721,20 @@ function receivesMailOf(result) {
     return (result.mxRecords || []).length > 0 && !result.nullMx;
 }
 
+/**
+ * Vuelve a clasificar el hospedaje del correo con los nombres vistos en Certificate
+ * Transparency, que llegan después del resultado principal (son la consulta más lenta).
+ * Solo pueden reforzar una pista de infraestructura propia que ya existía: nunca deciden
+ * solos (ver `ct_onprem_host` en mailHosting.js). No toca la nota.
+ *
+ * @returns {object|null} el nuevo `mailHosting`, o null si no hay con qué recalcular
+ */
+export function reclassifyMailHosting(result, ctHostnames) {
+    const input = result && result.mailHostingInput;
+    if (!input || !ctHostnames || !ctHostnames.length) return null;
+    return classifyMailHosting({ ...input, ctHostnames });
+}
+
 /** DMARC en enforcement para el dominio auditado (quarantine o reject efectivos). */
 function isEnforcedOf(ev) {
     return !!ev && ev.processing === 'full' && ev.effective.floor !== 'none';
@@ -786,10 +806,12 @@ function hasDaneOf(result) {
     return Object.values(result.daneRecords).some(arr => arr && arr.length > 0);
 }
 
-// Cada evaluador devuelve { points, findings[] }. El orden del array define el
-// orden de presentación de los findings.
-const SCORE_CHECKS = [
-    function spf(result) {
+// Cada evaluador devuelve { points, findings[] }. El orden de las claves define el orden
+// de presentación de los findings. El nombre de cada regla (con el que se busca su
+// presupuesto en CHECK_BUDGETS) es la CLAVE, no `Function.name`: al minificar, las
+// funciones cambian de nombre y ninguna regla encontraba ya su presupuesto (nota 0).
+const SCORE_CHECKS = Object.entries({
+    spf(result) {
         const findings = [];
         let points = 0;
         // La consulta falló (SERVFAIL/red): no penalizar como "sin SPF", solo informar.
@@ -931,7 +953,7 @@ const SCORE_CHECKS = [
     // Superficie de envío: cuántos servicios de terceros puede usar cualquiera con acceso a
     // ellos para enviar como el dominio y pasar el SPF. No puntúa (tenerlos no es un fallo),
     // pero cada uno es una cuenta más que proteger.
-    function senderSurface(result) {
+    senderSurface(result) {
         const names = [...new Set((result.spfServices || []).map(s => s.name).filter(Boolean))];
         if (!names.length) return { points: 0, findings: [] };
         const MAX_LISTED = 8;
@@ -942,7 +964,7 @@ const SCORE_CHECKS = [
         };
     },
 
-    function dmarc(result) {
+    dmarc(result) {
         const findings = [];
         let points = 0;
         // La consulta falló (SERVFAIL/red): no penalizar como "sin DMARC", solo informar.
@@ -1098,7 +1120,7 @@ const SCORE_CHECKS = [
     // Observabilidad: sin informes agregados no hay forma de saber quién envía en tu
     // nombre, así que endurecer la política se vuelve un salto a ciegas. Va en su
     // propia categoría (higiene) porque no protege por sí mismo: informa.
-    function dmarcReporting(result) {
+    dmarcReporting(result) {
         const findings = [];
         let points = 0;
         if (result.dmarcUnavailable) {
@@ -1145,7 +1167,7 @@ const SCORE_CHECKS = [
         return { points: Math.max(0, points), findings };
     },
 
-    function dkim(result) {
+    dkim(result) {
         const records = (result.dkimRecords && result.dkimRecords.records) || [];
         const count = records.length;
 
@@ -1227,7 +1249,7 @@ const SCORE_CHECKS = [
 
     // BIMI es MARCA, no seguridad: no puntúa (requiere un certificado VMC de pago y no
     // impide suplantar nada). Se queda como hallazgos informativos.
-    function inboundFilter(result) {
+    inboundFilter(result) {
         const f = inboundFilterOf(result);
         const findings = [];
         const list = (arr) => arr.join(', ');
@@ -1268,7 +1290,7 @@ const SCORE_CHECKS = [
         return { points: SCORE_WEIGHTS.filterUnidentified, findings };
     },
 
-    function bimi(result) {
+    bimi(result) {
         const bimiRecord = result.bimiRecord;
         const hasBimi = bimiRecord && !bimiRecord.error && bimiRecord.record;
         if (!hasBimi) {
@@ -1298,7 +1320,7 @@ const SCORE_CHECKS = [
         return { points: 0, findings };
     },
 
-    function mtaSts(result) {
+    mtaSts(result) {
         if (!result.mtaSts) {
             return { points: 0, findings: [{ status: 'info', key: 'finding_mta_sts_err' }] };
         }
@@ -1404,7 +1426,7 @@ const SCORE_CHECKS = [
         };
     },
 
-    function tlsRpt(result) {
+    tlsRpt(result) {
         if (!result.tlsRpt) {
             return { points: 0, findings: [{ status: 'info', key: 'finding_tls_rpt_err' }] };
         }
@@ -1424,7 +1446,7 @@ const SCORE_CHECKS = [
         return { points, findings };
     },
 
-    function dane(result) {
+    dane(result) {
         const zoneValidated = isDnssecValidated(result.dnssec);
         if (hasDaneOf(result)) {
             // RFC 7672 §2.2: un MTA solo usa DANE si el MX del dominio se resuelve de forma
@@ -1455,7 +1477,7 @@ const SCORE_CHECKS = [
         return { points: 0, findings: [{ status: 'info', key: 'finding_dane_err' }] };
     },
 
-    function dnssec(result) {
+    dnssec(result) {
         if (result.dnssec && result.dnssec.signed) {
             // Claves publicadas pero respuesta sin validar: falta el DS en la zona padre o la
             // cadena está rota. Una zona así no protege nada, y darle los puntos premiaba la
@@ -1468,14 +1490,14 @@ const SCORE_CHECKS = [
         return { points: 0, findings: [{ status: 'info', key: 'finding_dnssec_err' }] };
     },
 
-    function srv(result) {
+    srv(result) {
         const findings = [];
         if (result.srvRecords && result.srvRecords.autodiscover && result.srvRecords.autodiscover.length > 0) {
             findings.push({ status: 'info', key: 'finding_srv_autodiscover_ok', replacements: { '{target}': result.srvRecords.autodiscover[0].target } });
         }
         return { points: 0, findings };
     }
-];
+}).map(([name, run]) => ({ name, run }));
 
 // Nivel de protección contra suplantación, en términos de RFC 9989 §3.2.9:
 //   protected — enforcement (quarantine/reject) en el dominio y en sus subdominios
@@ -1545,7 +1567,7 @@ export function calculateScoreAndFindings(result) {
             });
             continue;
         }
-        const { points = 0, findings: sectionFindings = [], unevaluable = false } = check(result);
+        const { points = 0, findings: sectionFindings = [], unevaluable = false } = check.run(result);
         findings.push(...sectionFindings);
         if (!budget) continue; // check informativo (bimi, srv): no puntúa
         checkResults.push({

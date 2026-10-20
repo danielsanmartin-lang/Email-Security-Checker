@@ -4,14 +4,21 @@
 // Estados de `lookalike`:
 //   undefined — la búsqueda sigue en marcha
 //   null      — la búsqueda falló
-//   objeto    — { checked, found: [{ domain, technique, mx, ns, kind }], unresolved }
+//   objeto    — { checked, found: [{ domain, technique, mx, ns, kind, cert? }], unresolved }
+//
+// `cert` solo existe en los parecidos que se miran en Certificate Transparency (los
+// primeros que reciben correo): { status: 'checking' | 'recent' | 'active' | 'none' |
+// 'unchecked', notBefore?, issuer?, days? }. El panel se repinta cuando llegan.
 //
 // Los nombres de los MX vienen del DNS de terceros: todo pasa por html``, que escapa.
 import { html, raw } from '../utils.js';
 import { translations } from '../i18n.js';
-import { getLanguage } from '../lang.js';
+import { getLanguage, getLocale } from '../lang.js';
+import { LOOKALIKE_CERT_MAX } from '../ct.js';
+import { lookalikeCertText } from '../viewmodel.js';
 
 const KIND_TAG = { mx: 'warning', registered: 'unknown', own: 'provider' };
+const CERT_TAG = { recent: 'danger', active: 'warning', none: 'provider', unchecked: 'unknown', checking: 'unknown' };
 
 export function renderLookalikes(lookalike) {
     const body = document.getElementById('lookalike-body');
@@ -48,15 +55,23 @@ export function renderLookalikes(lookalike) {
         return;
     }
 
+    const locale = getLocale();
     const rows = lookalike.found.map(f => {
         const mx = f.mx.length ? (f.mx.length > 1 ? `${f.mx[0]} (+${f.mx.length - 1})` : f.mx[0]) : '—';
+        const cert = f.cert
+            ? html`<span class="tag tag--${raw(CERT_TAG[f.cert.status] || 'unknown')} lookalike-kind"${f.cert.issuer ? html` title="${f.cert.issuer}"` : raw('')}>${lookalikeCertText(f.cert, t, locale)}</span>`
+            : raw('—');
         return html`<tr>
             <td class="lookalike-domain">${f.domain}</td>
             <td>${t[`lookalike_technique_${f.technique}`] || f.technique}</td>
             <td class="lookalike-mx">${mx}</td>
             <td><span class="tag tag--${raw(KIND_TAG[f.kind] || 'unknown')} lookalike-kind"${f.kind === 'own' ? html` title="${t.lookalike_own_hint}"` : raw('')}>${t[`lookalike_kind_${f.kind}`]}</span></td>
+            <td>${cert}</td>
         </tr>`;
     });
+    const certNote = lookalike.found.some(f => f.cert)
+        ? html`<p class="lookalike-note">${t.lookalike_cert_note.split('{n}').join(String(LOOKALIKE_CERT_MAX))}</p>`
+        : raw('');
 
     body.innerHTML = html`${intro}
         <div class="lookalike-table-wrap">
@@ -66,9 +81,11 @@ export function renderLookalikes(lookalike) {
                     <th>${t.lookalike_col_technique}</th>
                     <th>${t.lookalike_col_mx}</th>
                     <th>${t.lookalike_col_status}</th>
+                    <th>${t.lookalike_col_cert}</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>
+        ${certNote}
         ${unresolved}`;
 }

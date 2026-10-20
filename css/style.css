@@ -552,6 +552,17 @@ body {
     font-size: 0.85rem;
     margin-bottom: 16px;
 }
+
+/* Comparación con la muestra de calibración, bajo la descripción */
+.score-card__benchmark {
+    margin: -4px 0 12px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.score-card__benchmark:empty {
+    display: none;
+}
 .score-card__findings {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

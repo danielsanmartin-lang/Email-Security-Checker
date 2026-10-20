@@ -11,7 +11,7 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
 
 * **Análisis DNS en tiempo real:** Consulta registros MX, SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, NS y **DNSSEC** directamente desde el navegador vía DNS-over-HTTPS.
 * **Identificación de Proveedores (SEGs/ICES):** Base de conocimiento local con más de 50 firmas de servicios de correo (Microsoft 365, Google Workspace, Proofpoint, Mimecast, etc.).
-* **Hospedaje del correo — nube, híbrido u on-premise:** El MX identifica quién **filtra** el correo entrante, no dónde **viven** los buzones: con un gateway delante (Proofpoint, Mimecast, Hornetsecurity…) las dos respuestas son distintas. Un eje aparte resuelve la segunda pregunta a partir de `autodiscover`, el CNAME de DKIM (que revela el tenant de Microsoft 365) y el mapeo IP→ASN de Team Cymru —cuando una empresa anuncia sus propios rangos, el ASN lleva literalmente su nombre—. Cada veredicto va con su evidencia y su nivel de confianza, y **"no determinable" es un resultado de primera clase**: se dice cuando el DNS público no da para más, en vez de conjeturar. No afecta a la puntuación: on-premise no es inseguro per se.
+* **Hospedaje del correo — nube, híbrido u on-premise:** El MX identifica quién **filtra** el correo entrante, no dónde **viven** los buzones: con un gateway delante (Proofpoint, Mimecast, Hornetsecurity…) las dos respuestas son distintas. Un eje aparte resuelve la segunda pregunta a partir de `autodiscover`, el CNAME de DKIM (que revela el tenant de Microsoft 365), el mapeo IP→ASN de Team Cymru —cuando una empresa anuncia sus propios rangos, el ASN lleva literalmente su nombre—, el **tenant de Microsoft Entra** (descubrimiento OIDC público: ID y región, aunque haya un gateway delante; solo corrobora, nunca decide) y los nombres de correo propios (`owa.`, `webmail.`…) que aparecen en **certificados públicos**. Cada veredicto va con su evidencia y su nivel de confianza, y **"no determinable" es un resultado de primera clase**: se dice cuando el DNS público no da para más, en vez de conjeturar. No afecta a la puntuación: on-premise no es inseguro per se.
 * **Awareness-Vendor Detector:** Módulo dedicado que detecta plataformas de concienciación de seguridad y simulación de phishing (KnowBe4, Proofpoint SAT, Cofense, Hoxhunt, Barracuda PhishLine, etc.) a partir de señales DNS, con score de confianza y evidencia estructurada. Distingue **"tiene el gateway del vendor"** de **"usa el módulo de awareness"** (confirmación de producto), y se enriquece con dos fuentes de Certificate Transparency (crt.sh + Certspotter).
 * **Análisis por cabeceras de correo:** Pega las cabeceras de un correo de simulación recibido y la herramienta detecta el vendor con **alta confianza** por dominios de envío y X-headers propietarias (`X-PHISHTEST`, `X-Gophish-*`, `simulator.office.com`…). Cubre **Microsoft Attack Simulation Training**, que no deja rastro en DNS. 100% local.
 * **Evaluación de Seguridad:** nota de **protección contra suplantación** (A+ a F, 0–100) con un nivel —Protegido, Parcial o Suplantable— y, aparte, la nota de **seguridad del transporte** (o "No aplica" si el dominio no recibe correo).
@@ -26,17 +26,19 @@ Una herramienta web de ciberseguridad diseñada para auditar la infraestructura 
   - **DNSSEC**: detección de zona firmada (DNSKEY + flag `AD`) que protege la integridad de SPF/DMARC/DKIM.
 * **Reputación y Listas Negras (RBL):** Verificación en tiempo real de IPs de servidores MX contra listas globales, con interpretación de los códigos de respuesta (`listado` / `limpio` / `no concluyente`) y aviso *best-effort* — muchas DNSBL rechazan consultas vía resolvers DoH públicos.
 * **Exportaciones:** Informes en Google Docs, Word (.doc) y PDF con score, hallazgos, SPF tree, DMARC detallado, **DNSSEC, DANE, SRV y autorización DMARC externa**. Los tres formatos comparten una única fuente de contenido (el PDF se genera del mismo informe que Word/Docs).
-* **Motor DNS resiliente:** Consultas con **degradación elegante** (un fallo transitorio no tumba el análisis completo), **validación del `Status` DoH** (distingue SERVFAIL/REFUSED de "sin registros"), **DNS Tree Walk de RFC 9989 §4.10** para descubrir la política y el dominio organizativo (sin Public Suffix List y sin backend), reconocimiento de **Null MX** (RFC 7505), contaje correcto de lookups SPF con máscara CIDR y deduplicación de consultas en vuelo.
+* **Anexo de registros de corrección:** el informe exportado termina con los registros DNS que dejarían el dominio bien configurado, listos para copiar: la escalera DMARC hasta `reject` (conservando los destinos de informe), la autorización que debe publicar un destino de informes externo, el SPF corregido (fusión, `include` rotos fuera, `~all` y aplanado de los `include` más caros si pasa de 10 consultas), MTA-STS (TXT y fichero de política con los MX reales) y TLS-RPT. Lo que es un ejemplo va marcado como tal.
+* **Motor DNS resiliente y rápido:** cada consulta espera solo a lo que necesita (no hay etapas), con una **cola con prioridad, tope por zona y cancelación** (lanzar otro dominio cancela lo que el anterior tenía en cola) y corte tras dos SERVFAIL. Consultas con **degradación elegante** (un fallo transitorio no tumba el análisis completo), **validación del `Status` DoH** (distingue SERVFAIL/REFUSED de "sin registros"), **DNS Tree Walk de RFC 9989 §4.10** para descubrir la política y el dominio organizativo (sin Public Suffix List y sin backend), reconocimiento de **Null MX** (RFC 7505), contaje correcto de lookups SPF con máscara CIDR y deduplicación de consultas en vuelo.
 * **Validación de entrada y errores claros:** Normalización de dominios **IDN → punycode**, tolerancia a FQDN con punto final, validación de formato y mensajes de error diferenciados (dominio inexistente / sin conexión / **problema de resolución DNS** / formato inválido).
 * **Multilingüe y accesible:** Interfaz completa en Español, Inglés y Alemán con persistencia por `localStorage`, `<html lang>` y `aria-label` sincronizados, regiones `aria-live`, etiquetas de formulario para lector de pantalla, **tooltips accesibles por teclado** (foco, Escape, `aria-describedby`), modales con trampa de foco y contraste WCAG AA.
-* **Render progresivo:** Los resultados principales se muestran de inmediato; el panel de Awareness (lo más lento, por los CT logs) se rellena solo al terminar, sin bloquear la vista.
+* **Render progresivo:** Los resultados principales se muestran de inmediato; awareness, dominios parecidos, subdominios con correo y el refinado del hospedaje (que dependen de los logs CT o de muchas consultas) se rellenan al terminar, sin bloquear la vista.
 
-* **Postura de seguridad del correo (v5):** el anillo mide lo que se ve del correo del dominio desde fuera, en tres ejes con peso: **suplantación 60** (DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10), **filtrado entrante 25** (SEG en el MX o ICES: 100; ICES solo por token TXT: 85; gateway con un MX que lo salta: 75; solo nativo o MX sin identificar: 65) y **transporte 15** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20). Cada eje tiene su pastilla en la tarjeta ("Filtrado: Reforzado · Proofpoint"). Un eje que no aplica (sin MX) sale de la media y los demás se reparten su peso. Sin DMARC en enforcement la nota no pasa de 45 (D), y A+ exige la suplantación verificada del todo. Las letras están **calibradas con 61 dominios de grandes empresas** (`scripts/calibrate.mjs`). El botón **"¿Cómo se calcula la nota?"** enseña la cuenta del dominio analizado, los puntos de cada regla y por qué, los topes, qué significa cada letra y lo que se informa sin puntuar, en los tres idiomas. No mide la eficacia real del filtrado ni el factor humano, y así lo dice.
-* **Dominios parecidos (typosquatting):** en segundo plano se generan hasta 80 variantes del dominio (otro TLD, país en el nombre, homoglifos, letras omitidas, cambiadas o repetidas, guion) y se comprueba cuáles están registradas y cuáles **reciben correo**, el vector habitual del fraude de pago. Las que comparten MX o NS con el auditado, o le delegan el SPF o los informes DMARC, se marcan como probablemente propias. No puntúa.
+* **Postura de seguridad del correo (v5):** el anillo mide lo que se ve del correo del dominio desde fuera, en tres ejes con peso: **suplantación 60** (DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10), **filtrado entrante 25** (SEG en el MX o ICES: 100; ICES solo por token TXT: 85; gateway con un MX que lo salta: 75; solo nativo o MX sin identificar: 65) y **transporte 15** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20). Cada eje tiene su pastilla en la tarjeta ("Filtrado: Reforzado · Proofpoint"). Un eje que no aplica (sin MX) sale de la media y los demás se reparten su peso. Sin DMARC en enforcement la nota no pasa de 45 (D), y A+ exige la suplantación verificada del todo. Las letras están **calibradas con 61 dominios de grandes empresas** (`scripts/calibrate.mjs`), y la tarjeta dice dónde queda la letra frente a esa muestra ("Mejor que el 20 % de una muestra de 61 grandes empresas"). El botón **"¿Cómo se calcula la nota?"** enseña la cuenta del dominio analizado, los puntos de cada regla y por qué, los topes, qué significa cada letra y lo que se informa sin puntuar, en los tres idiomas. No mide la eficacia real del filtrado ni el factor humano, y así lo dice.
+* **Dominios parecidos (typosquatting):** en segundo plano se generan hasta 80 variantes del dominio (otro TLD, país en el nombre, homoglifos, letras omitidas, cambiadas o repetidas, guion) y se comprueba cuáles están registradas y cuáles **reciben correo**, el vector habitual del fraude de pago. Las que comparten MX o NS con el auditado, o le delegan el SPF o los informes DMARC, se marcan como probablemente propias. Las 3 primeras que reciben correo se buscan en los logs de certificados: uno emitido hace 30 días o menos suele preceder a una campaña. No puntúa.
+* **Subdominios con correo:** de los nombres vistos en certificados públicos se consultan los que parecen enviar correo (news., marketing., mail.…): su SPF, sus MX y la política DMARC que les aplica, la suya o la heredada con `sp`. Un `p=reject` con `sp=none` deja suplantable justo el subdominio de los boletines. No puntúa.
 * **Superficie de envío:** cuántos servicios autorizados en el SPF pueden enviar como el dominio. Se informa, no puntúa.
 * **Visor de informes agregados DMARC (RUA):** arrastra un `.xml`, `.xml.gz` o `.zip` y obtén quién envía en nombre del dominio, con qué volumen y qué porcentaje autentica. Descompresión y parseo **en el navegador**, sin subir el fichero a ningún sitio.
-* **Ajustes de privacidad:** resolver DoH elegible (Google / Cloudflare / Quad9 / propio), proxy CORS público **opt-in** y botón de refresco forzado que salta la caché de 5 minutos.
-* **Instalable (PWA) y sin terceros para renderizar:** service worker del *app shell*, tipografías autoalojadas y CSP declarada.
+* **Ajustes de privacidad:** resolver DoH elegible (Google / Cloudflare / Quad9 / propio), proxy CORS público **opt-in**, consulta del tenant de Microsoft (activada, con interruptor) y botón de refresco forzado que salta la caché de 5 minutos.
+* **Instalable (PWA), ligera y sin terceros para renderizar:** se publica empaquetada y minificada (89 KB comprimidos al abrirse; idiomas, informe y detector de awareness se descargan solo si se usan), con un service worker que sirve de caché lo que lleva hash, tipografías autoalojadas y CSP declarada.
 
 ## 🏗️ Arquitectura del Sistema
 
@@ -44,8 +46,8 @@ Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless
 
 * **Sin Backend:** Todo el procesamiento y parseo de registros ocurre en el cliente.
 * **DNS-over-HTTPS (DoH):** Utiliza las APIs públicas de Google DNS y Cloudflare DNS con fallback automático.
-* **Certificate Transparency (crt.sh):** El módulo de Awareness enriquece la detección consultando CT logs para buscar subdominios asociados a infra de vendors.
-* **Módulos ES6:** Separación estricta de responsabilidades en `/js/`.
+* **Certificate Transparency (crt.sh, Certspotter):** los nombres de los certificados públicos del dominio alimentan el detector de awareness, el hospedaje del correo, los subdominios con correo y los certificados de los dominios parecidos.
+* **Módulos ES6:** Separación estricta de responsabilidades en `/js/`. Se desarrolla y se prueba sin construir; lo publicado sale de `scripts/build.mjs` (esbuild).
 
 ```
 js/
@@ -54,8 +56,11 @@ js/
 ├── analysis.js          # performAnalysis(): el análisis completo, sin interfaz (también en Node)
 ├── lookalike.js         # Dominios parecidos: generador de variantes y clasificación (puro)
 ├── state.js             # Estado global compartido (rompe el ciclo app ↔ export)
-├── settings.js          # Preferencias: resolver DoH, proxy CORS opt-in, firmas externas
-├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…) con caché y dedup
+├── settings.js          # Preferencias: resolver DoH, proxy CORS opt-in, tenant, firmas externas
+├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…): caché, dedup y cola por zona
+├── ct.js                # Certificate Transparency (crt.sh + Certspotter), compartido
+├── mailSubdomains.js    # Subdominios con correo vistos en CT: selección y clasificación (puro)
+├── remediation.js       # Registros de corrección del anexo del informe (puro)
 ├── analyzer.js          # Identificación de proveedores/SEGs + scoring por categorías
 ├── viewmodel.js         # Derivaciones de presentación compartidas por ui.js y export.js
 ├── ui.js                # Fachada de presentación: tooltips, i18n del DOM y orquestación
@@ -69,7 +74,8 @@ js/
 │   ├── reputationPanel.js   # Reputación RBL
 │   ├── advancedDnsPanel.js  # MTA-STS, TLS-RPT, DNSSEC, DANE, SRV, NS
 │   ├── awarenessPanel.js    # Detector de awareness + analizador de cabeceras
-│   ├── lookalikePanel.js    # Dominios parecidos (typosquatting)
+│   ├── lookalikePanel.js    # Dominios parecidos (typosquatting) y sus certificados
+│   ├── mailSubdomainsPanel.js # Subdominios con correo
 │   ├── scoreMethod.js       # "¿Cómo se calcula la nota?", generado de las constantes del motor
 │   └── dmarcReportPanel.js  # Visor de informes agregados (RUA)
 ├── dmarc.js             # Semántica RFC 9989: Tree Walk, t/pct, enforcement (módulo puro)
@@ -77,14 +83,17 @@ js/
 ├── awarenessDetector.js # Detector de plataformas de Awareness/PhishSim (DNS + CT logs)
 ├── headerAnalyzer.js    # Detección por cabeceras de correo (cubre el punto ciego DNS)
 ├── knowledge.js         # Base de conocimiento de vendors (versionada, >50 firmas)
-├── i18n.js              # Traducciones ES/EN/DE (paridad de claves verificada por tests)
+├── i18n.js              # Carga de idiomas (el español va con la app; inglés y alemán, bajo demanda)
+├── i18n/                # Un diccionario por idioma: es.js, en.js, de.js (paridad verificada por tests)
 ├── lang.js              # Idioma activo, idiomas soportados y locale de fechas
-├── export.js            # Motor de exportación (Google Docs / Word / PDF)
+├── export.js            # Motor de exportación (Word / PDF / Google Docs), cargado bajo demanda
+├── docsExport.js        # Portapapeles de Google Docs (dentro del clic, como exige Safari)
 ├── parsers.js           # Parsers y validadores de registros DNS
 └── utils.js             # Helpers, incluido el tagged template html`` (XSS-safe)
 
+scripts/build.mjs        # Versión publicable en dist/: empaquetada, minificada y con hash (esbuild)
 scripts/calibrate.mjs    # Calibración de las letras contra una lista de dominios (Node 22)
-sw.js                    # Service worker: cachea el app shell, nunca el tráfico externo
+sw.js                    # Service worker: cachea la app (lo que lleva hash, de caché), nunca el tráfico externo
 manifest.webmanifest     # PWA instalable
 css/fonts/               # Tipografías autoalojadas (sin Google Fonts)
 ```
@@ -122,8 +131,14 @@ confidenciales.
 * **Proxy CORS `api.allorigins.win`** (descarga de la política MTA-STS cuando el navegador
   la bloquea por CORS): **desactivado por defecto**. Sin él, una política que no se pueda
   descargar cuenta como *publicada, sin verificar*. Se activa en Ajustes.
-* **Certificate Transparency (`crt.sh` y `api.certspotter.com`):** solo el módulo de
-  Awareness; el dominio viaja como parámetro de búsqueda.
+* **Certificate Transparency (`crt.sh` y `api.certspotter.com`):** el dominio auditado y,
+  como mucho, los 3 dominios parecidos que reciben correo viajan como parámetro de
+  búsqueda. Alimentan awareness, hospedaje, subdominios con correo y los certificados de
+  los parecidos. Nunca se contacta con el dominio auditado.
+* **Microsoft (`login.microsoftonline.com`):** el documento OIDC público dice si el dominio
+  está en un tenant de Microsoft Entra. Recibe el dominio auditado; **activado por
+  defecto** porque va a Microsoft y no a los servidores del dominio auditado, y se apaga en
+  Ajustes (*Consultar el tenant de Microsoft*). Sin credenciales ni `Referer`.
 * **Tipografías:** autoalojadas en `css/fonts/`. La app **no hace ninguna petición a
   Google Fonts**.
 * **Content-Security-Policy** declarada en `index.html`: `default-src 'self'`,
@@ -172,25 +187,32 @@ npm ci             # instala devDependencies desde package-lock (reproducible)
 npm test           # ejecuta toda la suite de tests (Vitest)
 npm run test:watch # modo watch
 npm run coverage   # tests + informe de cobertura (v8) con umbrales bloqueantes
-npm run lint       # ESLint sobre js/ (recommended, --max-warnings=0)
+npm run lint       # ESLint sobre js/, sw.js y scripts/ (recommended, --max-warnings=0)
+npm run build      # versión publicable en dist/ (esbuild: empaquetada, minificada, con hash)
 npm run format     # Prettier (formatea js/)
 ```
 
-La suite (**531 tests**, cobertura ~91 %) cubre el módulo de Awareness (fixtures DNS
+La app funciona sin construir (así se desarrolla y así corren los tests). Para probar lo
+que se publica: `npm run build` y servir `dist/` (por ejemplo, `npx http-server dist -p 8100`).
+
+La suite (**687 tests**, cobertura ~93 %) cubre el módulo de Awareness (fixtures DNS
 mockeados), el análisis por cabeceras (`headerAnalyzer`), los parsers y validadores
 (`parseSPF` con índices, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`,
 `analyzeDKIMRecord` con RSA y Ed25519, `validateTlsRptRua`, `checkMtaStsMxCoverage`),
 el analizador (`extractRootDomain`, `collectSpfTreeIssues`, `calculateScoreAndFindings`,
 el modelo de **categorías ponderadas** y todos los findings), la **capa DNS** (`queryDNS`
 con resolver configurable y validación de `Status`, caché TTL, dedup en vuelo,
-**límite de concurrencia** —con dos tests de regresión de *deadlock*— y **reintento ante
-SERVFAIL**, `getSPFLookupTree` con CIDR, bucles, PermError y void lookups, `fetchMTASTSPolicyFile`,
+**cola con tope por zona, prioridad y cancelación** —con tests de regresión de *deadlock*— y
+**reintento ante SERVFAIL**, `getSPFLookupTree` con CIDR, bucles, PermError y void lookups, `fetchMTASTSPolicyFile`,
 `checkRBL`, `getDNSSEC`, `checkDMARCExternalAuth`), el **visor de informes RUA**
 (parseo, agregación, `.gz`, `.zip` y ficheros corruptos), el **esquema de la base de
 conocimiento** (patrones válidos, sin duplicados) y las utilidades (`normalizeDomain`
 IDN/FQDN, `isValidDomain`, `parseDkimSelectors`, helper `html``) y la **paridad del
 diccionario i18n** (mismas claves, sin cadenas vacías y con los mismos marcadores de
-posición en los tres idiomas).
+posición en los tres idiomas), los **logs CT** (`ct.js`: carrera entre fuentes, caché,
+caída de crt.sh), el **anexo de corrección** (`remediation.js`) y la **construcción**
+(`scripts/build.test.js`: todo lo que referencia el sitio existe, y el motor de análisis
+minificado da la misma nota que sin construir).
 
 Además hay dos niveles de pruebas con **jsdom**:
 * `render.dom.test.js` — `renderResults`/`generateReportHTML`, escapado anti-XSS y
@@ -203,10 +225,9 @@ Además hay dos niveles de pruebas con **jsdom**:
 
 Cada push/PR ejecuta en CI mediante GitHub Actions:
 * **`ci.yml`** — lint (**bloqueante**) + tests con cobertura (**umbrales bloqueantes**) +
-  `npm audit` (informativo), en Node 22 y 24. El informe de cobertura se publica como artefacto.
+  construcción + `npm audit` (informativo), en Node 22 y 24. El informe de cobertura se publica como artefacto.
 * **`pages.yml`** — despliegue a GitHub Pages **solo si pasan lint y tests**, publicando
-  únicamente `index.html`, `css/` (con las fuentes), `js/` (sin los `*.test.js`), el
-  service worker, el manifest y el icono. Requiere configurar
+  únicamente `dist/` (`npm run build`): ni tests ni código sin construir. Requiere configurar
   Settings → Pages → Source como "GitHub Actions".
 * **`codeql.yml`** — análisis estático de seguridad (CodeQL, `security-extended`) en cada
   push/PR y de forma programada semanalmente.
@@ -217,7 +238,17 @@ Cada push/PR ejecuta en CI mediante GitHub Actions:
 
 > El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
 
-### v5.1.0 — Nota más justa y explicada (Actual)
+### v5.2.0 — Más rápida y con más contexto (Actual)
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el resultado llega entre
+dos y cuatro veces antes (cada consulta espera solo a lo que necesita, cola DNS por zona
+con prioridad y cancelación) y la app se publica empaquetada (de 215 KB a 89 KB al
+abrirse). Se añaden el tenant de Microsoft Entra, los subdominios con correo y los
+certificados de los dominios parecidos (a partir de los logs CT), un anexo con los
+registros de corrección en el informe y la comparación de la letra con la muestra de
+calibración. La nota no cambia.
+
+### v5.1.0 — Nota más justa y explicada
 
 Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el filtrado nativo de
 Microsoft 365 o Google pasa de 50 a 65, un MX sin identificar deja de salir de la media
