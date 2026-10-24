@@ -1,0 +1,530 @@
+# 🛡️ Email-Security-Checker
+
+[English](README.md) · **Español**
+
+Auditoría de Seguridad de Correo
+
+Una herramienta web de ciberseguridad diseñada para auditar la infraestructura de correo electrónico, analizar registros DNS y detectar pasarelas de seguridad (SEGs), soluciones ICES y **plataformas de Security Awareness / Phishing Simulation**.
+
+🚀 **[PROBAR LA APLICACIÓN](https://danielsanmartin-lang.github.io/Email-Security-Checker/)**
+
+---
+
+## 💡 Características principales
+
+* **Análisis DNS en tiempo real:** Consulta registros MX, SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, NS y **DNSSEC** directamente desde el navegador vía DNS-over-HTTPS.
+* **Identificación de Proveedores (SEGs/ICES):** Base de conocimiento local con más de 50 firmas de servicios de correo (Microsoft 365, Google Workspace, Proofpoint, Mimecast, etc.).
+* **Hospedaje del correo — nube, híbrido u on-premise:** El MX identifica quién **filtra** el correo entrante, no dónde **viven** los buzones: con un gateway delante (Proofpoint, Mimecast, Hornetsecurity…) las dos respuestas son distintas. Un eje aparte resuelve la segunda pregunta a partir de `autodiscover`, el CNAME de DKIM (que revela el tenant de Microsoft 365), el mapeo IP→ASN de Team Cymru —cuando una empresa anuncia sus propios rangos, el ASN lleva literalmente su nombre—, el **tenant de Microsoft Entra** (descubrimiento OIDC público: ID y región, aunque haya un gateway delante; solo corrobora, nunca decide) y los nombres de correo propios (`owa.`, `webmail.`…) que aparecen en **certificados públicos**. Cada veredicto va con su evidencia y su nivel de confianza, y **"no determinable" es un resultado de primera clase**: se dice cuando el DNS público no da para más, en vez de conjeturar. No afecta a la puntuación: on-premise no es inseguro per se.
+* **Awareness-Vendor Detector:** Módulo dedicado que detecta plataformas de concienciación de seguridad y simulación de phishing (KnowBe4, Proofpoint SAT, Cofense, Hoxhunt, Barracuda PhishLine, etc.) a partir de señales DNS, con score de confianza y evidencia estructurada. Distingue **"tiene el gateway del vendor"** de **"usa el módulo de awareness"** (confirmación de producto), y se enriquece con dos fuentes de Certificate Transparency (crt.sh + Certspotter).
+* **Análisis por cabeceras de correo:** Pega las cabeceras de un correo de simulación recibido y la herramienta detecta el vendor con **alta confianza** por dominios de envío y X-headers propietarias (`X-PHISHTEST`, `X-Gophish-*`, `simulator.office.com`…). Cubre **Microsoft Attack Simulation Training**, que no deja rastro en DNS. 100% local.
+* **Evaluación de Seguridad:** nota de **protección contra suplantación** (A+ a F, 0–100) con un nivel —Protegido, Parcial o Suplantable— y, aparte, la nota de **seguridad del transporte** (o "No aplica" si el dominio no recibe correo).
+* **Análisis profundo de autenticación:**
+  - **DMARC (RFC 9989/9990, DMARCbis)**: política **efectiva** —la que aplica cada generación de receptores durante la transición—, **modo prueba (`t=y`)**, `pct` (eliminado en RFC 9989, pero aún vigente en receptores RFC 7489), subdominios (`sp`) e **inexistentes (`np`)**, `psd`, **enforcement** en el sentido de RFC 9989 §3.2.9, valores no válidos (que convierten el registro en `p=none`), destinos `rua` sin `mailto:`, alineación (`adkim`/`aspf`) y **autorización de destinos de informe externos** (`_report._dmarc`, RFC 9990 §4).
+  - **DKIM**: validación de la **fuerza de la clave** (RSA y **Ed25519**, RFC 8463), claves **revocadas** (`p=` vacío) y **modo de prueba** (`t=y`). Admite varios selectores separados por coma. La ausencia de DKIM no penaliza (detección *best-effort* por selectores comunes).
+  - **SPF**: **PermError por `include`/`redirect` cuyo destino no publica SPF** (el fallo silencioso más común), contaje de **void lookups** (RFC 7208 §4.6.4), mecanismos inalcanzables tras `all`, varios `all`, longitud >255 caracteres, ausencia de `all` y uso de `ptr`.
+  - **MTA-STS**: **cobertura de los MX reales por la lista `mx:` de la política** (RFC 8461 §4.1, el fallo que rompe la entrega tras un cambio de proveedor), validación de `max_age`, modo `testing` (válido, pero no se aplica) y comprobación **solo por DNS** de que `mta-sts.<dominio>` existe.
+  - **TLS-RPT**: validación de que los destinos `rua` son `mailto:` o `https:` (RFC 8460).
+  - **BIMI**: certificado **VMC/CMC** (`a=`), declinación explícita (`l=` vacío), aviso si la URL no es HTTPS y **herencia del dominio organizativo** cuando el subdominio no publica el suyo. Es informativo: no puntúa.
+  - **MTA-STS**: validación de `max_age` (presencia y valor recomendado, RFC 8461).
+  - **DNSSEC**: detección de zona firmada (DNSKEY + flag `AD`) que protege la integridad de SPF/DMARC/DKIM.
+* **Reputación y Listas Negras (RBL):** Verificación en tiempo real de IPs de servidores MX contra listas globales, con interpretación de los códigos de respuesta (`listado` / `limpio` / `no concluyente`) y aviso *best-effort* — muchas DNSBL rechazan consultas vía resolvers DoH públicos.
+* **Exportaciones:** Informes en Google Docs, Word (.doc) y PDF con score, hallazgos, SPF tree, DMARC detallado, **DNSSEC, DANE, SRV y autorización DMARC externa**. Los tres formatos comparten una única fuente de contenido (el PDF se genera del mismo informe que Word/Docs).
+* **Anexo de registros de corrección:** el informe exportado termina con los registros DNS que dejarían el dominio bien configurado, listos para copiar: la escalera DMARC hasta `reject` (conservando los destinos de informe), la autorización que debe publicar un destino de informes externo, el SPF corregido (fusión, `include` rotos fuera, `~all` y aplanado de los `include` más caros si pasa de 10 consultas), MTA-STS (TXT y fichero de política con los MX reales) y TLS-RPT. Lo que es un ejemplo va marcado como tal.
+* **Motor DNS resiliente y rápido:** cada consulta espera solo a lo que necesita (no hay etapas), con una **cola con prioridad, tope por zona y cancelación** (lanzar otro dominio cancela lo que el anterior tenía en cola) y corte tras dos SERVFAIL. Consultas con **degradación elegante** (un fallo transitorio no tumba el análisis completo), **validación del `Status` DoH** (distingue SERVFAIL/REFUSED de "sin registros"), **DNS Tree Walk de RFC 9989 §4.10** para descubrir la política y el dominio organizativo (sin Public Suffix List y sin backend), reconocimiento de **Null MX** (RFC 7505), contaje correcto de lookups SPF con máscara CIDR y deduplicación de consultas en vuelo.
+* **Validación de entrada y errores claros:** Normalización de dominios **IDN → punycode**, tolerancia a FQDN con punto final, validación de formato y mensajes de error diferenciados (dominio inexistente / sin conexión / **problema de resolución DNS** / formato inválido).
+* **Multilingüe y accesible:** Interfaz completa en Español, Inglés y Alemán con persistencia por `localStorage`, `<html lang>` y `aria-label` sincronizados, regiones `aria-live`, etiquetas de formulario para lector de pantalla, **tooltips accesibles por teclado** (foco, Escape, `aria-describedby`), modales con trampa de foco y contraste WCAG AA.
+* **Render progresivo:** Los resultados principales se muestran de inmediato; awareness, dominios parecidos, subdominios con correo y el refinado del hospedaje (que dependen de los logs CT o de muchas consultas) se rellenan al terminar, sin bloquear la vista.
+
+* **Postura de seguridad del correo (v5):** el anillo mide lo que se ve del correo del dominio desde fuera, en tres ejes con peso: **suplantación 60** (DMARC efectivo 50 / SPF 20 / DKIM 20 / informes 10), **filtrado entrante 25** (SEG en el MX o ICES: 100; ICES solo por token TXT: 85; gateway con un MX que lo salta: 75; solo nativo o MX sin identificar: 65) y **transporte 15** (MTA-STS 40 / TLS-RPT 15 / DNSSEC 25 / DANE 20). Cada eje tiene su pastilla en la tarjeta ("Filtrado: Reforzado · Proofpoint"). Un eje que no aplica (sin MX) sale de la media y los demás se reparten su peso. Sin DMARC en enforcement la nota no pasa de 45 (D), y A+ exige la suplantación verificada del todo. Las letras están **calibradas con 61 dominios de grandes empresas** (`scripts/calibrate.mjs`), y la tarjeta dice dónde queda la letra frente a esa muestra ("Mejor que el 20 % de una muestra de 61 grandes empresas"). El botón **"¿Cómo se calcula la nota?"** enseña la cuenta del dominio analizado, los puntos de cada regla y por qué, los topes, qué significa cada letra y lo que se informa sin puntuar, en los tres idiomas. No mide la eficacia real del filtrado ni el factor humano, y así lo dice.
+* **Dominios parecidos (typosquatting):** en segundo plano se generan hasta 80 variantes del dominio (otro TLD, país en el nombre, homoglifos, letras omitidas, cambiadas o repetidas, guion) y se comprueba cuáles están registradas y cuáles **reciben correo**, el vector habitual del fraude de pago. Las que comparten MX o NS con el auditado, o le delegan el SPF o los informes DMARC, se marcan como probablemente propias. Las 3 primeras que reciben correo se buscan en los logs de certificados, y de las que reciben correo se pide la fecha de alta por RDAP. No puntúa.
+  * **Veredicto de riesgo por parecido**, con reglas fijas y sus motivos a la vista (`assessLookalikeRisk`):
+    * **Alto:** recibe correo y se registró hace menos de 90 días, o es un homoglifo que puede enviar correo autenticado.
+    * **Medio:** puede enviar correo autenticado, porque tiene buzones en un proveedor (Google, Microsoft, Zoho…) o un SPF que autoriza servidores o servicios de envío. También es medio sin fecha de registro si su primer certificado tiene menos de 30 días, o si está aparcado y es nuevo.
+    * **Bajo:** no recibe correo, o solo lo reenvía (Namecheap, Porkbun, Cloudflare Email Routing, ImprovMX, Forward Email) o lo aparca.
+    * **Propio:** vinculado al auditado.
+
+    El panel y el informe ordenan por riesgo, y la insignia cuenta los de riesgo alto o, si no hay, los de medio. Si hay alguno de riesgo alto, un aviso encima de la tabla (y en el informe) explica que ese perfil suele preceder a un fraude de pago (BEC) o a una campaña de phishing, sin afirmar que haya un ataque en marcha. Ninguna señal prueba intención: un parecido puede ser de una empresa legítima con un nombre cercano.
+* **Subdominios con correo:** de los nombres vistos en certificados públicos se consultan los que parecen enviar correo (news., marketing., mail.…): su SPF, sus MX y la política DMARC que les aplica, la suya o la heredada con `sp`. Un `p=reject` con `sp=none` deja suplantable justo el subdominio de los boletines. No puntúa.
+* **Superficie de envío:** cuántos servicios autorizados en el SPF pueden enviar como el dominio. Se informa, no puntúa.
+* **Visor de informes agregados DMARC (RUA):** arrastra un `.xml`, `.xml.gz` o `.zip` y obtén quién envía en nombre del dominio, con qué volumen y qué porcentaje autentica. Descompresión y parseo **en el navegador**, sin subir el fichero a ningún sitio.
+* **Ajustes de privacidad:** resolver DoH elegible (Google / Cloudflare / Quad9 / propio), proxy CORS público **opt-in**, consulta del tenant de Microsoft (activada, con interruptor) y botón de refresco forzado que salta la caché de 5 minutos.
+* **Instalable (PWA), ligera y sin terceros para renderizar:** se publica empaquetada y minificada (89 KB comprimidos al abrirse; idiomas, informe y detector de awareness se descargan solo si se usan), con un service worker que sirve de caché lo que lleva hash, tipografías autoalojadas y CSP declarada.
+
+## 🏗️ Arquitectura del Sistema
+
+Este proyecto está construido bajo una arquitectura **Pure Frontend (Serverless)**:
+
+* **Sin Backend:** Todo el procesamiento y parseo de registros ocurre en el cliente.
+* **DNS-over-HTTPS (DoH):** Utiliza las APIs públicas de Google DNS y Cloudflare DNS con fallback automático.
+* **Certificate Transparency (crt.sh, Certspotter):** los nombres de los certificados públicos del dominio alimentan el detector de awareness, el hospedaje del correo, los subdominios con correo y los certificados de los dominios parecidos.
+* **RDAP (registros de cada TLD):** la fecha de alta de los dominios parecidos que reciben correo dice si un certificado reciente es una campaña en preparación (dominio nuevo) o una renovación (dominio antiguo).
+* **Módulos ES6:** Separación estricta de responsabilidades en `/js/`. Se desarrolla y se prueba sin construir; lo publicado sale de `scripts/build.mjs` (esbuild).
+
+```
+js/
+├── bootstrap.js         # Punto de entrada: cablea el DOM (formulario, idioma, modales, PWA)
+├── app.js               # runAnalysis(): lanza el análisis y pinta el resultado
+├── analysis.js          # performAnalysis(): el análisis completo, sin interfaz (también en Node)
+├── lookalike.js         # Dominios parecidos: variantes, clasificación y veredicto de riesgo (puro)
+├── state.js             # Estado global compartido (rompe el ciclo app ↔ export)
+├── settings.js          # Preferencias: resolver DoH, proxy CORS opt-in, tenant, firmas externas
+├── api.js               # Motor DoH (getMX, getSPF, getDMARC, getDKIM…): caché, dedup y cola por zona
+├── ct.js                # Certificate Transparency (crt.sh + Certspotter), compartido
+├── rdap.js              # Fecha de registro de los dominios parecidos (RDAP + bootstrap de IANA)
+├── mailSubdomains.js    # Subdominios con correo vistos en CT: selección y clasificación (puro)
+├── remediation.js       # Registros de corrección del anexo del informe (puro)
+├── analyzer.js          # Identificación de proveedores/SEGs + scoring por categorías
+├── viewmodel.js         # Derivaciones de presentación compartidas por ui.js y export.js
+├── ui.js                # Fachada de presentación: tooltips, i18n del DOM y orquestación
+├── ui/                  # Un módulo por panel
+│   ├── scorePanel.js        # Nota, hallazgos y desglose por categoría
+│   ├── summaryPanel.js      # Cabecera y tarjetas resumen
+│   ├── mxPanel.js           # MX, proveedor y capas de seguridad (SEG/ICES)
+│   ├── spfPanel.js          # Registro, tabla de mecanismos y árbol de lookups
+│   ├── dmarcPanel.js        # Política y destinos de informe
+│   ├── dkimBimiPanel.js     # DKIM y BIMI (incluido el VMC)
+│   ├── reputationPanel.js   # Reputación RBL
+│   ├── advancedDnsPanel.js  # MTA-STS, TLS-RPT, DNSSEC, DANE, SRV, NS
+│   ├── awarenessPanel.js    # Detector de awareness + analizador de cabeceras
+│   ├── lookalikePanel.js    # Dominios parecidos (typosquatting) y sus certificados
+│   ├── mailSubdomainsPanel.js # Subdominios con correo
+│   ├── scoreMethod.js       # "¿Cómo se calcula la nota?", generado de las constantes del motor
+│   └── dmarcReportPanel.js  # Visor de informes agregados (RUA)
+├── dmarc.js             # Semántica RFC 9989: Tree Walk, t/pct, enforcement (módulo puro)
+├── dmarcReport.js       # Descompresión (.gz/.zip) y agregación de informes RUA — 100% local
+├── awarenessDetector.js # Detector de plataformas de Awareness/PhishSim (DNS + CT logs)
+├── headerAnalyzer.js    # Detección por cabeceras de correo (cubre el punto ciego DNS)
+├── knowledge.js         # Base de conocimiento de vendors (versionada, >50 firmas)
+├── i18n.js              # Carga de idiomas (el español va con la app; inglés y alemán, bajo demanda)
+├── i18n/                # Un diccionario por idioma: es.js, en.js, de.js (paridad verificada por tests)
+├── lang.js              # Idioma activo, idiomas soportados y locale de fechas
+├── export.js            # Motor de exportación (Word / PDF / Google Docs), cargado bajo demanda
+├── docsExport.js        # Portapapeles de Google Docs (dentro del clic, como exige Safari)
+├── parsers.js           # Parsers y validadores de registros DNS
+└── utils.js             # Helpers, incluido el tagged template html`` (XSS-safe)
+
+scripts/build.mjs        # Versión publicable en dist/: empaquetada, minificada y con hash (esbuild)
+scripts/calibrate.mjs    # Calibración de las letras contra una lista de dominios (Node 22)
+sw.js                    # Service worker: cachea la app (lo que lleva hash, de caché), nunca el tráfico externo
+manifest.webmanifest     # PWA instalable
+css/fonts/               # Tipografías autoalojadas (sin Google Fonts)
+```
+
+## 🛠️ Tecnologías utilizadas
+
+* HTML5 / CSS3 (Vanilla — sin frameworks)
+* JavaScript Vanilla (ES6+ Modules)
+* API de DNS-over-HTTPS (Google / Cloudflare / Quad9 o un resolver propio, configurable)
+* Certificate Transparency API (crt.sh + Certspotter)
+* RDAP (RFC 9083), con el bootstrap de IANA (RFC 9224)
+* Vitest + jsdom (tests), ESLint + Prettier (calidad), GitHub Actions (CI/CD)
+* PWA (service worker + manifest) y tipografías autoalojadas: cero dependencias de terceros para renderizar
+
+---
+
+## 🔐 Privacidad y servicios de terceros
+
+La herramienta es 100% cliente y no usa backend propio. **Todo lo que sale a un tercero es
+configurable o está desactivado por defecto**, porque también se usa en auditorías
+confidenciales.
+
+* **DNS-over-HTTPS:** todas las consultas DNS. Por defecto Google (`dns.google`) con
+  Cloudflare y Quad9 como respaldo. En **Ajustes** puedes elegir el resolver o poner el
+  tuyo; con un resolver propio **no se usa ningún resolver público de respaldo**, así que
+  el dominio auditado no sale de tu infraestructura. A Google se le pide
+  `edns_client_subnet=0.0.0.0/0`: sin eso reenviaría una aproximación de tu red a los DNS
+  autoritativos del dominio auditado.
+* **Servidores del dominio auditado.** La descarga directa de la política MTA-STS es una
+  petición CORS: dejaría en los registros del prospecto tu IP y el `Origin` de la app. Viene
+  **apagada** (ajuste *Descargar la política MTA-STS*): MTA-STS se comprueba solo por DNS y
+  se acredita como "publicada, sin verificar". El **logotipo BIMI sí se carga por defecto**
+  (ajuste *Cargar logotipos BIMI*): una imagen no lleva `Origin` y la página va sin
+  `Referer`, así que el servidor del logo —casi siempre una CDN— solo ve tu IP. Apagado, se
+  carga con un clic. Ninguna petición lleva `Referer`.
+* **Proxy CORS `api.allorigins.win`** (descarga de la política MTA-STS cuando el navegador
+  la bloquea por CORS): **desactivado por defecto**. Sin él, una política que no se pueda
+  descargar cuenta como *publicada, sin verificar*. Se activa en Ajustes.
+* **Certificate Transparency (`crt.sh` y `api.certspotter.com`):** el dominio auditado y,
+  como mucho, los 3 dominios parecidos que reciben correo viajan como parámetro de
+  búsqueda. Alimentan awareness, hospedaje, subdominios con correo y los certificados de
+  los parecidos. Nunca se contacta con el dominio auditado.
+* **RDAP (`data.iana.org` y el registro de cada TLD):** la lista de IANA dice qué registro
+  atiende cada TLD, y a ese registro (Verisign para `.com`, Google para `.app`…) se le pide
+  la fecha de alta de, como mucho, 10 dominios parecidos que reciben correo. Viaja solo el
+  nombre del parecido; ni el dominio auditado ni sus servidores reciben nada. Muchos ccTLD
+  (`.es`, `.de`, `.io`, `.eu`…) no publican RDAP: ahí la fecha queda sin saber, y para los
+  que se miran en CT el historial de certificados de crt.sh hace de respaldo.
+* **Microsoft (`login.microsoftonline.com`):** el documento OIDC público dice si el dominio
+  está en un tenant de Microsoft Entra. Recibe el dominio auditado; **activado por
+  defecto** porque va a Microsoft y no a los servidores del dominio auditado, y se apaga en
+  Ajustes (*Consultar el tenant de Microsoft*). Sin credenciales ni `Referer`.
+* **Tipografías:** autoalojadas en `css/fonts/`. La app **no hace ninguna petición a
+  Google Fonts**.
+* **Content-Security-Policy** declarada en `index.html`: `default-src 'self'`,
+  `script-src 'self'`, `base-uri 'none'` y `form-action 'none'`. `connect-src` enumera
+  los servicios de arriba y además admite `https:` en general, porque la comprobación
+  de MTA-STS pide la política a `mta-sts.<dominio-auditado>`, un host que solo se
+  conoce en tiempo de ejecución y para el que CSP no tiene comodín.
+
+Son 100% locales, sin ninguna petición de red: el **análisis por cabeceras de correo** y el
+**visor de informes agregados DMARC** (el fichero RUA no se sube a ningún sitio; ni siquiera
+se resuelven PTR de las IPs, porque un informe DMARC es el mapa de remitentes de una
+organización).
+
+---
+
+## 💻 Instalación y Uso Local
+
+Si prefieres ejecutar este proyecto de forma local en tu máquina:
+
+1. Clona este repositorio:
+   ```bash
+   git clone https://github.com/danielsanmartin-lang/Email-Security-Checker.git
+   ```
+2. Accede al directorio:
+   ```bash
+   cd Email-Security-Checker
+   ```
+3. Dado que la aplicación utiliza **Módulos ES6**, el navegador bloqueará la carga de archivos locales por políticas de seguridad (CORS). Es necesario servir el proyecto mediante un servidor HTTP local. Puedes levantarlo fácilmente:
+   * **Con Python (Recomendado):**
+     ```bash
+     python3 -m http.server 8080
+     ```
+   * **Con Node/NPM:**
+     ```bash
+     npx http-server -p 8080
+     ```
+4. Abre tu navegador y accede a **`http://localhost:8080`**.
+
+### Desarrollo: Tests, Lint y Formato
+
+El proyecto incluye `package.json` con scripts y dependencias de desarrollo (Vitest, ESLint, Prettier):
+
+```bash
+npm ci             # instala devDependencies desde package-lock (reproducible)
+
+npm test           # ejecuta toda la suite de tests (Vitest)
+npm run test:watch # modo watch
+npm run coverage   # tests + informe de cobertura (v8) con umbrales bloqueantes
+npm run lint       # ESLint sobre js/, sw.js y scripts/ (recommended, --max-warnings=0)
+npm run build      # versión publicable en dist/ (esbuild: empaquetada, minificada, con hash)
+npm run format     # Prettier (formatea js/)
+```
+
+La app funciona sin construir (así se desarrolla y así corren los tests). Para probar lo
+que se publica: `npm run build` y servir `dist/` (por ejemplo, `npx http-server dist -p 8100`).
+
+La suite (**687 tests**, cobertura ~93 %) cubre el módulo de Awareness (fixtures DNS
+mockeados), el análisis por cabeceras (`headerAnalyzer`), los parsers y validadores
+(`parseSPF` con índices, `parseDMARC`, `parseMTASTSPolicy`, `validateMTASTSPolicy`,
+`analyzeDKIMRecord` con RSA y Ed25519, `validateTlsRptRua`, `checkMtaStsMxCoverage`),
+el analizador (`extractRootDomain`, `collectSpfTreeIssues`, `calculateScoreAndFindings`,
+el modelo de **categorías ponderadas** y todos los findings), la **capa DNS** (`queryDNS`
+con resolver configurable y validación de `Status`, caché TTL, dedup en vuelo,
+**cola con tope por zona, prioridad y cancelación** —con tests de regresión de *deadlock*— y
+**reintento ante SERVFAIL**, `getSPFLookupTree` con CIDR, bucles, PermError y void lookups, `fetchMTASTSPolicyFile`,
+`checkRBL`, `getDNSSEC`, `checkDMARCExternalAuth`), el **visor de informes RUA**
+(parseo, agregación, `.gz`, `.zip` y ficheros corruptos), el **esquema de la base de
+conocimiento** (patrones válidos, sin duplicados) y las utilidades (`normalizeDomain`
+IDN/FQDN, `isValidDomain`, `parseDkimSelectors`, helper `html``) y la **paridad del
+diccionario i18n** (mismas claves, sin cadenas vacías y con los mismos marcadores de
+posición en los tres idiomas), los **logs CT** (`ct.js`: carrera entre fuentes, caché,
+caída de crt.sh), el **anexo de corrección** (`remediation.js`) y la **construcción**
+(`scripts/build.test.js`: todo lo que referencia el sitio existe, y el motor de análisis
+minificado da la misma nota que sin construir).
+
+Además hay dos niveles de pruebas con **jsdom**:
+* `render.dom.test.js` — `renderResults`/`generateReportHTML`, escapado anti-XSS y
+  completitud del informe.
+* `integration.dom.test.js` — monta `index.html` de verdad con la capa DoH simulada y
+  recorre el flujo completo (submit → análisis → render), el cambio de idioma, NXDOMAIN,
+  la validación de entrada y el descarte de análisis obsoletos. Cada caso cablea la página
+  con `init()` de `bootstrap.js` y la desmonta con el `dispose()` que devuelve, en vez de
+  despachar `DOMContentLoaded`: así no hereda listeners ni URL de los casos anteriores.
+
+Cada push/PR ejecuta en CI mediante GitHub Actions:
+* **`ci.yml`** — lint (**bloqueante**) + tests con cobertura (**umbrales bloqueantes**) +
+  construcción + `npm audit` (informativo), en Node 22 y 24. El informe de cobertura se publica como artefacto.
+* **`pages.yml`** — despliegue a GitHub Pages **solo si pasan lint y tests**, publicando
+  únicamente `dist/` (`npm run build`): ni tests ni código sin construir. Requiere configurar
+  Settings → Pages → Source como "GitHub Actions".
+* **`codeql.yml`** — análisis estático de seguridad (CodeQL, `security-extended`) en cada
+  push/PR y de forma programada semanalmente.
+
+---
+
+## 📅 Historial de Cambios
+
+> El detalle de las versiones recientes vive ahora en **[CHANGELOG.md](CHANGELOG.md)** (formato Keep a Changelog). Abajo se conserva el historial largo por compatibilidad.
+
+### v5.2.0 — Más rápida y con más contexto (Actual)
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el resultado llega entre
+dos y cuatro veces antes (cada consulta espera solo a lo que necesita, cola DNS por zona
+con prioridad y cancelación) y la app se publica empaquetada (de 215 KB a 89 KB al
+abrirse). Se añaden el tenant de Microsoft Entra, los subdominios con correo y los
+certificados de los dominios parecidos (a partir de los logs CT), un anexo con los
+registros de corrección en el informe y la comparación de la letra con la muestra de
+calibración. La nota no cambia.
+
+### v5.1.0 — Nota más justa y explicada
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el filtrado nativo de
+Microsoft 365 o Google pasa de 50 a 65, un MX sin identificar deja de salir de la media
+(ser opaco puntuaba mejor que ser transparente) y un ICES visto solo por un token TXT vale 85.
+Las letras se calibran con 61 dominios de grandes empresas, la tarjeta pasa a llamarse
+"Postura de seguridad del correo", y se añaden el apartado "¿Cómo se calcula la nota?", la
+búsqueda de dominios parecidos y la superficie de envío.
+
+### v5.0.0 — La nota mide el ecosistema de correo, con el filtrado entrante como eje
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: el anillo deja de medir
+solo la suplantación y pasa a medir la protección del ecosistema de correo, con suplantación
+(60), filtrado entrante (25) y transporte (15). Una capa extra de seguridad en el MX
+(Proofpoint, Mimecast…) o un ICES cuenta entera, el filtrado nativo de Microsoft 365 o
+Google la mitad, y un MX sin identificar no se evalúa. salesforce.com (Proofpoint) queda en
+87 (A); un dominio con la autenticación perfecta y el MX directo a Microsoft 365, en 73 (B).
+**Las notas de v5 no son comparables con las de v4.**
+
+### v4.0.0 — DMARCbis, puntuación en dos ejes y privacidad del auditor
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la nota deja de sumar
+transporte y marca a la autenticación y pasa a contestar si el dominio se puede suplantar,
+contando la política DMARC que **de verdad** se aplica según RFC 9989 (`t=y`, `pct`, herencia
+por `sp`, valores no válidos, registros duplicados) con el Tree Walk del RFC. El transporte
+va en una nota aparte. support.apple.com pasa de F a A, iberdrola.es de D a A y posteo.de, que
+publica `p=none`, de C a F. Además se cierra una inyección de HTML en el informe exportado y
+la política MTA-STS deja de descargarse por defecto. **Las notas de v4 no son comparables
+con las de v3.**
+
+### v3.3.0 — Hospedaje del correo: nube, híbrido u on-premise
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la herramienta deducía el
+proveedor del registro MX, pero el MX es el **filtro de entrada** y no la **plataforma de
+buzón** — telefonica.es y mercadona.es tienen ambos un gateway delante y, sin embargo, una
+tiene los buzones en Microsoft 365 y la otra en su propio centro de datos. Ahora se
+distinguen los dos ejes, y el `type: 'self'` que `identifyMX` calculaba desde siempre —y
+que no leía nadie— por fin sirve para algo.
+
+### v3.1.0 — DNS resiliente y auditoría de dominios de terceros
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: la capa DNS deja de
+perder consultas por su propia ráfaga (tope de 6 simultáneas y reintento ante SERVFAIL —
+que además salió **más rápido**: 3095 ms → 782 ms en un dominio con el DNS frágil), un
+fallo de DNS deja de disfrazarse de "este dominio no usa nada", y el panel de Awareness
+enuncia el techo real del DNS en vez de pedir una muestra de correo que, auditando a un
+tercero, no se va a tener nunca.
+
+### v3.0.0 — Motor de análisis, puntuación por categorías, visor RUA, privacidad y PWA
+
+Ver el detalle en **[CHANGELOG.md](CHANGELOG.md)**. En una línea: nuevas comprobaciones que
+antes pasaban en silencio (PermError de SPF, cobertura MTA-STS↔MX, VMC de BIMI, Ed25519,
+`np` de DMARCbis), una nota que vuelve a discriminar, visor local de informes agregados,
+ajustes de privacidad y app instalable. **Cambia el cálculo de la puntuación respecto a v2.x.**
+
+### v2.5.2 → v2.7.1 — Endurecimiento de seguridad, resiliencia del motor DNS, accesibilidad y calidad
+
+Serie de auditoría interna. Ver [CHANGELOG.md](CHANGELOG.md) para el detalle. Resumen:
+
+* **Seguridad (v2.5.2):** corregido un **XSS por clic** en la tabla SPF (onclick inline → atributo `data-` + listener delegado); `queryDNS` valida el `Status` DoH (SERVFAIL/REFUSED ya no se reportan como "sin registros" ni se cachean); RBL inconcluso deja de mostrarse como "Limpio"; nuevo workflow de despliegue con **gate de lint+tests** y se deja de publicar `graphify-out/`.
+* **Robustez DNS (v2.5.3–v2.6.0):** herencia DMARC organizativa, Null MX (RFC 7505), FQDN con punto final, hora del escaneo estable; **degradación resiliente** (`Promise.allSettled`), árbol SPF en paralelo con contaje CIDR, MTA-STS sin seguir redirects (RFC 8461), deduplicación de consultas y parseo TXT multi-string unificado.
+* **Accesibilidad y UX (v2.6.2):** `aria-live`/roles, hints por teclado, `<html lang>` dinámico, contraste AA, modales con Escape y trampa de foco, y **render progresivo** del panel de Awareness.
+* **Exportación y arquitectura (v2.6.1–v2.7.1):** informe con DNSSEC/DANE/SRV/árbol SPF/autorización DMARC externa, PDF unificado, i18n del informe, estado extraído a `state.js` y dedup de presentación en `viewmodel.js`.
+* **Testing/CI (v2.6.2–v2.7.0):** `performAnalysis` extraído y testeable (app.js 0%→36%, api.js 26%→76%, global ~78%), ESLint `recommended`, CI con `npm ci` + caché + Node 20/22 + cobertura con umbrales bloqueantes, `LICENSE` (MIT) y `CHANGELOG.md`.
+
+> **159 tests** en verde. Lint y cobertura son ahora **bloqueantes** en CI.
+
+### v2.5.1 — Precisión SEG/ICES: cross-check con el MX y deduplicación de vendors
+
+Correcciones de exactitud en la detección de capas de seguridad (`detectSecurityLayers`), a raíz de un falso positivo del tipo *"amazon.com usa Cisco Email Security — 70%"*.
+
+* **Fin del 70% falso por token de verificación:** un SEG cuya **única** evidencia era un token TXT de propiedad de dominio alcanzaba "media" (0.7) en solitario. Ahora se **cruza con el MX**: si ningún registro MX pertenece a ese vendor (p. ej. el dominio tiene MX propio), la afirmación se degrada a **"baja"** y se marca *"sin confirmar en el MX"* en la UI y el informe. Un gateway que no está en el flujo de correo no está filtrando nada. Mismo patrón que el 70% falso de Microsoft AST ya corregido en v2.4.0.
+* **`cisco-ci-domain-verification` recategorizado:** deja de reportarse como SEG "Cisco Email Security". Es un token del **Cisco Security Cloud** (transversal a Umbrella/XDR/Threat Defense…), no prueba del gateway IronPort. Pasa a **ICES de baja confianza** (peso propio `0.35`), ya que Threat Defense es API-based y su único rastro DNS suele ser ese TXT.
+* **Peso por token TXT:** cada token del diccionario puede fijar su propio peso (`weight`) en lugar del `0.7` global, para calibrar la confianza señal a señal.
+* **Identidad canónica de vendor:** la confirmación por MX reconoce al mismo vendor aunque los diccionarios usen nombres distintos (*"Sophos"* en el token vs *"Sophos Email"* en el MX), evitando marcar como "sin confirmar" a un cliente cuyo MX **sí** es de ese vendor.
+* **Deduplicación de entradas:** nombres unificados en el KB (Sophos, Trend Micro, Forcepoint, Avanan/Check Point) para que un vendor detectado por varias señales (MX + SPF + TXT) se muestre como **una sola** tarjeta con toda la evidencia agregada, en vez de duplicarse. Se preservan los productos genuinamente distintos (Proofpoint vs Proofpoint Essentials, Symantec cloud vs gateway).
+
+> **+6 tests** (total **134**): caso Amazon (token Cisco → ICES baja, no SEG), cross-check de MX, identidad canónica, fusión de entradas y renderizado del aviso en UI y export.
+
+### v2.5.0 — Detección de Awareness más precisa y por cabeceras
+
+Seis mejoras al detector de plataformas de Awareness / Phishing Simulation, centradas en exactitud y en romper el techo del análisis solo-DNS.
+
+* **Análisis por cabeceras de correo (`js/headerAnalyzer.js`):** nuevo módulo + panel en el detector de Awareness para **pegar las cabeceras** de un correo de simulación y detectar el vendor con **alta confianza** por dominios de envío y X-headers propietarias (`X-PHISHTEST` de KnowBe4, `X-Gophish-Contact`/`X-Gophish-Signature`, `X-PhishMe` de Cofense, `simulator.office.com`/`phishingsimulations.microsoft.com` de Microsoft AST…). Cubre **Microsoft Attack Simulation Training**, indetectable por DNS. Trabajo 100% local.
+* **Gateway vs. módulo de awareness (`productConfirmed`):** se distingue la evidencia *directa* del producto de concienciación de la evidencia *indirecta* (su gateway de correo / co-ubicación). Si solo hay señal de gateway (p. ej. MX de Proofpoint/Mimecast), la tarjeta lo indica: *"proveedor compatible — módulo no confirmado"*.
+* **Sondeo CNAME ampliado y con verificación de destino:** lista de subdominios de campaña mucho mayor; ahora **cualquier** subdominio del cliente cuyo CNAME apunte a infra del vendor cuenta (se verifica el destino, no solo que el subdominio exista).
+* **Correlación DKIM más estricta:** un selector de vendor recibe peso fuerte solo si el registro **referencia/está CNAME-ado** al dominio firmante del vendor; un selector con clave genérica que no lo referencia pasa a indicio débil (evita falsos positivos por selectores comunes como `s1`).
+* **Doble fuente de Certificate Transparency:** `crt.sh` como primaria y **Certspotter** como _fallback_ (fusiona resultados, degrada con elegancia si CORS/red falla).
+* **Diccionario versionado y actualizable:** versión exportada (`AWARENESS_DICT_VERSION`) y funciones para cargar/persistir fingerprints personalizados (`loadCustomFingerprints`/`saveCustomFingerprints`/`loadFingerprintsFromUrl` + auto-carga desde `localStorage`), para mantener las firmas al día sin tocar código.
+
+> **Nota:** también se corrigió un *bug* de pesos del MX hint heredado (cualquier dominio M365 mostraba 70% de usar AST con la única señal "usa Microsoft"); ahora Microsoft AST queda en **15% ("baja")** y los gateways reales (Proofpoint/Mimecast 0.3) pesan más. **+12 tests** (total **128**).
+
+### v2.4.0 — Precisión del Análisis, DNSSEC y Endurecimiento de Calidad
+
+Esta versión profundiza la **exactitud** de los resultados que la herramienta presenta como verdad, además de reforzar la validación de entrada y el tooling de calidad.
+
+* **RBL más fiable (interpretación de códigos):** `checkRBL` ya no trata cualquier respuesta como "listado". Distingue **`listado`** (`127.0.0.x`), **`limpio`** (NXDOMAIN) y **`no concluyente`** (`127.255.255.x` = consulta rechazada por resolver público o fallo de red). La UI y el informe muestran el estado real y un aviso *best-effort*, porque muchas DNSBL (Spamhaus, SpamCop…) rechazan las consultas que llegan vía DoH público (Google/Cloudflare).
+* **Análisis DMARC profundo:** nuevos hallazgos para política de subdominios más débil (`sp` < `p`), aplicación parcial (`pct` < 100), alineación estricta (`adkim`/`aspf`) y, sobre todo, **autorización de destinos de informe externos** (`<dominio>._report._dmarc.<destino>`, RFC 7489 §7.1) — un fallo de configuración real que provoca que los informes se descarten. Se muestra por destino en el panel de reporting.
+* **DKIM: fuerza de clave y estado, sin falsos castigos:** `analyzeDKIMRecord` parsea el `SubjectPublicKeyInfo` (DER) y calcula los **bits del módulo RSA**, marcando claves **débiles (< 1024)**, **1024 (mínimo, recomienda 2048)**, **revocadas** (`p=` vacío) y en **modo prueba** (`t=y`). La **ausencia** de DKIM pasa a ser informativa (detección *best-effort* por selectores comunes): un selector personalizado válido ya no baja la nota.
+* **SPF: cobertura de huecos comunes:** aviso cuando **no hay mecanismo `all`** (la política por defecto es neutral `?all`) y cuando se usa el mecanismo **`ptr`** (desaconsejado por RFC 7208).
+* **MTA-STS `max_age`:** validación de presencia y valor recomendado (≥ 604800 s, RFC 8461) sin invalidar la política, expuesto como aviso.
+* **DNSSEC:** nuevo `getDNSSEC` (registros `DNSKEY` + flag `AD`), con bonificación de score, hallazgo y panel propio en DNS avanzado. La firma de la zona protege la integridad de SPF/DMARC/DKIM frente a envenenamiento de caché.
+* **Validación de entrada y errores diferenciados:** `normalizeDomain` convierte **IDN → punycode** (vía API `URL`) y quita puerto; `isValidDomain` valida el formato antes de consultar. Los errores se distinguen entre **dominio inexistente (NXDOMAIN)**, **error de red** y **formato inválido**, cada uno con su mensaje (ES/EN).
+* **Awareness — peso del MX hint corregido (representatividad):** se arregló un *bug* por el que el motor de scoring leía claves de peso (`mxExact`/`mxSubstring`) que los fingerprints no definían, cayendo a un valor por defecto de **0.7**. Esto inflaba la detección: cualquier dominio M365 aparecía con **70% (MEDIA)** de usar *Microsoft Attack Simulation Training* con la única señal de "usa Microsoft". Ahora se honra el peso de cada fingerprint (`w.mxHint`): Microsoft AST baja a **15% ("baja")** y los gateways de seguridad reales (Proofpoint/Mimecast `0.3`, Sophos/Barracuda `0.25`) pesan más que el simple uso de M365, reflejando que suelen venderse o complementarse con concienciación.
+* **Calidad y DevEx:** `playwright` movido a `devDependencies`; añadido **`@vitest/coverage-v8`** y script `npm run coverage`. CI ampliado con cobertura (artefacto) + `npm audit`, y nuevo workflow **CodeQL** (`security-extended`, también semanal). **+36 tests** nuevos (total **116**), incluyendo `js/api.test.js` con `fetch` mockeado, la validación del parser DKIM contra claves RSA reales y los tests del peso del MX hint en Awareness.
+
+> ⚠️ Las comprobaciones RBL son **orientativas** (best-effort): para resultados fiables se recomienda un resolver/proxy propio. Las listas de selectores/tokens por vendor siguen siendo heurísticas.
+
+### v2.3.0 — Detección de Capas de Seguridad Multi-Señal
+
+* **Detección SEG/ICES ponderada y multi-señal**: La identificación de capas de seguridad dejó de ser binaria. Ahora `detectSecurityLayers` agrega evidencia de varias fuentes y calcula una **confianza por vendor** (noisy-OR → nivel Alta/Media/Baja), mostrada en la UI y en el informe junto a las evidencias concretas.
+* **Nuevas fuentes de señal aprovechando datos que ya se obtenían**:
+  - **SPF aplanado**: se inspecciona toda la cadena de includes (no solo el primer nivel), detectando gateways escondidos en includes anidados (`collectSpfDomains` sobre el árbol SPF).
+  - **Lista `mx:` de la política MTA-STS**: los hostnames MX autorizados en el fichero de política se cruzan contra la base de conocimiento, revelando el gateway aunque el MX activo no lo muestre.
+  - **Selectores DKIM → vendor** (`KB.dkim_security_selectors`): permite detectar la capa de seguridad por la firma DKIM incluso cuando el MX es el del proveedor (Microsoft/Google) y el gateway opera en modo API o re-firmando.
+* **ICES basados en API**: ampliada la base de conocimiento de tokens de verificación TXT (Material, Sublime, Avanan/Check Point, Tessian, Egress, Vade, Darktrace, Cyren…) y la UI deja claro que estos ICES (Graph/Google API) **no dejan rastro DNS**: "no detectado" ≠ "no hay capa de seguridad".
+* **Awareness**: el matching de IPs SPF ahora soporta **IPv6** (CIDR con BigInt), y **crt.sh** nunca puede ser señal única (requiere al menos otra evidencia) con caché ampliada para reducir su fragilidad.
+* **Pesos centralizados** en `KB.seg_signal_weights` y **20 tests** nuevos (detección multi-señal, SPF aplanado, IPv6 CIDR). Total: 80 tests.
+
+> ⚠️ Las listas de selectores/tokens por vendor son heurísticas y deben validarse contra la documentación oficial; pueden cambiar con el tiempo.
+
+### v2.2.0 — Refactorización Arquitectónica
+
+* **Helper de plantillas `html`` ` con auto-escapado**: Nuevo tagged template (`js/utils.js`) que escapa cada interpolación por defecto (XSS-safe), con marcador `raw()` para HTML ya seguro y soporte de anidación/arrays. `escapeHtml` se reimplementó sin DOM (funciona en Node y escapa también comillas). Adoptado en `renderSPFTree` y en el renderizado de findings/postura.
+* **Capa view-model compartida (`js/viewmodel.js`)**: Centraliza la lógica de presentación que antes duplicaban `ui.js` y `export.js` (texto de findings, política DMARC, postura, descripción de servicios, fuente del proveedor, conteo RBL, etiquetas de categoría).
+* **Scoring declarativo**: `calculateScoreAndFindings` se reescribió como una tabla de evaluadores por sección con pesos centralizados (`SCORE_WEIGHTS`, `MAX_POSITIVE_SCORE`), preservando el comportamiento y facilitando los tests.
+* **Eliminado el patrón "sentinel" de proveedor/fuente**: El analyzer emite estructura neutral de idioma (`providerIdentified`, `providerSource = { key, arg }`) y la traducción ocurre en la capa de presentación, en lugar de revertir cadenas en español por coincidencia de texto.
+* **Etiquetas de categoría movidas a i18n**: Los mapas de traducción de categorías viven ahora en `i18n.js` (`category_labels`, `category_defaults`).
+* **Capa DNS unificada**: `awarenessDetector.js` reutiliza `queryDNS` de `api.js` (caché y fallback compartidos) en vez de su propio cliente DoH duplicado.
+* **`extractTxtValue`**: Extraído el parsing repetido de registros TXT entrecomillados (usado por SPF, DMARC, MTA-STS, TLS-RPT y getAllTXT).
+* **Tests**: 68 en total, incluyendo pruebas de integración con jsdom que ejecutan `renderResults` y el informe de exportación verificando el escapado anti-XSS de extremo a extremo.
+
+### v2.1.0 — Robustez, i18n completa, IPv6 y Tooling
+
+* **Puntuación acotada (0–100)**: El cálculo del score ahora se limita correctamente al rango 0–100 antes de derivar el grado, evitando valores incoherentes (>100) frente al umbral A+.
+* **Internacionalización completa de la lógica**: Se eliminaron las cadenas en español incrustadas en el código. Los errores del árbol SPF, la postura de seguridad y los paneles SRV/DANE ahora usan claves i18n y se traducen correctamente en ambos idiomas. El informe exportado (`export.js`) consume claves de `i18n.js` en lugar de duplicar el sistema de traducción con ternarios `es/en`.
+* **Soporte IPv6 y multi-IP en RBL**: La resolución de IPs ahora incluye registros `AAAA` y todas las IPs del host; `checkRBL` soporta el formato de consulta inverso IPv6. Las listas RBL se externalizaron a `knowledge.js` (se retiró SORBS, cerrada en 2024).
+* **Análisis en paralelo**: `runAnalysis` ejecuta las consultas DNS independientes concurrentemente (MX, SPF, DMARC, BIMI, avanzadas), reduciendo significativamente el tiempo total, manteniendo el feedback por pasos.
+* **Refuerzo anti-XSS**: Auditoría y escapado (`escapeHtml`) de todos los valores derivados de DNS insertados vía `innerHTML`, tanto en la UI como en el informe exportado.
+* **Utilidad compartida `normalizeDomain`**: Deduplicada la lógica de normalización de dominio (email, esquema, `www`, ruta) en `js/utils.js`.
+* **Tooling de desarrollo**: `package.json` completo (`type: module`, scripts), Vitest configurado, ESLint (flat config) + Prettier, y CI con GitHub Actions. Nueva cobertura de tests para parsers y analizador (49 tests).
+* **Privacidad documentada**: Nueva sección del README sobre los servicios de terceros (DoH de Google/Cloudflare, proxy CORS `allorigins.win`, `crt.sh`).
+
+### v2.0.0 — Detección Avanzada de DNS (SRV/DANE), Postura de Seguridad y Mejoras en Awareness
+
+* **Protocolo DANE (TLSA) y Registros SRV**: Añadido soporte para consultas DNS en paralelo de registros de autenticación DANE/TLSA (`_25._tcp`) para verificar la seguridad del cifrado en los servidores MX, además de sondeos de autodescubrimiento SRV (`_autodiscover`, `_imaps`, `_submission`).
+* **Indicador de Postura de Seguridad**: Cálculo automático y visualización de la postura general del dominio (`Fuerte` 🟢, `Moderada` 🟡, `Débil` 🔴) en la tarjeta de puntuación, evaluando SPF, DMARC, DKIM, SEG/ICES y MTA-STS.
+* **Mejoras de Detección de Awareness**:
+  - *Sondeo CNAME*: Búsqueda de subdominios populares de landings/tracking (`click`, `track`, `phish`, etc.) delegados a infraestructuras de proveedores.
+  - *Sondeo DKIM Genérico*: Prueba automática de selectores estándar (`s1`, `s2`, `k1`, etc.) para verificar firmas criptográficas de vendors.
+  - *Detección Cruzada*: Impulso por correlación de seguridad perimetral (SEG) para proveedores co-localizados (Proofpoint, Barracuda, Mimecast, Sophos).
+  - *Tokens TXT*: Detección de tokens de verificación específicos en el dominio raíz.
+* **Ampliación de Base de Conocimiento**: Añadidas firmas de SEG/ICES para *Egress Defend*, *Libraesva*, *VIPRE*, *Graphus* y *Armorblox*.
+
+### v1.9.0 — Awareness-Vendor Detector: Detección de Plataformas de Phishing Simulation
+
+El módulo más ambicioso hasta la fecha: detecta automáticamente si una empresa usa una plataforma de **Security Awareness Training / Phishing Simulation** a partir de su huella DNS, sin necesidad de acceso privilegiado.
+
+#### 🔍 Pipeline de detección (por dominio de entrada)
+
+1. **SPF Flattening (RFC 7208):** Resolución recursiva de la cadena `v=spf1` respetando el límite de 10 lookups. Se aplana a la lista final de `include:`, dominios e IPs/CIDRs.
+2. **MX:** Inferencia de gateway (Mimecast bundlea awareness, Proofpoint pphosted, etc.).
+3. **DMARC:** Registro `_dmarc.<dominio>` — se registra `rua`/`ruf` por si apuntan a infra de vendor.
+4. **DKIM selectivo:** Sondeo SOLO de los selectores conocidos del diccionario (`<selector>._domainkey.<dominio>`). Si resuelven hacia el dominio firmante del vendor → señal fuerte.
+5. **Certificate Transparency (crt.sh):** Búsqueda de subdominios del dominio auditado cuyo CN/SAN apunte a infra de vendor.
+6. **Scoring probabilístico:** Score combinado `1 − Π(1 − peso_i)` por tipo de señal, nunca supera 1. Niveles: **Alta ≥ 75%**, **Media ≥ 45%**, **Baja**.
+
+#### 📚 Diccionario de fingerprints (v2026-06-05)
+
+| Vendor | SPF Include | SPF IPs/CIDRs | DKIM Selector | MX Hint | crt.sh |
+|--------|:-----------:|:-------------:|:-------------:|:-------:|:------:|
+| **KnowBe4 (KSAT)** | `_spf.psm.knowbe4.com` | `23.21.109.197`, `147.160.167.0/26`… | — | — | ✓ |
+| **Proofpoint SAT** | — | — | — | `pphosted` | ✓ |
+| **Cofense PhishMe** | — | — | — | — | ✓ |
+| **Mimecast Awareness** | — | — | — | `mimecast` | ✓ |
+| **Sophos Phish Threat** | — | — | — | `sophos.com` | ✓ |
+| **Hoxhunt** | `_spf.hoxhunt.com` | — | `hoxhunt` | — | ✓ |
+| **Infosec IQ** | — | — | — | — | ✓ |
+| **Barracuda / PhishLine** | `_spf.phishline.com` | — | `phishline` | `barracudanetworks.com` | ✓ |
+| **Proofpoint ThreatSim** | — | — | — | — | ✓ |
+
+> **⚠️ Punto ciego documentado:** Microsoft Attack Simulation Training (Defender for O365) — todo el tráfico es interno al tenant M365. Los allowlists se configuran en "Advanced Delivery" (Exchange Online Protection) a nivel de tenant sin dejar rastro DNS externo. **No es detectable por este módulo.**
+
+#### Nuevos componentes
+
+* **`js/awarenessDetector.js`** — Motor completo con diccionario recargable en caliente (`mergeFingerprints()`), caché interno con TTL de 5 min y fallback Cloudflare DoH.
+* **`js/awarenessDetector.test.js`** — Suite Vitest con fixtures DNS mockeados para todos los vendors, scoring, CIDR matching y SPF PermError.
+* **Panel UI** — Tarjetas de vendor con barra de confianza animada, nivel (Alta/Media/Baja), evidence pills con tipo de señal + valor, nota de vendor y alerta de punto ciego Microsoft siempre visible.
+* **Paso de carga** — Nuevo `step-awareness` visible en la secuencia de loading tras el análisis principal.
+* **Soporte multilingüe** — 25 claves nuevas en ES + EN en `i18n.js`.
+
+---
+
+### v1.8.0 — Informes de Exportación Enriquecidos y Detección SEG Mejorada
+* **Puntuación de Seguridad en Exportaciones:** La sección de Resumen Ejecutivo de los informes exportados (Google Docs, Word, PDF) ahora incluye la nota de seguridad (A+ a F) junto con la puntuación sobre 100 puntos.
+* **Tabla de Configuración DMARC Detallada:** Los informes exportados muestran una tabla de parámetros DMARC parseados (`p`, `sp`, `pct`, `adkim`, `aspf`) para una lectura más clara de la política activa.
+* **Columna de Resultado en Tabla SPF:** Cada entrada de la tabla SPF en el informe exportado incluye ahora una columna de resultado (`Pass`, `Fail`, `SoftFail`, `Neutral`) según el calificador del mecanismo.
+* **Identificación de Proveedores de Reporte DMARC (RUA/RUF):** Los informes exportados detectan e identifican automáticamente el nombre del proveedor de reporting (Valimail, Dmarcian, Postmark, etc.) a partir de las direcciones `rua`/`ruf`.
+* **Fuente de Evidencia del Proveedor:** La tarjeta de resultado ahora muestra en qué registro DNS (MX, SPF, TXT, NS) se detectó cada proveedor o SEG identificado.
+* **Corrección: Sin Falsos Positivos de SEG en Auto-hospedaje:** Cuando los registros MX apuntan al mismo dominio raíz que se analiza, la herramienta ya no clasifica incorrectamente la infraestructura propia como una pasarela de seguridad (SEG).
+* **Detección de SEG Desconocido por Dominio MX Externo:** Si los registros MX apuntan a un dominio raíz diferente al analizado y no coinciden con ninguna firma conocida, la herramienta ahora lo reporta como pasarela de seguridad de proveedor desconocido.
+
+### v1.7.4 — Validaciones de Seguridad Robustas para SPF y DMARC
+* **Detección de Múltiples Registros DNS:** Alertas críticas y penalización en la puntuación si se configuran múltiples registros SPF o DMARC (infracciones de RFC 7208 y RFC 7489 que rompen la autenticación de correos).
+* **Análisis del Calificador `all` en SPF:** Penalización y alertas específicas para directivas SPF inseguras o excesivamente permisivas como `+all` (pase libre para cualquier remitente) y `?all` (neutral/sin protección).
+* **Validación de Sintaxis DMARC:** Validación estricta para garantizar que la etiqueta de versión (`v=DMARC1`) y la directiva de política (`p=none|quarantine|reject`) cumplan con los estándares y no contengan valores inválidos.
+* **Interfaz de Registros Múltiples:** La interfaz ahora detecta, resalta y renderiza de forma independiente cada uno de los registros en conflicto detectados en el DNS.
+
+### v1.7.3 — Seguridad contra XSS, Bypass de CORS en MTA-STS y Caché DNS
+* **Sanitización contra vulnerabilidades XSS en registros DNS:** Sanitización automática de caracteres HTML conflictivos en cualquier registro recuperado de DNS antes de renderizarlo con `innerHTML`.
+* **Bypass de CORS en MTA-STS:** Fallback inteligente a un proxy CORS (allorigins.win) cuando la recuperación directa del archivo de políticas MTA-STS es bloqueada por restricciones CORS del navegador.
+* **Caché DNS en memoria:** Implementación de caché local con TTL de 5 minutos para evitar consultas DNS redundantes y optimizar la velocidad general de la auditoría.
+
+### v1.7.2 — Corrección en Detección de Hornetsecurity y Extracción de Dominio
+* **Soporte Mejorado para Hornetsecurity:** Añadidas firmas de detección para Hornetsecurity en registros MX (patrón `antispameurope`) y registros SPF (patrones `hornetsecurity` y `antispameurope`).
+* **Extracción de Dominio de Direcciones de Correo:** Al introducir o pegar una dirección de correo completa en el buscador, la herramienta limpia automáticamente la entrada ignorando el prefijo y el símbolo `@`.
+
+### v1.7.1 — Explicación de Bucles SPF en Árbol de Consultas
+* **Tooltip Explicativo de Bucles (Loops) SPF:** Visualización interactiva y tooltip didáctico al pasar el cursor sobre la alerta `[Error: Loop detectado]`, explicando en detalle la causa raíz del error por referencias circulares en registros DNS SPF en español e inglés.
+
+### v1.7.0 — Detección Avanzada de ICES y Consultas DNS Paralelas
+* **Auditoría DNS Avanzada:** Incorporación de consultas DNS sobre registros TXT raíz, NS, MTA-STS y TLS-RPT para realizar un escrutinio de seguridad en tiempo real y sin servidor.
+* **Detección de Soluciones ICES Ocultas:** Nuevo motor de cruce de datos que detecta pasarelas de seguridad cloud y soluciones ICES de próxima generación (Perception Point, xorlab, Material Security, Area 1, etc.) analizando registros de verificación (TXT) y enrutadores (NS).
+* **Panel de Resultados Avanzado:** Nuevo módulo en la interfaz de resultados que expone de forma amigable la adopción de tecnologías MTA-STS y TLS-RPT.
+
+### v1.6.1 — Mejoras en Exportación a Google Docs
+* **Auto-titulado Inteligente:** Se ha optimizado la exportación a Google Docs añadiendo el nombre del dominio auditado al inicio del reporte.
+
+### v1.6.0 — Tooltips Didácticos, Auto-descubrimiento DKIM y Reputación RBL
+* **Auto-descubrimiento Inteligente de Selectores DKIM:** Búsqueda automática de hasta 10 selectores DKIM más comunes en paralelo.
+* **Auditoría de Reputación de Dominio (Listas Negras/RBLs):** Resolución en tiempo real de IPs de servidores MX y verificación paralela contra listas de reputación globales (SORBS, Spamcop, DroneBL).
+* **Exportaciones e Informes Premium:** Rediseño completo del motor de exportación a Google Docs, archivos Word (.doc) e impresión PDF.
+
+### v1.5.0 — Tarjeta de Puntuación de Seguridad Interactiva
+* **Puntuación de Seguridad (Security Score Card):** Integración de un panel dinámico que calcula una nota (A+ hasta F) sobre 100 puntos basada en la configuración DNS de la seguridad del correo.
+* **Indicador Radial Animado:** Implementación visual de la puntuación a través de un anillo SVG interactivo animado.
+* **Auditoría Dinámica Multilingüe:** Generación de una lista de hallazgos instantáneos (positivos y alertas) que se traduce en tiempo real al cambiar entre Inglés y Español.
+
+### v1.4.0 — Soporte Multilingüe e Informes PDF Optimizados
+* **Soporte Multilingüe (Español / Inglés):** Implementación multi-idioma (`js/lang.js` y `js/i18n.js`) traduciendo toda la interfaz web.
+* **Selector de Idiomas:** Menú interactivo en la cabecera con indicadores visuales de banderas y persistencia del idioma seleccionado vía `localStorage`.
+* **Reportes Localizados Dinámicos:** Generación de informes en Google Docs, archivos de Word (.doc) e impresión PDF completamente traducidos al idioma activo.
+
+### v1.3.0 — Refactorización Arquitectónica y Experiencia DKIM
+* **Arquitectura Modular ES6:** Migración completa del monolito `app.js` original hacia un sistema estructurado de módulos independientes en la carpeta `/js/`.
+* **Resiliencia en Red DoH:** Implementación de un sistema de consultas híbridas con fallback tolerante a fallos de DNS-over-HTTPS (Google DoH ➡️ Cloudflare DoH).
+* **Usabilidad Mejorada en DKIM:** Rediseño del campo de selector DKIM opcional con modal didáctico para perfiles no técnicos.
+
+### v1.2.0 — Auditorías Avanzadas y Visualización SPF
+* **Árbol Jerárquico de Consultas SPF:** Creación de un algoritmo recursivo que dibuja el árbol de consultas de DNS de SPF en pantalla, calculando el límite crítico de 10 búsquedas DNS.
+* **Verificación BIMI:** Extracción de marcas e imágenes de logotipos directamente desde los registros DNS BIMI.
+* **Exportación PDF Nativa:** Hojas de estilo `@media print` para exportar el informe como PDF.
+
+### v1.1.0 — Clasificación de Servicios y Aprendizaje Dinámico
+* **Clasificación SPF Dinámica:** Selector en caliente para clasificar y etiquetar firmas SPF no reconocidas en tiempo real.
+* **Creación de Reglas de Base de Datos:** Pop-up para añadir nuevos servicios directamente a la Base de Conocimiento persistida localmente con `localStorage`.
+
+### v1.0.0 — Lanzamiento Inicial
+* **Auditoría DNS Básica:** Escaneo y renderizado de registros MX, SPF y DMARC vía DoH.
+* **Identificación Automática:** Clasificación básica de los proveedores más comunes de email corporativo y seguridad perimetral.
+* **Exportación Básica:** Funciones nativas para exportar informes al portapapeles o como archivo descargable `.doc`.
